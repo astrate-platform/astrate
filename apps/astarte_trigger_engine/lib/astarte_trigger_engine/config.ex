@@ -1,7 +1,7 @@
 #
 # This file is part of Astarte.
 #
-# Copyright 2017 Ispirata Srl
+# Copyright 2017-2023 SECO Mind Srl
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -200,10 +200,9 @@ defmodule Astarte.TriggerEngine.Config do
   defdelegate xandra_nodes, to: DataAccessConfig
   defdelegate xandra_nodes!, to: DataAccessConfig
 
-  @doc "A list of {host, port} values of accessible Cassandra nodes in a CQEx compliant format"
-  defdelegate cqex_nodes, to: DataAccessConfig
-  defdelegate cqex_nodes!, to: DataAccessConfig
-
-  defdelegate xandra_options!, to: DataAccessConfig
-  defdelegate cqex_options!, to: DataAccessConfig
+  def xandra_options! do
+    DataAccessConfig.xandra_options!()
+    |> Keyword.put(:name, :xandra)
+    |> Keyword.drop([:autodiscovery])
+  end
 end
