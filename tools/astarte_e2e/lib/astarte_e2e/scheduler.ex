@@ -17,7 +17,7 @@
 #
 
 defmodule AstarteE2E.Scheduler do
-  alias AstarteE2E.Utils
+  alias AstarteE2E.{Client, Utils}
   require Logger
 
   use GenServer, restart: :transient
@@ -37,7 +37,18 @@ defmodule AstarteE2E.Scheduler do
 
     check_repetitions = Keyword.fetch!(opts, :check_repetitions)
 
-    state = %{check_repetitions: check_repetitions, check_interval_ms: check_interval_ms}
+    realm = Keyword.fetch(opts, :realm)
+    device_id = Keyword.fetch!(opts, :device_id)
+    timeout = Keyword.fetch!(opts, :timeout)
+
+    state = %{
+      check_repetitions: check_repetitions,
+      check_interval_ms: check_interval_ms,
+      realm: realm,
+      device_id: device_id,
+      timeout: timeout
+    }
+
     Process.send_after(self(), :do_perform_check, check_interval_ms)
 
     {:ok, state}
@@ -55,24 +66,26 @@ defmodule AstarteE2E.Scheduler do
 
   @impl true
   def handle_info(:do_perform_check, state) do
-    return_val =
-      case AstarteE2E.perform_check() do
-        :ok ->
-          handle_successful_job(state)
-
-        {:error, :timeout} ->
-          handle_timed_out_job(state)
-
-        {:error, :not_connected} ->
-          {:noreply, state}
-
-        e ->
-          Logger.warn("Unhandled condition #{inspect(e)}. Pretending everything is ok.")
-          {:noreply, state}
-      end
-
     Process.send_after(self(), :do_perform_check, state.check_interval_ms)
-    return_val
+
+    check_result = AstarteE2E.perform_check()
+
+    updated_state = update_in(state.timeout, &maybe_timeout(&1, state, check_result))
+
+    case check_result do
+      :ok ->
+        handle_successful_job(updated_state)
+
+      {:error, :timeout} ->
+        handle_timed_out_job(updated_state)
+
+      {:error, :not_connected} ->
+        {:noreply, updated_state}
+
+      e ->
+        Logger.warn("Unhandled condition #{inspect(e)}. Pretending everything is ok.")
+        {:noreply, updated_state}
+    end
   end
 
   defp handle_successful_job(state) do
@@ -103,6 +116,20 @@ defmodule AstarteE2E.Scheduler do
         System.stop(1)
         {:stop, :timeout, state}
     end
+  end
+
+  defp maybe_timeout(timeout, state, check_result) do
+    cond do
+      timeout == :inactive or check_result == :ok -> :inactive
+      timeout == {:active, 1} -> call_timeout_and_set_inactive(state)
+      {:active, x} = timeout -> {:active, x - 1}
+    end
+  end
+
+  defp call_timeout_and_set_inactive(state) do
+    %{realm: {:ok, realm}, device_id: device_id} = state
+    Client.notify_startup_timeout(realm, device_id)
+    :inactive
   end
 
   defp via_tuple(realm, device_id) do
