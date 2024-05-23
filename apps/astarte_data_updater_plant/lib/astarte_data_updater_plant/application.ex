@@ -58,6 +58,10 @@ defmodule Astarte.DataUpdaterPlant.Application do
       {Xandra.Cluster, dup_xandra_opts},
       {Astarte.DataAccess, data_access_opts},
       {Mississippi.Consumer, mississippi_consumer_opts!()},
+      # TODO this are needed for AMQPEventsProducer to work, but can be removed once it has been removed
+      {ExRabbitPool.PoolSupervisor,
+       rabbitmq_config: Config.amqp_producer_options!(),
+       connection_pools: [Config.events_producer_pool_config!()]},
       AMQPEventsProducer,
       {Astarte.RPC.AMQP.Server, [amqp_queue: Protocol.amqp_queue(), handler: Handler]},
       Astarte.RPC.AMQP.Client
@@ -67,19 +71,19 @@ defmodule Astarte.DataUpdaterPlant.Application do
     Supervisor.start_link(children, opts)
   end
 
-  defp mississippi_consumer_opts() do
+  defp mississippi_consumer_opts!() do
     [
       amqp_consumer_options: [host: Config.amqp_consumer_host!()],
-      events_consumer_connection_number: Config.amqp_consumer_connection_number!(),
-      mississippi_queues_config: [
-        events_exchange_name: Config.events_exchange_name!(),
-        data_queue_prefix: Config.data_queue_prefix!(),
-        data_queue_range_start: Config.data_queue_range_start!(),
-        data_queue_range_end: Config.data_queue_range_end!(),
-        data_queue_total_count: Config.data_queue_total_count!()
-      ],
-      message_handler: Impl
+      mississippi_config: [
+        queues: [
+          events_exchange_name: Config.events_exchange_name!(),
+          prefix: Config.data_queue_prefix!(),
+          range_start: Config.data_queue_range_start!(),
+          range_end: Config.data_queue_range_end!(),
+          total_count: Config.data_queue_total_count!()
+        ],
+        message_handler: Impl
+      ]
     ]
-
   end
 end
