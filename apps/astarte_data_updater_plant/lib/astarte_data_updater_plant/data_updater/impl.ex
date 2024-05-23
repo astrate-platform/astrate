@@ -17,6 +17,9 @@
 #
 
 defmodule Astarte.DataUpdaterPlant.DataUpdater.Impl do
+
+  @behaviour Mississippi.Consumer.DataUpdater.Handler
+
   alias Astarte.Core.CQLUtils
   alias Astarte.DataUpdaterPlant.Config
   alias Astarte.Core.Device
@@ -54,7 +57,21 @@ defmodule Astarte.DataUpdaterPlant.DataUpdater.Impl do
   @deletion_refresh_lifespan_decimicroseconds 60 * 10 * 1000 * 10000
   @datastream_maximum_retention_refresh_lifespan_decimicroseconds 60 * 10 * 1000 * 10000
 
-  def init_state(realm, device_id, message_tracker) do
+  @msg_type_header "x_astarte_msg_type"
+  @realm_header "x_astarte_realm"
+  @device_id_header "x_astarte_device_id"
+  @ip_header "x_astarte_remote_ip"
+  @control_path_header "x_astarte_control_path"
+  @interface_header "x_astarte_interface"
+  @path_header "x_astarte_path"
+  @internal_path_header "x_astarte_internal_path"
+  @sharding_key "sharding_key"
+
+  use GenServer
+
+  def start_link(args), do: :TODO
+
+  def init(realm, device_id, message_tracker) do
     MessageTracker.register_data_updater(message_tracker)
     Process.monitor(message_tracker)
 
@@ -96,6 +113,21 @@ defmodule Astarte.DataUpdaterPlant.DataUpdater.Impl do
 
     Map.merge(new_state, stats_and_introspection)
     |> Map.put(:datastream_maximum_storage_retention, ttl)
+  end
+
+  @impl true
+  def handle_message(payload, headers, message_id, timestamp) do
+    %{@msg_type_header => msg_type, @sharding_key => sharding_key} = headers
+    [realm, device_id] = String.split(sharding_key, "/")
+
+
+    case handle_consume(msg_type, payload, headers_map, timestamp, clean_meta) do
+      :ok ->
+        {:ok, :ok}
+
+      :invalid_msg ->
+        {:error, :invalid_message}
+    end
   end
 
   def handle_deactivation(_state) do

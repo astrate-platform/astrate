@@ -26,6 +26,12 @@ defmodule Astarte.DataUpdaterPlant.Application do
 
   alias Astarte.DataUpdaterPlant.Config
   alias Astarte.DataAccess.Config, as: DataAccessConfig
+  alias Astarte.DataUpdaterPlant.AMQPEventsProducer
+  alias Astarte.DataUpdaterPlant.RPC.Handler
+  alias Astarte.DataUpdaterPlant.Config
+  alias Astarte.DataUpdaterPlant.DataUpdater.Impl
+
+  alias Astarte.RPC.Protocol.DataUpdaterPlant, as: Protocol
 
   @app_version Mix.Project.config()[:version]
 
@@ -51,10 +57,29 @@ defmodule Astarte.DataUpdaterPlant.Application do
       Astarte.DataUpdaterPlantWeb.Telemetry,
       {Xandra.Cluster, dup_xandra_opts},
       {Astarte.DataAccess, data_access_opts},
-      Astarte.DataUpdaterPlant.DataPipelineSupervisor
+      {Mississippi.Consumer, mississippi_consumer_opts!()},
+      AMQPEventsProducer,
+      {Astarte.RPC.AMQP.Server, [amqp_queue: Protocol.amqp_queue(), handler: Handler]},
+      Astarte.RPC.AMQP.Client
     ]
 
     opts = [strategy: :one_for_one, name: Astarte.DataUpdaterPlant.Supervisor]
     Supervisor.start_link(children, opts)
+  end
+
+  defp mississippi_consumer_opts() do
+    [
+      amqp_consumer_options: [host: Config.amqp_consumer_host!()],
+      events_consumer_connection_number: Config.amqp_consumer_connection_number!(),
+      mississippi_queues_config: [
+        events_exchange_name: Config.events_exchange_name!(),
+        data_queue_prefix: Config.data_queue_prefix!(),
+        data_queue_range_start: Config.data_queue_range_start!(),
+        data_queue_range_end: Config.data_queue_range_end!(),
+        data_queue_total_count: Config.data_queue_total_count!()
+      ],
+      message_handler: Impl
+    ]
+
   end
 end
