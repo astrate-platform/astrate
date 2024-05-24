@@ -60,23 +60,15 @@ defmodule Astarte.DataUpdaterPlant.RPC.Handler do
     end
   end
 
-  defp call_rpc(
-         {:delete_volatile_trigger,
-          %DeleteVolatileTrigger{
-            realm_name: realm_name,
-            device_id: device_id,
-            trigger_id: trigger_id
-          }}
-       ) do
-    DataUpdater.handle_delete_volatile_trigger(
-      realm_name,
-      device_id,
-      trigger_id
-    )
-
-    %GenericOkReply{}
-    |> encode_reply()
-    |> ok_wrap()
+  defp call_rpc({:delete_volatile_trigger, %DeleteVolatileTrigger{} = trigger}) do
+    with :ok <- VolatileTriggerHandler.delete_volatile_trigger(trigger) do
+      %GenericOkReply{}
+      |> encode_reply()
+      |> ok_wrap()
+    else
+      {:error, reason} ->
+        generic_error(reason)
+    end
   end
 
   defp generic_error(

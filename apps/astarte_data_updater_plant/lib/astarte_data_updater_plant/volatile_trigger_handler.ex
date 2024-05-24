@@ -58,11 +58,8 @@ defmodule Astarte.DataUpdaterPlant.VolatileTriggerHandler do
          {:ok, device_id} <- decode_device_id(encoded_device_id) do
       sharding_key = {realm_name, device_id}
 
-      DataUpdater.handle_signal(
-        sharding_key,
-        {:handle_delete_volatile_trigger, trigger_id},
-        @message_handler
-      )
+      {:ok, du_pid} = DataUpdater.get_data_updater_process(sharding_key)
+      DataUpdater.handle_signal(du_pid, {:handle_delete_volatile_trigger, trigger_id})
     end
   end
 

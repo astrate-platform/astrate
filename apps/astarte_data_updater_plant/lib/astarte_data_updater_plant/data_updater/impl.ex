@@ -142,6 +142,9 @@ defmodule Astarte.DataUpdaterPlant.DataUpdater.Impl do
           trigger_target
         )
 
+      {:handle_delete_volatile_trigger, trigger_id} ->
+        handle_delete_volatile_trigger(state, trigger_id)
+
       _ ->
         {:ok, state}
     end
@@ -309,6 +312,33 @@ defmodule Astarte.DataUpdaterPlant.DataUpdater.Impl do
         {:device_trigger, _} ->
           {:ok, load_trigger(new_state, trigger, target)}
       end
+    end
+  end
+
+  def handle_delete_volatile_trigger(%State{discard_messages: true} = state, _) do
+    # Don't care
+    {:ok, state}
+  end
+
+  def handle_delete_volatile_trigger(state, trigger_id) do
+    {new_volatile, maybe_trigger} =
+      Enum.reduce(state.volatile_triggers, {[], nil}, fn item, {acc, found} ->
+        {_, {_simple_trigger, trigger_target}} = item
+
+        if trigger_target.simple_trigger_id == trigger_id do
+          {acc, item}
+        else
+          {[item | acc], found}
+        end
+      end)
+
+    case maybe_trigger do
+      {{obj_id, obj_type}, {simple_trigger, trigger_target}} ->
+        %{state | volatile_triggers: new_volatile}
+        |> delete_volatile_trigger({obj_id, obj_type}, {simple_trigger, trigger_target})
+
+      nil ->
+        {:ok, state}
     end
   end
 
@@ -1787,117 +1817,90 @@ defmodule Astarte.DataUpdaterPlant.DataUpdater.Impl do
   #   update_stats(new_state, "", nil, path, payload)
   # end
 
-  # def handle_delete_volatile_trigger(%State{discard_messages: true} = state, _, message_id, _) do
-  #   MessageTracker.discard(state.message_tracker, message_id)
-  #   state
-  # end
+  defp delete_volatile_trigger(
+         state,
+         {obj_id, _obj_type},
+         {{:data_trigger, proto_buf_data_trigger}, trigger_target_to_be_deleted}
+       ) do
+    if Map.get(state.interface_ids_to_name, obj_id) do
+      data_trigger_to_be_deleted =
+        SimpleTriggersProtobufUtils.simple_trigger_to_data_trigger(proto_buf_data_trigger)
 
-  # def handle_delete_volatile_trigger(state, trigger_id) do
-  #   {new_volatile, maybe_trigger} =
-  #     Enum.reduce(state.volatile_triggers, {[], nil}, fn item, {acc, found} ->
-  #       {_, {_simple_trigger, trigger_target}} = item
+      data_triggers = state.data_triggers
 
-  #       if trigger_target.simple_trigger_id == trigger_id do
-  #         {acc, item}
-  #       else
-  #         {[item | acc], found}
-  #       end
-  #     end)
+      event_type =
+        EventTypeUtils.pretty_data_trigger_type(proto_buf_data_trigger.data_trigger_type)
 
-  #   case maybe_trigger do
-  #     {{obj_id, obj_type}, {simple_trigger, trigger_target}} ->
-  #       %{state | volatile_triggers: new_volatile}
-  #       |> delete_volatile_trigger({obj_id, obj_type}, {simple_trigger, trigger_target})
+      data_trigger_key = data_trigger_to_key(state, data_trigger_to_be_deleted, event_type)
+      existing_triggers_for_key = Map.get(data_triggers, data_trigger_key, [])
 
-  #     nil ->
-  #       {:ok, state}
-  #   end
-  # end
+      # Separate triggers for key between the trigger congruent with the one being deleted
+      # and all the other triggers
+      {congruent_data_trigger_for_key, other_data_triggers_for_key} =
+        Enum.reduce(existing_triggers_for_key, {nil, []}, fn
+          trigger, {congruent_data_trigger_for_key, other_data_triggers_for_key} ->
+            if DataTrigger.are_congruent?(trigger, data_trigger_to_be_deleted) do
+              {trigger, other_data_triggers_for_key}
+            else
+              {congruent_data_trigger_for_key, [trigger | other_data_triggers_for_key]}
+            end
+        end)
 
-  # defp delete_volatile_trigger(
-  #        state,
-  #        {obj_id, _obj_type},
-  #        {{:data_trigger, proto_buf_data_trigger}, trigger_target_to_be_deleted}
-  #      ) do
-  #   if Map.get(state.interface_ids_to_name, obj_id) do
-  #     data_trigger_to_be_deleted =
-  #       SimpleTriggersProtobufUtils.simple_trigger_to_data_trigger(proto_buf_data_trigger)
+      next_data_triggers_for_key =
+        case congruent_data_trigger_for_key do
+          nil ->
+            # Trying to delete an unexisting volatile trigger, just return old data triggers
+            existing_triggers_for_key
 
-  #     data_triggers = state.data_triggers
+          %DataTrigger{trigger_targets: [^trigger_target_to_be_deleted]} ->
+            # The target of the deleted trigger was the only target, just remove it
+            other_data_triggers_for_key
 
-  #     event_type =
-  #       EventTypeUtils.pretty_data_trigger_type(proto_buf_data_trigger.data_trigger_type)
+          %DataTrigger{trigger_targets: targets} ->
+            # The trigger has other targets, drop the one that is being deleted and update
+            new_trigger_targets = Enum.reject(targets, &(&1 == trigger_target_to_be_deleted))
 
-  #     data_trigger_key = data_trigger_to_key(state, data_trigger_to_be_deleted, event_type)
-  #     existing_triggers_for_key = Map.get(data_triggers, data_trigger_key, [])
+            new_congruent_data_trigger_for_key = %{
+              congruent_data_trigger_for_key
+              | trigger_targets: new_trigger_targets
+            }
 
-  #     # Separate triggers for key between the trigger congruent with the one being deleted
-  #     # and all the other triggers
-  #     {congruent_data_trigger_for_key, other_data_triggers_for_key} =
-  #       Enum.reduce(existing_triggers_for_key, {nil, []}, fn
-  #         trigger, {congruent_data_trigger_for_key, other_data_triggers_for_key} ->
-  #           if DataTrigger.are_congruent?(trigger, data_trigger_to_be_deleted) do
-  #             {trigger, other_data_triggers_for_key}
-  #           else
-  #             {congruent_data_trigger_for_key, [trigger | other_data_triggers_for_key]}
-  #           end
-  #       end)
+            [new_congruent_data_trigger_for_key | other_data_triggers_for_key]
+        end
 
-  #     next_data_triggers_for_key =
-  #       case congruent_data_trigger_for_key do
-  #         nil ->
-  #           # Trying to delete an unexisting volatile trigger, just return old data triggers
-  #           existing_triggers_for_key
+      next_data_triggers =
+        if is_list(next_data_triggers_for_key) and length(next_data_triggers_for_key) > 0 do
+          Map.put(data_triggers, data_trigger_key, next_data_triggers_for_key)
+        else
+          Map.delete(data_triggers, data_trigger_key)
+        end
 
-  #         %DataTrigger{trigger_targets: [^trigger_target_to_be_deleted]} ->
-  #           # The target of the deleted trigger was the only target, just remove it
-  #           other_data_triggers_for_key
+      {:ok, %{state | data_triggers: next_data_triggers}}
+    else
+      {:ok, state}
+    end
+  end
 
-  #         %DataTrigger{trigger_targets: targets} ->
-  #           # The trigger has other targets, drop the one that is being deleted and update
-  #           new_trigger_targets = Enum.reject(targets, &(&1 == trigger_target_to_be_deleted))
+  defp delete_volatile_trigger(
+         state,
+         {_obj_id, _obj_type},
+         {{:device_trigger, proto_buf_device_trigger}, trigger_target}
+       ) do
+    event_type =
+      EventTypeUtils.pretty_device_event_type(proto_buf_device_trigger.device_event_type)
 
-  #           new_congruent_data_trigger_for_key = %{
-  #             congruent_data_trigger_for_key
-  #             | trigger_targets: new_trigger_targets
-  #           }
+    device_triggers = state.device_triggers
 
-  #           [new_congruent_data_trigger_for_key | other_data_triggers_for_key]
-  #       end
+    updated_targets_list =
+      Map.get(device_triggers, event_type, [])
+      |> Enum.reject(fn target ->
+        target == trigger_target
+      end)
 
-  #     next_data_triggers =
-  #       if is_list(next_data_triggers_for_key) and length(next_data_triggers_for_key) > 0 do
-  #         Map.put(data_triggers, data_trigger_key, next_data_triggers_for_key)
-  #       else
-  #         Map.delete(data_triggers, data_trigger_key)
-  #       end
+    updated_device_triggers = Map.put(device_triggers, event_type, updated_targets_list)
 
-  #     {:ok, %{state | data_triggers: next_data_triggers}}
-  #   else
-  #     {:ok, state}
-  #   end
-  # end
-
-  # defp delete_volatile_trigger(
-  #        state,
-  #        {_obj_id, _obj_type},
-  #        {{:device_trigger, proto_buf_device_trigger}, trigger_target}
-  #      ) do
-  #   event_type =
-  #     EventTypeUtils.pretty_device_event_type(proto_buf_device_trigger.device_event_type)
-
-  #   device_triggers = state.device_triggers
-
-  #   updated_targets_list =
-  #     Map.get(device_triggers, event_type, [])
-  #     |> Enum.reject(fn target ->
-  #       target == trigger_target
-  #     end)
-
-  #   updated_device_triggers = Map.put(device_triggers, event_type, updated_targets_list)
-
-  #   {:ok, %{state | device_triggers: updated_device_triggers}}
-  # end
+    {:ok, %{state | device_triggers: updated_device_triggers}}
+  end
 
   defp reload_groups_on_expiry(state, timestamp, db_client) do
     if state.last_groups_refresh + @groups_lifespan_decimicroseconds <= timestamp do
