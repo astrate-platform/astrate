@@ -28,14 +28,14 @@ defmodule Astarte.DataUpdaterPlant.DataUpdater.Impl do
   # alias Astarte.Core.Mapping.ValueType
   alias Astarte.DataUpdaterPlant.DataUpdater.State
   alias Astarte.Core.Triggers.DataTrigger
-  # alias Astarte.Core.Triggers.SimpleTriggersProtobuf.DataTrigger, as: ProtobufDataTrigger
+  alias Astarte.Core.Triggers.SimpleTriggersProtobuf.DataTrigger, as: ProtobufDataTrigger
   alias Astarte.Core.Triggers.SimpleTriggersProtobuf.DeviceTrigger, as: ProtobufDeviceTrigger
   alias Astarte.Core.Triggers.SimpleTriggersProtobuf.Utils, as: SimpleTriggersProtobufUtils
   alias Astarte.Core.Triggers.SimpleTriggersProtobuf.AMQPTriggerTarget
   # alias Astarte.DataAccess.Data
   alias Astarte.DataAccess.Database
   # alias Astarte.DataAccess.Device, as: DeviceQueries
-  # alias Astarte.DataAccess.Interface, as: InterfaceQueries
+  alias Astarte.DataAccess.Interface, as: InterfaceQueries
   # alias Astarte.DataAccess.Mappings
   alias Astarte.DataUpdaterPlant.DataUpdater.Cache
   # alias Astarte.DataUpdaterPlant.DataUpdater.CachedPath
@@ -127,6 +127,26 @@ defmodule Astarte.DataUpdaterPlant.DataUpdater.Impl do
     end
   end
 
+  @impl Handler
+  def handle_signal(signal, state) do
+    case signal do
+      {:handle_install_volatile_trigger, object_id, object_type, parent_id, simple_trigger_id,
+       simple_trigger, trigger_target} ->
+        install_volatile_trigger(
+          state,
+          object_id,
+          object_type,
+          parent_id,
+          simple_trigger_id,
+          simple_trigger,
+          trigger_target
+        )
+
+      _ ->
+        {:ok, state}
+    end
+  end
+
   def handle_deactivation(_state) do
     Logger.info("Deactivated device process.", tag: "device_process_deactivated")
 
@@ -194,6 +214,102 @@ defmodule Astarte.DataUpdaterPlant.DataUpdater.Impl do
   @impl true
   def terminate(reason, state) do
     _ = Logger.debug("Terminating on #{inspect(reason)}, state: #{inspect(state)}")
+  end
+
+  defp handle_install_volatile_trigger(%State{discard_messages: true} = state, _, _, _, _, _, _) do
+    # Don't care
+    {:ok, state}
+  end
+
+  defp install_volatile_trigger(
+         state,
+         object_id,
+         object_type,
+         parent_id,
+         trigger_id,
+         simple_trigger,
+         trigger_target
+       ) do
+    trigger = SimpleTriggersProtobufUtils.deserialize_simple_trigger(simple_trigger)
+
+    target =
+      SimpleTriggersProtobufUtils.deserialize_trigger_target(trigger_target)
+      |> Map.put(:simple_trigger_id, trigger_id)
+      |> Map.put(:parent_trigger_id, parent_id)
+
+    volatile_triggers_list = [
+      {{object_id, object_type}, {trigger, target}} | state.volatile_triggers
+    ]
+
+    new_state = Map.put(state, :volatile_triggers, volatile_triggers_list)
+
+    if Map.has_key?(new_state.interface_ids_to_name, object_id) do
+      interface_name = Map.get(new_state.interface_ids_to_name, object_id)
+      %InterfaceDescriptor{automaton: automaton} = new_state.interfaces[interface_name]
+
+      case trigger do
+        {:data_trigger, %ProtobufDataTrigger{match_path: "/*"}} ->
+          {:ok, load_trigger(new_state, trigger, target)}
+
+        {:data_trigger, %ProtobufDataTrigger{match_path: match_path}} ->
+          with {:ok, _endpoint_id} <- EndpointsAutomaton.resolve_path(match_path, automaton) do
+            {:ok, load_trigger(new_state, trigger, target)}
+          else
+            {:guessed, _} ->
+              # State rollback here
+              {{:error, :invalid_match_path}, state}
+
+            {:error, :not_found} ->
+              # State rollback here
+              {{:error, :invalid_match_path}, state}
+          end
+      end
+    else
+      case trigger do
+        {:data_trigger, %ProtobufDataTrigger{interface_name: "*"}} ->
+          {:ok, load_trigger(new_state, trigger, target)}
+
+        {:data_trigger,
+         %ProtobufDataTrigger{
+           interface_name: interface_name,
+           interface_major: major,
+           match_path: "/*"
+         }} ->
+          with :ok <-
+                 InterfaceQueries.check_if_interface_exists(state.realm, interface_name, major) do
+            {:ok, new_state}
+          else
+            {:error, reason} ->
+              # State rollback here
+              {{:error, reason}, state}
+          end
+
+        {:data_trigger,
+         %ProtobufDataTrigger{
+           interface_name: interface_name,
+           interface_major: major,
+           match_path: match_path
+         }} ->
+          with {:ok, %InterfaceDescriptor{automaton: automaton}} <-
+                 InterfaceQueries.fetch_interface_descriptor(state.realm, interface_name, major),
+               {:ok, _endpoint_id} <- EndpointsAutomaton.resolve_path(match_path, automaton) do
+            {:ok, new_state}
+          else
+            {:error, :not_found} ->
+              {{:error, :invalid_match_path}, state}
+
+            {:guessed, _} ->
+              {{:error, :invalid_match_path}, state}
+
+            {:error, reason} ->
+              # State rollback here
+              {{:error, reason}, state}
+          end
+
+        {:device_trigger, _} ->
+          {:ok, load_trigger(new_state, trigger, target)}
+      end
+    end
   end
 
   # def handle_heartbeat(%State{discard_messages: true} = state, _, message_id, _) do
@@ -1669,107 +1785,6 @@ defmodule Astarte.DataUpdaterPlant.DataUpdater.Impl do
   #   )
 
   #   update_stats(new_state, "", nil, path, payload)
-  # end
-
-  # def handle_install_volatile_trigger(
-  #       %State{discard_messages: true} = state,
-  #       _,
-  #       message_id,
-  #       _
-  #     ) do
-  #   MessageTracker.ack_delivery(state.message_tracker, message_id)
-  #   state
-  # end
-
-  # def handle_install_volatile_trigger(
-  #       state,
-  #       object_id,
-  #       object_type,
-  #       parent_id,
-  #       trigger_id,
-  #       simple_trigger,
-  #       trigger_target
-  #     ) do
-  #   trigger = SimpleTriggersProtobufUtils.deserialize_simple_trigger(simple_trigger)
-
-  #   target =
-  #     SimpleTriggersProtobufUtils.deserialize_trigger_target(trigger_target)
-  #     |> Map.put(:simple_trigger_id, trigger_id)
-  #     |> Map.put(:parent_trigger_id, parent_id)
-
-  #   volatile_triggers_list = [
-  #     {{object_id, object_type}, {trigger, target}} | state.volatile_triggers
-  #   ]
-
-  #   new_state = Map.put(state, :volatile_triggers, volatile_triggers_list)
-
-  #   if Map.has_key?(new_state.interface_ids_to_name, object_id) do
-  #     interface_name = Map.get(new_state.interface_ids_to_name, object_id)
-  #     %InterfaceDescriptor{automaton: automaton} = new_state.interfaces[interface_name]
-
-  #     case trigger do
-  #       {:data_trigger, %ProtobufDataTrigger{match_path: "/*"}} ->
-  #         {:ok, load_trigger(new_state, trigger, target)}
-
-  #       {:data_trigger, %ProtobufDataTrigger{match_path: match_path}} ->
-  #         with {:ok, _endpoint_id} <- EndpointsAutomaton.resolve_path(match_path, automaton) do
-  #           {:ok, load_trigger(new_state, trigger, target)}
-  #         else
-  #           {:guessed, _} ->
-  #             # State rollback here
-  #             {{:error, :invalid_match_path}, state}
-
-  #           {:error, :not_found} ->
-  #             # State rollback here
-  #             {{:error, :invalid_match_path}, state}
-  #         end
-  #     end
-  #   else
-  #     case trigger do
-  #       {:data_trigger, %ProtobufDataTrigger{interface_name: "*"}} ->
-  #         {:ok, load_trigger(new_state, trigger, target)}
-
-  #       {:data_trigger,
-  #        %ProtobufDataTrigger{
-  #          interface_name: interface_name,
-  #          interface_major: major,
-  #          match_path: "/*"
-  #        }} ->
-  #         with :ok <-
-  #                InterfaceQueries.check_if_interface_exists(state.realm, interface_name, major) do
-  #           {:ok, new_state}
-  #         else
-  #           {:error, reason} ->
-  #             # State rollback here
-  #             {{:error, reason}, state}
-  #         end
-
-  #       {:data_trigger,
-  #        %ProtobufDataTrigger{
-  #          interface_name: interface_name,
-  #          interface_major: major,
-  #          match_path: match_path
-  #        }} ->
-  #         with {:ok, %InterfaceDescriptor{automaton: automaton}} <-
-  #                InterfaceQueries.fetch_interface_descriptor(state.realm, interface_name, major),
-  #              {:ok, _endpoint_id} <- EndpointsAutomaton.resolve_path(match_path, automaton) do
-  #           {:ok, new_state}
-  #         else
-  #           {:error, :not_found} ->
-  #             {{:error, :invalid_match_path}, state}
-
-  #           {:guessed, _} ->
-  #             {{:error, :invalid_match_path}, state}
-
-  #           {:error, reason} ->
-  #             # State rollback here
-  #             {{:error, reason}, state}
-  #         end
-
-  #       {:device_trigger, _} ->
-  #         {:ok, load_trigger(new_state, trigger, target)}
-  #     end
-  #   end
   # end
 
   # def handle_delete_volatile_trigger(%State{discard_messages: true} = state, _, message_id, _) do

@@ -30,6 +30,8 @@ defmodule Astarte.DataUpdaterPlant.RPC.Handler do
     Reply
   }
 
+  alias Astarte.DataUpdaterPlant.VolatileTriggerHandler
+
   require Logger
 
   def handle_rpc(payload) do
@@ -47,30 +49,8 @@ defmodule Astarte.DataUpdaterPlant.RPC.Handler do
     {:ok, call_tuple}
   end
 
-  defp call_rpc(
-         {:install_volatile_trigger,
-          %InstallVolatileTrigger{
-            realm_name: realm_name,
-            device_id: device_id,
-            object_id: object_id,
-            object_type: object_type,
-            parent_id: parent_id,
-            simple_trigger_id: simple_trigger_id,
-            simple_trigger: simple_trigger,
-            trigger_target: trigger_target
-          }}
-       ) do
-    with :ok <-
-           DataUpdater.handle_install_volatile_trigger(
-             realm_name,
-             device_id,
-             object_id,
-             object_type,
-             parent_id,
-             simple_trigger_id,
-             simple_trigger,
-             trigger_target
-           ) do
+  defp call_rpc({:install_volatile_trigger, %InstallVolatileTrigger{} = trigger}) do
+    with :ok <- VolatileTriggerHandler.install_volatile_trigger(trigger) do
       %GenericOkReply{}
       |> encode_reply()
       |> ok_wrap()
