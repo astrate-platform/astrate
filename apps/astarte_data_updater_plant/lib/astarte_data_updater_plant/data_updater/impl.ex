@@ -40,7 +40,7 @@ defmodule Astarte.DataUpdaterPlant.DataUpdater.Impl do
   alias Astarte.DataUpdaterPlant.DataUpdater.Cache
   # alias Astarte.DataUpdaterPlant.DataUpdater.CachedPath
   alias Astarte.DataUpdaterPlant.DataUpdater.EventTypeUtils
-  # alias Astarte.DataUpdaterPlant.DataUpdater.PayloadsDecoder
+  alias Astarte.DataUpdaterPlant.DataUpdater.PayloadsDecoder
   alias Astarte.DataUpdaterPlant.DataUpdater.Queries
   alias Astarte.DataUpdaterPlant.RPC.VMQPlugin
   alias Astarte.DataUpdaterPlant.TriggersHandler
@@ -130,6 +130,9 @@ defmodule Astarte.DataUpdaterPlant.DataUpdater.Impl do
       "internal" ->
         %{@internal_path_header => internal_path} = headers
         handle_internal(state, internal_path, payload, timestamp)
+
+      "introspection" ->
+        handle_introspection(state, payload, timestamp)
 
       _ ->
         # ack to discard unhandled messages
@@ -419,6 +422,30 @@ defmodule Astarte.DataUpdaterPlant.DataUpdater.Impl do
     )
 
     {:ok, update_stats(state, "", nil, path, payload)}
+  end
+
+  @impl Handler
+  def handle_continue({:invalid_introspection, payload, timestamp}, state) do
+    :telemetry.execute(
+      [:astarte, :data_updater_plant, :data_updater, :discarded_introspection],
+      %{},
+      %{realm: state.realm}
+    )
+
+    base64_payload = Base.encode64(payload)
+
+    error_metadata = %{
+      "base64_payload" => base64_payload
+    }
+
+    execute_device_error_triggers(
+      state,
+      "invalid_introspection",
+      error_metadata,
+      timestamp
+    )
+
+    {:ok, update_stats(state, "", nil, "", payload)}
   end
 
   # def start_device_deletion(state, timestamp) do
@@ -1388,272 +1415,253 @@ defmodule Astarte.DataUpdaterPlant.DataUpdater.Impl do
     }
   end
 
-  # def handle_introspection(%State{discard_messages: true} = state, _, message_id, _) do
-  #   MessageTracker.discard(state.message_tracker, message_id)
-  #   state
-  # end
+  def handle_introspection(%State{discard_messages: true} = state, _, _) do
+    {:ack, :discard_messages, state}
+  end
 
-  # def handle_introspection(state, payload, message_id, timestamp) do
-  #   with {:ok, new_introspection_list} <- PayloadsDecoder.parse_introspection(payload) do
-  #     process_introspection(state, new_introspection_list, payload, message_id, timestamp)
-  #   else
-  #     {:error, :invalid_introspection} ->
-  #       Logger.warning("Discarding invalid introspection: #{inspect(Base.encode64(payload))}.",
-  #         tag: "invalid_introspection"
-  #       )
+  def handle_introspection(state, payload, timestamp) do
+    with {:ok, new_introspection_list} <- PayloadsDecoder.parse_introspection(payload) do
+      process_introspection(state, new_introspection_list, payload, timestamp)
+    else
+      {:error, :invalid_introspection} ->
+        Logger.warning("Discarding invalid introspection: #{inspect(Base.encode64(payload))}.",
+          tag: "invalid_introspection"
+        )
 
-  #       {:ok, new_state} = ask_clean_session(state, timestamp)
-  #       MessageTracker.discard(new_state.message_tracker, message_id)
+        {:ok, new_state} = ask_clean_session(state, timestamp)
+        continue_arg = {:invalid_introspection, payload, timestamp}
 
-  #       :telemetry.execute(
-  #         [:astarte, :data_updater_plant, :data_updater, :discarded_introspection],
-  #         %{},
-  #         %{realm: new_state.realm}
-  #       )
+        {:discard, :invalid_introspection, new_state, {:continue, continue_arg}}
+    end
+  end
 
-  #       base64_payload = Base.encode64(payload)
+  def process_introspection(state, new_introspection_list, payload, timestamp) do
+    {:ok, db_client} = Database.connect(realm: state.realm)
 
-  #       error_metadata = %{
-  #         "base64_payload" => base64_payload
-  #       }
+    new_state = execute_time_based_actions(state, timestamp, db_client)
 
-  #       execute_device_error_triggers(
-  #         new_state,
-  #         "invalid_introspection",
-  #         error_metadata,
-  #         timestamp
-  #       )
+    timestamp_ms = div(timestamp, 10_000)
 
-  #       update_stats(new_state, "", nil, "", payload)
-  #   end
-  # end
+    {db_introspection_map, db_introspection_minor_map} =
+      List.foldl(new_introspection_list, {%{}, %{}}, fn {interface, major, minor},
+                                                        {introspection_map,
+                                                         introspection_minor_map} ->
+        introspection_map = Map.put(introspection_map, interface, major)
+        introspection_minor_map = Map.put(introspection_minor_map, interface, minor)
 
-  # def process_introspection(state, new_introspection_list, payload, message_id, timestamp) do
-  #   {:ok, db_client} = Database.connect(realm: state.realm)
+        {introspection_map, introspection_minor_map}
+      end)
 
-  #   new_state = execute_time_based_actions(state, timestamp, db_client)
+    any_interface_id = SimpleTriggersProtobufUtils.any_interface_object_id()
 
-  #   timestamp_ms = div(timestamp, 10_000)
+    %{device_triggers: device_triggers} =
+      populate_triggers_for_object!(new_state, db_client, any_interface_id, :any_interface)
 
-  #   {db_introspection_map, db_introspection_minor_map} =
-  #     List.foldl(new_introspection_list, {%{}, %{}}, fn {interface, major, minor},
-  #                                                       {introspection_map,
-  #                                                        introspection_minor_map} ->
-  #       introspection_map = Map.put(introspection_map, interface, major)
-  #       introspection_minor_map = Map.put(introspection_minor_map, interface, minor)
+    realm = new_state.realm
+    device_id_string = Device.encode_device_id(new_state.device_id)
 
-  #       {introspection_map, introspection_minor_map}
-  #     end)
+    on_introspection_target_with_policy_list =
+      Map.get(device_triggers, :on_incoming_introspection, [])
+      |> Enum.map(fn target ->
+        {target, Map.get(state.trigger_id_to_policy_name, target.parent_trigger_id)}
+      end)
 
-  #   any_interface_id = SimpleTriggersProtobufUtils.any_interface_object_id()
+    TriggersHandler.incoming_introspection(
+      on_introspection_target_with_policy_list,
+      realm,
+      device_id_string,
+      payload,
+      timestamp_ms
+    )
 
-  #   %{device_triggers: device_triggers} =
-  #     populate_triggers_for_object!(new_state, db_client, any_interface_id, :any_interface)
+    # TODO: implement here object_id handling for a certain interface name. idea: introduce interface_family_id
 
-  #   realm = new_state.realm
-  #   device_id_string = Device.encode_device_id(new_state.device_id)
+    current_sorted_introspection =
+      new_state.introspection
+      |> Enum.map(fn x -> x end)
+      |> Enum.sort()
 
-  #   on_introspection_target_with_policy_list =
-  #     Map.get(device_triggers, :on_incoming_introspection, [])
-  #     |> Enum.map(fn target ->
-  #       {target, Map.get(state.trigger_id_to_policy_name, target.parent_trigger_id)}
-  #     end)
+    new_sorted_introspection =
+      db_introspection_map
+      |> Enum.map(fn x -> x end)
+      |> Enum.sort()
 
-  #   TriggersHandler.incoming_introspection(
-  #     on_introspection_target_with_policy_list,
-  #     realm,
-  #     device_id_string,
-  #     payload,
-  #     timestamp_ms
-  #   )
+    diff = List.myers_difference(current_sorted_introspection, new_sorted_introspection)
 
-  #   # TODO: implement here object_id handling for a certain interface name. idea: introduce interface_family_id
+    Enum.each(diff, fn {change_type, changed_interfaces} ->
+      case change_type do
+        :ins ->
+          Logger.debug("Adding interfaces to introspection: #{inspect(changed_interfaces)}.")
 
-  #   current_sorted_introspection =
-  #     new_state.introspection
-  #     |> Enum.map(fn x -> x end)
-  #     |> Enum.sort()
+          Enum.each(changed_interfaces, fn {interface_name, interface_major} ->
+            :ok =
+              if interface_major == 0 do
+                Queries.register_device_with_interface(
+                  db_client,
+                  state.device_id,
+                  interface_name,
+                  0
+                )
+              else
+                :ok
+              end
 
-  #   new_sorted_introspection =
-  #     db_introspection_map
-  #     |> Enum.map(fn x -> x end)
-  #     |> Enum.sort()
+            minor = Map.get(db_introspection_minor_map, interface_name)
 
-  #   diff = List.myers_difference(current_sorted_introspection, new_sorted_introspection)
+            interface_added_target_with_policy_list =
+              (Map.get(
+                 device_triggers,
+                 {:on_interface_added, CQLUtils.interface_id(interface_name, interface_major)},
+                 []
+               ) ++
+                 Map.get(device_triggers, {:on_interface_added, :any_interface}, []))
+              |> Enum.map(fn target ->
+                {target, Map.get(state.trigger_id_to_policy_name, target.parent_trigger_id)}
+              end)
 
-  #   Enum.each(diff, fn {change_type, changed_interfaces} ->
-  #     case change_type do
-  #       :ins ->
-  #         Logger.debug("Adding interfaces to introspection: #{inspect(changed_interfaces)}.")
+            TriggersHandler.interface_added(
+              interface_added_target_with_policy_list,
+              realm,
+              device_id_string,
+              interface_name,
+              interface_major,
+              minor,
+              timestamp_ms
+            )
+          end)
 
-  #         Enum.each(changed_interfaces, fn {interface_name, interface_major} ->
-  #           :ok =
-  #             if interface_major == 0 do
-  #               Queries.register_device_with_interface(
-  #                 db_client,
-  #                 state.device_id,
-  #                 interface_name,
-  #                 0
-  #               )
-  #             else
-  #               :ok
-  #             end
+        :del ->
+          Logger.debug("Removing interfaces from introspection: #{inspect(changed_interfaces)}.")
 
-  #           minor = Map.get(db_introspection_minor_map, interface_name)
+          Enum.each(changed_interfaces, fn {interface_name, interface_major} ->
+            :ok =
+              if interface_major == 0 do
+                Queries.unregister_device_with_interface(
+                  db_client,
+                  state.device_id,
+                  interface_name,
+                  0
+                )
+              else
+                :ok
+              end
 
-  #           interface_added_target_with_policy_list =
-  #             (Map.get(
-  #                device_triggers,
-  #                {:on_interface_added, CQLUtils.interface_id(interface_name, interface_major)},
-  #                []
-  #              ) ++
-  #                Map.get(device_triggers, {:on_interface_added, :any_interface}, []))
-  #             |> Enum.map(fn target ->
-  #               {target, Map.get(state.trigger_id_to_policy_name, target.parent_trigger_id)}
-  #             end)
+            interface_removed_target_with_policy_list =
+              (Map.get(
+                 device_triggers,
+                 {:on_interface_removed, CQLUtils.interface_id(interface_name, interface_major)},
+                 []
+               ) ++
+                 Map.get(device_triggers, {:on_interface_removed, :any_interface}, []))
+              |> Enum.map(fn target ->
+                {target, Map.get(state.trigger_id_to_policy_name, target.parent_trigger_id)}
+              end)
 
-  #           TriggersHandler.interface_added(
-  #             interface_added_target_with_policy_list,
-  #             realm,
-  #             device_id_string,
-  #             interface_name,
-  #             interface_major,
-  #             minor,
-  #             timestamp_ms
-  #           )
-  #         end)
+            TriggersHandler.interface_removed(
+              interface_removed_target_with_policy_list,
+              realm,
+              device_id_string,
+              interface_name,
+              interface_major,
+              timestamp_ms
+            )
+          end)
 
-  #       :del ->
-  #         Logger.debug("Removing interfaces from introspection: #{inspect(changed_interfaces)}.")
+        :eq ->
+          Logger.debug("#{inspect(changed_interfaces)} are already on device introspection.")
+      end
+    end)
 
-  #         Enum.each(changed_interfaces, fn {interface_name, interface_major} ->
-  #           :ok =
-  #             if interface_major == 0 do
-  #               Queries.unregister_device_with_interface(
-  #                 db_client,
-  #                 state.device_id,
-  #                 interface_name,
-  #                 0
-  #               )
-  #             else
-  #               :ok
-  #             end
+    {added_interfaces, removed_interfaces} =
+      Enum.reduce(diff, {%{}, %{}}, fn {change_type, changed_interfaces}, {add_acc, rm_acc} ->
+        case change_type do
+          :ins ->
+            changed_map = Enum.into(changed_interfaces, %{})
+            {Map.merge(add_acc, changed_map), rm_acc}
 
-  #           interface_removed_target_with_policy_list =
-  #             (Map.get(
-  #                device_triggers,
-  #                {:on_interface_removed, CQLUtils.interface_id(interface_name, interface_major)},
-  #                []
-  #              ) ++
-  #                Map.get(device_triggers, {:on_interface_removed, :any_interface}, []))
-  #             |> Enum.map(fn target ->
-  #               {target, Map.get(state.trigger_id_to_policy_name, target.parent_trigger_id)}
-  #             end)
+          :del ->
+            changed_map = Enum.into(changed_interfaces, %{})
+            {add_acc, Map.merge(rm_acc, changed_map)}
 
-  #           TriggersHandler.interface_removed(
-  #             interface_removed_target_with_policy_list,
-  #             realm,
-  #             device_id_string,
-  #             interface_name,
-  #             interface_major,
-  #             timestamp_ms
-  #           )
-  #         end)
+          :eq ->
+            {add_acc, rm_acc}
+        end
+      end)
 
-  #       :eq ->
-  #         Logger.debug("#{inspect(changed_interfaces)} are already on device introspection.")
-  #     end
-  #   end)
+    {:ok, old_minors} = Queries.fetch_device_introspection_minors(db_client, state.device_id)
 
-  #   {added_interfaces, removed_interfaces} =
-  #     Enum.reduce(diff, {%{}, %{}}, fn {change_type, changed_interfaces}, {add_acc, rm_acc} ->
-  #       case change_type do
-  #         :ins ->
-  #           changed_map = Enum.into(changed_interfaces, %{})
-  #           {Map.merge(add_acc, changed_map), rm_acc}
+    readded_introspection = Enum.to_list(added_interfaces)
 
-  #         :del ->
-  #           changed_map = Enum.into(changed_interfaces, %{})
-  #           {add_acc, Map.merge(rm_acc, changed_map)}
+    old_introspection =
+      Enum.reduce(removed_interfaces, %{}, fn {iface, _major}, acc ->
+        prev_major = Map.fetch!(state.introspection, iface)
+        prev_minor = Map.get(old_minors, iface, 0)
+        Map.put(acc, {iface, prev_major}, prev_minor)
+      end)
 
-  #         :eq ->
-  #           {add_acc, rm_acc}
-  #       end
-  #     end)
+    :ok = Queries.add_old_interfaces(db_client, new_state.device_id, old_introspection)
+    :ok = Queries.remove_old_interfaces(db_client, new_state.device_id, readded_introspection)
 
-  #   {:ok, old_minors} = Queries.fetch_device_introspection_minors(db_client, state.device_id)
+    # Deliver interface_minor_updated triggers if needed
+    for {interface_name, old_minor} <- old_minors,
+        interface_major = Map.fetch!(state.introspection, interface_name),
+        Map.get(db_introspection_map, interface_name) == interface_major,
+        new_minor = Map.get(db_introspection_minor_map, interface_name),
+        new_minor != old_minor do
+      interface_id = CQLUtils.interface_id(interface_name, interface_major)
 
-  #   readded_introspection = Enum.to_list(added_interfaces)
+      interface_minor_updated_target_with_policy_list =
+        Map.get(device_triggers, {:on_interface_minor_updated, interface_id}, [])
+        |> Enum.map(fn target ->
+          {target, Map.get(state.trigger_id_to_policy_name, target.parent_trigger_id)}
+        end)
 
-  #   old_introspection =
-  #     Enum.reduce(removed_interfaces, %{}, fn {iface, _major}, acc ->
-  #       prev_major = Map.fetch!(state.introspection, iface)
-  #       prev_minor = Map.get(old_minors, iface, 0)
-  #       Map.put(acc, {iface, prev_major}, prev_minor)
-  #     end)
+      TriggersHandler.interface_minor_updated(
+        interface_minor_updated_target_with_policy_list,
+        realm,
+        device_id_string,
+        interface_name,
+        interface_major,
+        old_minor,
+        new_minor,
+        timestamp_ms
+      )
+    end
 
-  #   :ok = Queries.add_old_interfaces(db_client, new_state.device_id, old_introspection)
-  #   :ok = Queries.remove_old_interfaces(db_client, new_state.device_id, readded_introspection)
+    # Removed/updated interfaces must be purged away, otherwise data will be written using old
+    # interface_id.
+    remove_interfaces_list = Map.keys(removed_interfaces)
 
-  #   # Deliver interface_minor_updated triggers if needed
-  #   for {interface_name, old_minor} <- old_minors,
-  #       interface_major = Map.fetch!(state.introspection, interface_name),
-  #       Map.get(db_introspection_map, interface_name) == interface_major,
-  #       new_minor = Map.get(db_introspection_minor_map, interface_name),
-  #       new_minor != old_minor do
-  #     interface_id = CQLUtils.interface_id(interface_name, interface_major)
+    {interfaces_to_drop_map, _} = Map.split(new_state.interfaces, remove_interfaces_list)
+    interfaces_to_drop_list = Map.keys(interfaces_to_drop_map)
 
-  #     interface_minor_updated_target_with_policy_list =
-  #       Map.get(device_triggers, {:on_interface_minor_updated, interface_id}, [])
-  #       |> Enum.map(fn target ->
-  #         {target, Map.get(state.trigger_id_to_policy_name, target.parent_trigger_id)}
-  #       end)
+    # Forget interfaces wants a list of already loaded interfaces, otherwise it will crash
+    new_state = forget_interfaces(new_state, interfaces_to_drop_list)
 
-  #     TriggersHandler.interface_minor_updated(
-  #       interface_minor_updated_target_with_policy_list,
-  #       realm,
-  #       device_id_string,
-  #       interface_name,
-  #       interface_major,
-  #       old_minor,
-  #       new_minor,
-  #       timestamp_ms
-  #     )
-  #   end
+    Queries.update_device_introspection!(
+      db_client,
+      new_state.device_id,
+      db_introspection_map,
+      db_introspection_minor_map
+    )
 
-  #   # Removed/updated interfaces must be purged away, otherwise data will be written using old
-  #   # interface_id.
-  #   remove_interfaces_list = Map.keys(removed_interfaces)
+    :telemetry.execute(
+      [:astarte, :data_updater_plant, :data_updater, :processed_introspection],
+      %{},
+      %{realm: realm}
+    )
 
-  #   {interfaces_to_drop_map, _} = Map.split(new_state.interfaces, remove_interfaces_list)
-  #   interfaces_to_drop_list = Map.keys(interfaces_to_drop_map)
+    final_state = %{
+      new_state
+      | introspection: db_introspection_map,
+        paths_cache: Cache.new(@paths_cache_size),
+        total_received_msgs: new_state.total_received_msgs + 1,
+        total_received_bytes: new_state.total_received_bytes + byte_size(payload)
+    }
 
-  #   # Forget interfaces wants a list of already loaded interfaces, otherwise it will crash
-  #   new_state = forget_interfaces(new_state, interfaces_to_drop_list)
-
-  #   Queries.update_device_introspection!(
-  #     db_client,
-  #     new_state.device_id,
-  #     db_introspection_map,
-  #     db_introspection_minor_map
-  #   )
-
-  #   MessageTracker.ack_delivery(new_state.message_tracker, message_id)
-
-  #   :telemetry.execute(
-  #     [:astarte, :data_updater_plant, :data_updater, :processed_introspection],
-  #     %{},
-  #     %{realm: realm}
-  #   )
-
-  #   %{
-  #     new_state
-  #     | introspection: db_introspection_map,
-  #       paths_cache: Cache.new(@paths_cache_size),
-  #       total_received_msgs: new_state.total_received_msgs + 1,
-  #       total_received_bytes: new_state.total_received_bytes + byte_size(payload)
-  #   }
-  # end
+    # TODO before we had ack -> telemetry -> update state, check if doing this is still ok
+    {:ack, :ok, final_state}
+  end
 
   # def handle_control(%State{discard_messages: true} = state, _, _, message_id, _) do
   #   MessageTracker.discard(state.message_tracker, message_id)
