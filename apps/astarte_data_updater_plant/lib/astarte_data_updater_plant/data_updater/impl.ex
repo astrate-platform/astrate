@@ -23,33 +23,33 @@ defmodule Astarte.DataUpdaterPlant.DataUpdater.Impl do
   alias Astarte.DataUpdaterPlant.Config
   alias Astarte.Core.Device
   alias Astarte.Core.InterfaceDescriptor
-  # alias Astarte.Core.Mapping
+  alias Astarte.Core.Mapping
   alias Astarte.Core.Mapping.EndpointsAutomaton
-  # alias Astarte.Core.Mapping.ValueType
+  alias Astarte.Core.Mapping.ValueType
   alias Astarte.DataUpdaterPlant.DataUpdater.State
   alias Astarte.Core.Triggers.DataTrigger
   alias Astarte.Core.Triggers.SimpleTriggersProtobuf.DataTrigger, as: ProtobufDataTrigger
   alias Astarte.Core.Triggers.SimpleTriggersProtobuf.DeviceTrigger, as: ProtobufDeviceTrigger
   alias Astarte.Core.Triggers.SimpleTriggersProtobuf.Utils, as: SimpleTriggersProtobufUtils
   alias Astarte.Core.Triggers.SimpleTriggersProtobuf.AMQPTriggerTarget
-  # alias Astarte.DataAccess.Data
+  alias Astarte.DataAccess.Data
   alias Astarte.DataAccess.Database
-  # alias Astarte.DataAccess.Device, as: DeviceQueries
+  alias Astarte.DataAccess.Device, as: DeviceQueries
   alias Astarte.DataAccess.Interface, as: InterfaceQueries
-  # alias Astarte.DataAccess.Mappings
+  alias Astarte.DataAccess.Mappings
   alias Astarte.DataUpdaterPlant.DataUpdater.Cache
-  # alias Astarte.DataUpdaterPlant.DataUpdater.CachedPath
+  alias Astarte.DataUpdaterPlant.DataUpdater.CachedPath
   alias Astarte.DataUpdaterPlant.DataUpdater.EventTypeUtils
   alias Astarte.DataUpdaterPlant.DataUpdater.PayloadsDecoder
   alias Astarte.DataUpdaterPlant.DataUpdater.Queries
   alias Astarte.DataUpdaterPlant.RPC.VMQPlugin
   alias Astarte.DataUpdaterPlant.TriggersHandler
-  # alias Astarte.DataUpdaterPlant.ValueMatchOperators
+  alias Astarte.DataUpdaterPlant.ValueMatchOperators
   alias Astarte.DataUpdaterPlant.TriggerPolicy.Queries, as: PolicyQueries
   require Logger
 
   @paths_cache_size 32
-  # @interface_lifespan_decimicroseconds 60 * 10 * 1000 * 10000
+  @interface_lifespan_decimicroseconds 60 * 10 * 1000 * 10000
   @device_triggers_lifespan_decimicroseconds 60 * 10 * 1000 * 10000
   @groups_lifespan_decimicroseconds 60 * 10 * 1000 * 10000
   @deletion_refresh_lifespan_decimicroseconds 60 * 10 * 1000 * 10000
@@ -60,8 +60,8 @@ defmodule Astarte.DataUpdaterPlant.DataUpdater.Impl do
   # @device_id_header "x_astarte_device_id"
   @ip_header "x_astarte_remote_ip"
   # @control_path_header "x_astarte_control_path"
-  # @interface_header "x_astarte_interface"
-  # @path_header "x_astarte_path"
+  @interface_header "x_astarte_interface"
+  @path_header "x_astarte_path"
   @internal_path_header "x_astarte_internal_path"
 
   @impl true
@@ -133,6 +133,10 @@ defmodule Astarte.DataUpdaterPlant.DataUpdater.Impl do
 
       "introspection" ->
         handle_introspection(state, payload, timestamp)
+
+      "data" ->
+        %{@interface_header => interface, @path_header => path} = headers
+        handle_data(state, interface, path, payload, timestamp)
 
       _ ->
         # ack to discard unhandled messages
@@ -471,221 +475,221 @@ defmodule Astarte.DataUpdaterPlant.DataUpdater.Impl do
     {:ack, :ok, %{new_state | last_seen_message: timestamp}}
   end
 
-  # defp execute_incoming_data_triggers(
-  #        state,
-  #        device,
-  #        interface,
-  #        interface_id,
-  #        path,
-  #        endpoint_id,
-  #        payload,
-  #        value,
-  #        timestamp
-  #      ) do
-  #   realm = state.realm
+  defp execute_incoming_data_triggers(
+         state,
+         device,
+         interface,
+         interface_id,
+         path,
+         endpoint_id,
+         payload,
+         value,
+         timestamp
+       ) do
+    realm = state.realm
 
-  #   # any interface triggers
-  #   get_on_data_triggers(state, :on_incoming_data, :any_interface, :any_endpoint)
-  #   |> Enum.each(fn trigger ->
-  #     target_with_policy_list = get_target_with_policy_list(state, trigger)
+    # any interface triggers
+    get_on_data_triggers(state, :on_incoming_data, :any_interface, :any_endpoint)
+    |> Enum.each(fn trigger ->
+      target_with_policy_list = get_target_with_policy_list(state, trigger)
 
-  #     TriggersHandler.incoming_data(
-  #       target_with_policy_list,
-  #       realm,
-  #       device,
-  #       interface,
-  #       path,
-  #       payload,
-  #       timestamp
-  #     )
-  #   end)
+      TriggersHandler.incoming_data(
+        target_with_policy_list,
+        realm,
+        device,
+        interface,
+        path,
+        payload,
+        timestamp
+      )
+    end)
 
-  #   # any endpoint triggers
-  #   get_on_data_triggers(state, :on_incoming_data, interface_id, :any_endpoint)
-  #   |> Enum.each(fn trigger ->
-  #     target_with_policy_list = get_target_with_policy_list(state, trigger)
+    # any endpoint triggers
+    get_on_data_triggers(state, :on_incoming_data, interface_id, :any_endpoint)
+    |> Enum.each(fn trigger ->
+      target_with_policy_list = get_target_with_policy_list(state, trigger)
 
-  #     TriggersHandler.incoming_data(
-  #       target_with_policy_list,
-  #       realm,
-  #       device,
-  #       interface,
-  #       path,
-  #       payload,
-  #       timestamp
-  #     )
-  #   end)
+      TriggersHandler.incoming_data(
+        target_with_policy_list,
+        realm,
+        device,
+        interface,
+        path,
+        payload,
+        timestamp
+      )
+    end)
 
-  #   # incoming data triggers
-  #   get_on_data_triggers(state, :on_incoming_data, interface_id, endpoint_id, path, value)
-  #   |> Enum.each(fn trigger ->
-  #     target_with_policy_list = get_target_with_policy_list(state, trigger)
+    # incoming data triggers
+    get_on_data_triggers(state, :on_incoming_data, interface_id, endpoint_id, path, value)
+    |> Enum.each(fn trigger ->
+      target_with_policy_list = get_target_with_policy_list(state, trigger)
 
-  #     TriggersHandler.incoming_data(
-  #       target_with_policy_list,
-  #       realm,
-  #       device,
-  #       interface,
-  #       path,
-  #       payload,
-  #       timestamp
-  #     )
-  #   end)
+      TriggersHandler.incoming_data(
+        target_with_policy_list,
+        realm,
+        device,
+        interface,
+        path,
+        payload,
+        timestamp
+      )
+    end)
 
-  #   :ok
-  # end
+    :ok
+  end
 
-  # defp get_target_with_policy_list(state, trigger) do
-  #   trigger.trigger_targets
-  #   |> Enum.map(fn target ->
-  #     {target, Map.get(state.trigger_id_to_policy_name, target.parent_trigger_id)}
-  #   end)
-  # end
+  defp get_target_with_policy_list(state, trigger) do
+    trigger.trigger_targets
+    |> Enum.map(fn target ->
+      {target, Map.get(state.trigger_id_to_policy_name, target.parent_trigger_id)}
+    end)
+  end
 
-  # defp get_value_change_triggers(state, interface_id, endpoint_id, path, value) do
-  #   value_change_triggers =
-  #     get_on_data_triggers(state, :on_value_change, interface_id, endpoint_id, path, value)
+  defp get_value_change_triggers(state, interface_id, endpoint_id, path, value) do
+    value_change_triggers =
+      get_on_data_triggers(state, :on_value_change, interface_id, endpoint_id, path, value)
 
-  #   value_change_applied_triggers =
-  #     get_on_data_triggers(
-  #       state,
-  #       :on_value_change_applied,
-  #       interface_id,
-  #       endpoint_id,
-  #       path,
-  #       value
-  #     )
+    value_change_applied_triggers =
+      get_on_data_triggers(
+        state,
+        :on_value_change_applied,
+        interface_id,
+        endpoint_id,
+        path,
+        value
+      )
 
-  #   path_created_triggers =
-  #     get_on_data_triggers(state, :on_path_created, interface_id, endpoint_id, path, value)
+    path_created_triggers =
+      get_on_data_triggers(state, :on_path_created, interface_id, endpoint_id, path, value)
 
-  #   path_removed_triggers =
-  #     get_on_data_triggers(state, :on_path_removed, interface_id, endpoint_id, path)
+    path_removed_triggers =
+      get_on_data_triggers(state, :on_path_removed, interface_id, endpoint_id, path)
 
-  #   if value_change_triggers != [] or value_change_applied_triggers != [] or
-  #        path_created_triggers != [] do
-  #     {:ok,
-  #      {value_change_triggers, value_change_applied_triggers, path_created_triggers,
-  #       path_removed_triggers}}
-  #   else
-  #     {:no_value_change_triggers, nil}
-  #   end
-  # end
+    if value_change_triggers != [] or value_change_applied_triggers != [] or
+         path_created_triggers != [] do
+      {:ok,
+       {value_change_triggers, value_change_applied_triggers, path_created_triggers,
+        path_removed_triggers}}
+    else
+      {:no_value_change_triggers, nil}
+    end
+  end
 
-  # defp execute_pre_change_triggers(
-  #        {value_change_triggers, _, _, _},
-  #        realm,
-  #        device_id_string,
-  #        interface_name,
-  #        path,
-  #        previous_value,
-  #        value,
-  #        timestamp,
-  #        trigger_id_to_policy_name_map
-  #      ) do
-  #   old_bson_value = Cyanide.encode!(%{v: previous_value})
-  #   payload = Cyanide.encode!(%{v: value})
+  defp execute_pre_change_triggers(
+         {value_change_triggers, _, _, _},
+         realm,
+         device_id_string,
+         interface_name,
+         path,
+         previous_value,
+         value,
+         timestamp,
+         trigger_id_to_policy_name_map
+       ) do
+    old_bson_value = Cyanide.encode!(%{v: previous_value})
+    payload = Cyanide.encode!(%{v: value})
 
-  #   if previous_value != value do
-  #     Enum.each(value_change_triggers, fn trigger ->
-  #       trigger_target_with_policy_list =
-  #         trigger.trigger_targets
-  #         |> Enum.map(fn target ->
-  #           {target, Map.get(trigger_id_to_policy_name_map, target.parent_trigger_id)}
-  #         end)
+    if previous_value != value do
+      Enum.each(value_change_triggers, fn trigger ->
+        trigger_target_with_policy_list =
+          trigger.trigger_targets
+          |> Enum.map(fn target ->
+            {target, Map.get(trigger_id_to_policy_name_map, target.parent_trigger_id)}
+          end)
 
-  #       TriggersHandler.value_change(
-  #         trigger_target_with_policy_list,
-  #         realm,
-  #         device_id_string,
-  #         interface_name,
-  #         path,
-  #         old_bson_value,
-  #         payload,
-  #         timestamp
-  #       )
-  #     end)
-  #   end
+        TriggersHandler.value_change(
+          trigger_target_with_policy_list,
+          realm,
+          device_id_string,
+          interface_name,
+          path,
+          old_bson_value,
+          payload,
+          timestamp
+        )
+      end)
+    end
 
-  #   :ok
-  # end
+    :ok
+  end
 
-  # defp execute_post_change_triggers(
-  #        {_, value_change_applied_triggers, path_created_triggers, path_removed_triggers},
-  #        realm,
-  #        device,
-  #        interface,
-  #        path,
-  #        previous_value,
-  #        value,
-  #        timestamp,
-  #        trigger_id_to_policy_name_map
-  #      ) do
-  #   old_bson_value = Cyanide.encode!(%{v: previous_value})
-  #   payload = Cyanide.encode!(%{v: value})
+  defp execute_post_change_triggers(
+         {_, value_change_applied_triggers, path_created_triggers, path_removed_triggers},
+         realm,
+         device,
+         interface,
+         path,
+         previous_value,
+         value,
+         timestamp,
+         trigger_id_to_policy_name_map
+       ) do
+    old_bson_value = Cyanide.encode!(%{v: previous_value})
+    payload = Cyanide.encode!(%{v: value})
 
-  #   if previous_value == nil and value != nil do
-  #     Enum.each(path_created_triggers, fn trigger ->
-  #       target_with_policy_list =
-  #         trigger.trigger_targets
-  #         |> Enum.map(fn target ->
-  #           {target, Map.get(trigger_id_to_policy_name_map, target.parent_trigger_id)}
-  #         end)
+    if previous_value == nil and value != nil do
+      Enum.each(path_created_triggers, fn trigger ->
+        target_with_policy_list =
+          trigger.trigger_targets
+          |> Enum.map(fn target ->
+            {target, Map.get(trigger_id_to_policy_name_map, target.parent_trigger_id)}
+          end)
 
-  #       TriggersHandler.path_created(
-  #         target_with_policy_list,
-  #         realm,
-  #         device,
-  #         interface,
-  #         path,
-  #         payload,
-  #         timestamp
-  #       )
-  #     end)
-  #   end
+        TriggersHandler.path_created(
+          target_with_policy_list,
+          realm,
+          device,
+          interface,
+          path,
+          payload,
+          timestamp
+        )
+      end)
+    end
 
-  #   if previous_value != nil and value == nil do
-  #     Enum.each(path_removed_triggers, fn trigger ->
-  #       target_with_policy_list =
-  #         trigger.trigger_targets
-  #         |> Enum.map(fn target ->
-  #           {target, Map.get(trigger_id_to_policy_name_map, target.parent_trigger_id)}
-  #         end)
+    if previous_value != nil and value == nil do
+      Enum.each(path_removed_triggers, fn trigger ->
+        target_with_policy_list =
+          trigger.trigger_targets
+          |> Enum.map(fn target ->
+            {target, Map.get(trigger_id_to_policy_name_map, target.parent_trigger_id)}
+          end)
 
-  #       TriggersHandler.path_removed(
-  #         target_with_policy_list,
-  #         realm,
-  #         device,
-  #         interface,
-  #         path,
-  #         timestamp
-  #       )
-  #     end)
-  #   end
+        TriggersHandler.path_removed(
+          target_with_policy_list,
+          realm,
+          device,
+          interface,
+          path,
+          timestamp
+        )
+      end)
+    end
 
-  #   if previous_value != value do
-  #     Enum.each(value_change_applied_triggers, fn trigger ->
-  #       target_with_policy_list =
-  #         trigger.trigger_targets
-  #         |> Enum.map(fn target ->
-  #           {target, Map.get(trigger_id_to_policy_name_map, target.parent_trigger_id)}
-  #         end)
+    if previous_value != value do
+      Enum.each(value_change_applied_triggers, fn trigger ->
+        target_with_policy_list =
+          trigger.trigger_targets
+          |> Enum.map(fn target ->
+            {target, Map.get(trigger_id_to_policy_name_map, target.parent_trigger_id)}
+          end)
 
-  #       TriggersHandler.value_change_applied(
-  #         target_with_policy_list,
-  #         realm,
-  #         device,
-  #         interface,
-  #         path,
-  #         old_bson_value,
-  #         payload,
-  #         timestamp
-  #       )
-  #     end)
-  #   end
+        TriggersHandler.value_change_applied(
+          target_with_policy_list,
+          realm,
+          device,
+          interface,
+          path,
+          old_bson_value,
+          payload,
+          timestamp
+        )
+      end)
+    end
 
-  #   :ok
-  # end
+    :ok
+  end
 
   defp execute_device_error_triggers(state, error_name, error_metadata \\ %{}, timestamp) do
     timestamp_ms = div(timestamp, 10_000)
@@ -710,650 +714,520 @@ defmodule Astarte.DataUpdaterPlant.DataUpdater.Impl do
     :ok
   end
 
-  # def handle_data(%State{discard_messages: true} = state, _, _, _, message_id, _) do
-  #   MessageTracker.discard(state.message_tracker, message_id)
-  #   state
-  # end
-
-  # def handle_data(state, interface, path, payload, message_id, timestamp) do
-  #   {:ok, db_client} = Database.connect(realm: state.realm)
-
-  #   new_state = execute_time_based_actions(state, timestamp, db_client)
-
-  #   with :ok <- validate_interface(interface),
-  #        :ok <- validate_path(path),
-  #        maybe_descriptor <- Map.get(new_state.interfaces, interface),
-  #        {:ok, interface_descriptor, new_state} <-
-  #          maybe_handle_cache_miss(maybe_descriptor, interface, new_state, db_client),
-  #        :ok <- can_write_on_interface?(interface_descriptor),
-  #        interface_id <- interface_descriptor.interface_id,
-  #        {:ok, endpoint} <- resolve_path(path, interface_descriptor, new_state.mappings),
-  #        endpoint_id <- endpoint.endpoint_id,
-  #        db_retention_policy = endpoint.database_retention_policy,
-  #        db_ttl = endpoint.database_retention_ttl,
-  #        {value, value_timestamp, _metadata} <-
-  #          PayloadsDecoder.decode_bson_payload(payload, timestamp),
-  #        expected_types <-
-  #          extract_expected_types(path, interface_descriptor, endpoint, new_state.mappings),
-  #        :ok <- validate_value_type(expected_types, value) do
-  #     device_id_string = Device.encode_device_id(new_state.device_id)
-
-  #     maybe_explicit_value_timestamp =
-  #       if endpoint.explicit_timestamp do
-  #         value_timestamp
-  #       else
-  #         div(timestamp, 10000)
-  #       end
-
-  #     execute_incoming_data_triggers(
-  #       new_state,
-  #       device_id_string,
-  #       interface_descriptor.name,
-  #       interface_id,
-  #       path,
-  #       endpoint_id,
-  #       payload,
-  #       value,
-  #       maybe_explicit_value_timestamp
-  #     )
-
-  #     {has_change_triggers, change_triggers} =
-  #       get_value_change_triggers(new_state, interface_id, endpoint_id, path, value)
-
-  #     previous_value =
-  #       with {:has_change_triggers, :ok} <- {:has_change_triggers, has_change_triggers},
-  #            {:ok, property_value} <-
-  #              Data.fetch_property(
-  #                new_state.realm,
-  #                new_state.device_id,
-  #                interface_descriptor,
-  #                endpoint,
-  #                path
-  #              ) do
-  #         property_value
-  #       else
-  #         {:has_change_triggers, _not_ok} ->
-  #           nil
-
-  #         {:error, :property_not_set} ->
-  #           nil
-  #       end
-
-  #     if has_change_triggers == :ok do
-  #       :ok =
-  #         execute_pre_change_triggers(
-  #           change_triggers,
-  #           new_state.realm,
-  #           device_id_string,
-  #           interface_descriptor.name,
-  #           path,
-  #           previous_value,
-  #           value,
-  #           maybe_explicit_value_timestamp,
-  #           state.trigger_id_to_policy_name
-  #         )
-  #     end
-
-  #     realm_max_ttl = state.datastream_maximum_storage_retention
-
-  #     db_max_ttl =
-  #       cond do
-  #         db_retention_policy == :use_ttl and is_integer(realm_max_ttl) ->
-  #           min(db_ttl, realm_max_ttl)
-
-  #         db_retention_policy == :use_ttl ->
-  #           db_ttl
-
-  #         is_integer(realm_max_ttl) ->
-  #           realm_max_ttl
-
-  #         true ->
-  #           nil
-  #       end
-
-  #     cond do
-  #       interface_descriptor.type == :datastream and value != nil ->
-  #         :ok =
-  #           cond do
-  #             Cache.has_key?(new_state.paths_cache, {interface, path}) ->
-  #               :ok
-
-  #             is_still_valid?(
-  #               Queries.fetch_path_expiry(
-  #                 db_client,
-  #                 new_state.device_id,
-  #                 interface_descriptor,
-  #                 endpoint,
-  #                 path
-  #               ),
-  #               db_max_ttl
-  #             ) ->
-  #               :ok
-
-  #             true ->
-  #               Queries.insert_path_into_db(
-  #                 db_client,
-  #                 new_state.device_id,
-  #                 interface_descriptor,
-  #                 endpoint,
-  #                 path,
-  #                 maybe_explicit_value_timestamp,
-  #                 timestamp,
-  #                 ttl: path_ttl(db_max_ttl)
-  #               )
-  #           end
-
-  #       interface_descriptor.type == :datastream ->
-  #         Logger.warning("Tried to unset a datastream.", tag: "unset_on_datastream")
-  #         MessageTracker.discard(new_state.message_tracker, message_id)
-
-  #         :telemetry.execute(
-  #           [:astarte, :data_updater_plant, :data_updater, :discarded_message],
-  #           %{},
-  #           %{realm: new_state.realm}
-  #         )
-
-  #         base64_payload = Base.encode64(payload)
-
-  #         error_metadata = %{
-  #           "interface" => inspect(interface),
-  #           "path" => inspect(path),
-  #           "base64_payload" => base64_payload
-  #         }
-
-  #         execute_device_error_triggers(
-  #           new_state,
-  #           "unset_on_datastream",
-  #           error_metadata,
-  #           timestamp
-  #         )
-
-  #         raise "Unsupported"
-
-  #       true ->
-  #         :ok
-  #     end
-
-  #     # TODO: handle insert failures here
-  #     insert_result =
-  #       Queries.insert_value_into_db(
-  #         db_client,
-  #         new_state.device_id,
-  #         interface_descriptor,
-  #         endpoint,
-  #         path,
-  #         value,
-  #         maybe_explicit_value_timestamp,
-  #         timestamp,
-  #         ttl: db_max_ttl
-  #       )
-
-  #     :ok = insert_result
-
-  #     if has_change_triggers == :ok do
-  #       :ok =
-  #         execute_post_change_triggers(
-  #           change_triggers,
-  #           new_state.realm,
-  #           device_id_string,
-  #           interface_descriptor.name,
-  #           path,
-  #           previous_value,
-  #           value,
-  #           maybe_explicit_value_timestamp,
-  #           state.trigger_id_to_policy_name
-  #         )
-  #     end
-
-  #     ttl = db_max_ttl
-  #     paths_cache = Cache.put(new_state.paths_cache, {interface, path}, %CachedPath{}, ttl)
-  #     new_state = %{new_state | paths_cache: paths_cache}
-
-  #     MessageTracker.ack_delivery(new_state.message_tracker, message_id)
-
-  #     :telemetry.execute(
-  #       [:astarte, :data_updater_plant, :data_updater, :processed_message],
-  #       %{},
-  #       %{
-  #         realm: new_state.realm,
-  #         interface_type: interface_descriptor.type
-  #       }
-  #     )
-
-  #     update_stats(new_state, interface, interface_descriptor.major_version, path, payload)
-  #   else
-  #     {:error, :cannot_write_on_server_owned_interface} ->
-  #       Logger.warning(
-  #         "Tried to write on server owned interface: #{interface} on " <>
-  #           "path: #{path}, base64-encoded payload: #{inspect(Base.encode64(payload))}, timestamp: #{inspect(timestamp)}.",
-  #         tag: "write_on_server_owned_interface"
-  #       )
-
-  #       {:ok, new_state} = ask_clean_session(new_state, timestamp)
-  #       MessageTracker.discard(new_state.message_tracker, message_id)
-
-  #       :telemetry.execute(
-  #         [:astarte, :data_updater_plant, :data_updater, :discarded_message],
-  #         %{},
-  #         %{realm: new_state.realm}
-  #       )
-
-  #       base64_payload = Base.encode64(payload)
-
-  #       error_metadata = %{
-  #         "interface" => inspect(interface),
-  #         "path" => inspect(path),
-  #         "base64_payload" => base64_payload
-  #       }
-
-  #       execute_device_error_triggers(
-  #         new_state,
-  #         "write_on_server_owned_interface",
-  #         error_metadata,
-  #         timestamp
-  #       )
-
-  #       update_stats(new_state, interface, nil, path, payload)
-
-  #     {:error, :invalid_interface} ->
-  #       Logger.warning("Received invalid interface: #{inspect(interface)}.",
-  #         tag: "invalid_interface"
-  #       )
-
-  #       {:ok, new_state} = ask_clean_session(new_state, timestamp)
-  #       MessageTracker.discard(new_state.message_tracker, message_id)
-
-  #       :telemetry.execute(
-  #         [:astarte, :data_updater_plant, :data_updater, :discarded_message],
-  #         %{},
-  #         %{realm: new_state.realm}
-  #       )
-
-  #       base64_payload = Base.encode64(payload)
-
-  #       error_metadata = %{
-  #         "interface" => inspect(interface),
-  #         "path" => inspect(path),
-  #         "base64_payload" => base64_payload
-  #       }
-
-  #       execute_device_error_triggers(
-  #         new_state,
-  #         "invalid_interface",
-  #         error_metadata,
-  #         timestamp
-  #       )
-
-  #       # We dont't update stats on an invalid interface
-  #       new_state
-
-  #     {:error, :invalid_path} ->
-  #       Logger.warning("Received invalid path: #{inspect(path)}.", tag: "invalid_path")
-  #       {:ok, new_state} = ask_clean_session(new_state, timestamp)
-  #       MessageTracker.discard(new_state.message_tracker, message_id)
-
-  #       :telemetry.execute(
-  #         [:astarte, :data_updater_plant, :data_updater, :discarded_message],
-  #         %{},
-  #         %{realm: new_state.realm}
-  #       )
-
-  #       base64_payload = Base.encode64(payload)
-
-  #       error_metadata = %{
-  #         "interface" => inspect(interface),
-  #         "path" => inspect(path),
-  #         "base64_payload" => base64_payload
-  #       }
-
-  #       execute_device_error_triggers(new_state, "invalid_path", error_metadata, timestamp)
-
-  #       update_stats(new_state, interface, nil, path, payload)
-
-  #     {:error, :mapping_not_found} ->
-  #       Logger.warning("Mapping not found for #{interface}#{path}. Maybe outdated introspection?",
-  #         tag: "mapping_not_found"
-  #       )
-
-  #       {:ok, new_state} = ask_clean_session(new_state, timestamp)
-  #       MessageTracker.discard(new_state.message_tracker, message_id)
-
-  #       :telemetry.execute(
-  #         [:astarte, :data_updater_plant, :data_updater, :discarded_message],
-  #         %{},
-  #         %{realm: new_state.realm}
-  #       )
-
-  #       base64_payload = Base.encode64(payload)
-
-  #       error_metadata = %{
-  #         "interface" => inspect(interface),
-  #         "path" => inspect(path),
-  #         "base64_payload" => base64_payload
-  #       }
-
-  #       execute_device_error_triggers(new_state, "mapping_not_found", error_metadata, timestamp)
-
-  #       update_stats(new_state, interface, nil, path, payload)
-
-  #     {:error, :interface_loading_failed} ->
-  #       Logger.warning("Cannot load interface: #{interface}.", tag: "interface_loading_failed")
-  #       # TODO: think about additional actions since the problem
-  #       # could be a missing interface in the DB
-  #       {:ok, new_state} = ask_clean_session(new_state, timestamp)
-  #       MessageTracker.discard(new_state.message_tracker, message_id)
-
-  #       :telemetry.execute(
-  #         [:astarte, :data_updater_plant, :data_updater, :discarded_message],
-  #         %{},
-  #         %{realm: new_state.realm}
-  #       )
-
-  #       base64_payload = Base.encode64(payload)
-
-  #       error_metadata = %{
-  #         "interface" => inspect(interface),
-  #         "path" => inspect(path),
-  #         "base64_payload" => base64_payload
-  #       }
-
-  #       execute_device_error_triggers(
-  #         new_state,
-  #         "interface_loading_failed",
-  #         error_metadata,
-  #         timestamp
-  #       )
-
-  #       update_stats(new_state, interface, nil, path, payload)
-
-  #     {:guessed, _guessed_endpoints} ->
-  #       Logger.warning("Mapping guessed for #{interface}#{path}. Maybe outdated introspection?",
-  #         tag: "ambiguous_path"
-  #       )
-
-  #       {:ok, new_state} = ask_clean_session(new_state, timestamp)
-  #       MessageTracker.discard(new_state.message_tracker, message_id)
-
-  #       :telemetry.execute(
-  #         [:astarte, :data_updater_plant, :data_updater, :discarded_message],
-  #         %{},
-  #         %{realm: new_state.realm}
-  #       )
-
-  #       base64_payload = Base.encode64(payload)
-
-  #       error_metadata = %{
-  #         "interface" => inspect(interface),
-  #         "path" => inspect(path),
-  #         "base64_payload" => base64_payload
-  #       }
-
-  #       execute_device_error_triggers(
-  #         new_state,
-  #         "ambiguous_path",
-  #         error_metadata,
-  #         timestamp
-  #       )
-
-  #       update_stats(new_state, interface, nil, path, payload)
-
-  #     {:error, :undecodable_bson_payload} ->
-  #       Logger.warning(
-  #         "Invalid BSON base64-encoded payload: #{inspect(Base.encode64(payload))} sent to #{interface}#{path}.",
-  #         tag: "undecodable_bson_payload"
-  #       )
-
-  #       {:ok, new_state} = ask_clean_session(new_state, timestamp)
-  #       MessageTracker.discard(new_state.message_tracker, message_id)
-
-  #       :telemetry.execute(
-  #         [:astarte, :data_updater_plant, :data_updater, :discarded_message],
-  #         %{},
-  #         %{realm: new_state.realm}
-  #       )
-
-  #       base64_payload = Base.encode64(payload)
-
-  #       error_metadata = %{
-  #         "interface" => inspect(interface),
-  #         "path" => inspect(path),
-  #         "base64_payload" => base64_payload
-  #       }
-
-  #       execute_device_error_triggers(
-  #         new_state,
-  #         "undecodable_bson_payload",
-  #         error_metadata,
-  #         timestamp
-  #       )
-
-  #       update_stats(new_state, interface, nil, path, payload)
-
-  #     {:error, :unexpected_value_type} ->
-  #       Logger.warning(
-  #         "Received invalid value: #{inspect(Base.encode64(payload))} sent to #{interface}#{path}.",
-  #         tag: "unexpected_value_type"
-  #       )
-
-  #       {:ok, new_state} = ask_clean_session(new_state, timestamp)
-  #       MessageTracker.discard(new_state.message_tracker, message_id)
-
-  #       :telemetry.execute(
-  #         [:astarte, :data_updater_plant, :data_updater, :discarded_message],
-  #         %{},
-  #         %{realm: new_state.realm}
-  #       )
-
-  #       base64_payload = Base.encode64(payload)
-
-  #       error_metadata = %{
-  #         "interface" => inspect(interface),
-  #         "path" => inspect(path),
-  #         "base64_payload" => base64_payload
-  #       }
-
-  #       execute_device_error_triggers(
-  #         new_state,
-  #         "unexpected_value_type",
-  #         error_metadata,
-  #         timestamp
-  #       )
-
-  #       update_stats(new_state, interface, nil, path, payload)
-
-  #     {:error, :value_size_exceeded} ->
-  #       Logger.warning(
-  #         "Received huge base64-encoded payload: #{inspect(Base.encode64(payload))} sent to #{interface}#{path}.",
-  #         tag: "value_size_exceeded"
-  #       )
-
-  #       {:ok, new_state} = ask_clean_session(new_state, timestamp)
-  #       MessageTracker.discard(new_state.message_tracker, message_id)
-
-  #       :telemetry.execute(
-  #         [:astarte, :data_updater_plant, :data_updater, :discarded_message],
-  #         %{},
-  #         %{realm: new_state.realm}
-  #       )
-
-  #       base64_payload = Base.encode64(payload)
-
-  #       error_metadata = %{
-  #         "interface" => inspect(interface),
-  #         "path" => inspect(path),
-  #         "base64_payload" => base64_payload
-  #       }
-
-  #       execute_device_error_triggers(new_state, "value_size_exceeded", error_metadata, timestamp)
-
-  #       update_stats(new_state, interface, nil, path, payload)
-
-  #     {:error, :unexpected_object_key} ->
-  #       base64_payload = Base.encode64(payload)
-
-  #       Logger.warning(
-  #         "Received object with unexpected key, object base64 is: #{base64_payload} sent to #{interface}#{path}.",
-  #         tag: "unexpected_object_key"
-  #       )
-
-  #       {:ok, new_state} = ask_clean_session(new_state, timestamp)
-  #       MessageTracker.discard(new_state.message_tracker, message_id)
-
-  #       :telemetry.execute(
-  #         [:astarte, :data_updater_plant, :data_updater, :discarded_message],
-  #         %{},
-  #         %{realm: new_state.realm}
-  #       )
-
-  #       error_metadata = %{
-  #         "interface" => inspect(interface),
-  #         "path" => inspect(path),
-  #         "base64_payload" => base64_payload
-  #       }
-
-  #       execute_device_error_triggers(
-  #         new_state,
-  #         "unexpected_object_key",
-  #         error_metadata,
-  #         timestamp
-  #       )
-
-  #       update_stats(new_state, interface, nil, path, payload)
-  #   end
-  # end
-
-  # defp path_ttl(nil) do
-  #   nil
-  # end
-
-  # defp path_ttl(retention_secs) do
-  #   retention_secs * 2 + div(retention_secs, 2)
-  # end
-
-  # defp is_still_valid?({:error, :property_not_set}, _ttl) do
-  #   false
-  # end
-
-  # defp is_still_valid?({:ok, :no_expiry}, _ttl) do
-  #   true
-  # end
-
-  # defp is_still_valid?({:ok, _expiry_date}, nil) do
-  #   false
-  # end
-
-  # defp is_still_valid?({:ok, expiry_date}, ttl) do
-  #   expiry_secs = DateTime.to_unix(expiry_date)
-
-  #   now_secs =
-  #     DateTime.utc_now()
-  #     |> DateTime.to_unix()
-
-  #   # 3600 seconds is one hour
-  #   # this adds 1 hour of tolerance to clock synchronization issues
-  #   now_secs + ttl + 3600 < expiry_secs
-  # end
-
-  # defp validate_interface(interface) do
-  #   if String.valid?(interface) do
-  #     :ok
-  #   else
-  #     {:error, :invalid_interface}
-  #   end
-  # end
-
-  # defp validate_path(path) do
-  #   cond do
-  #     # Make sure the path is a valid unicode string
-  #     not String.valid?(path) ->
-  #       {:error, :invalid_path}
-
-  #     # TODO: this is a temporary fix to work around a bug in EndpointsAutomaton.resolve_path/2
-  #     String.contains?(path, "//") ->
-  #       {:error, :invalid_path}
-
-  #     true ->
-  #       :ok
-  #   end
-  # end
-
-  # # TODO: We need tests for this function
-  # def validate_value_type(expected_type, %DateTime{} = value) do
-  #   ValueType.validate_value(expected_type, value)
-  # end
-
-  # # From Cyanide 2.0, binaries are decoded as %Cyanide.Binary{}
-  # def validate_value_type(expected_type, %Cyanide.Binary{} = value) do
-  #   %Cyanide.Binary{subtype: _subtype, data: bin} = value
-  #   validate_value_type(expected_type, bin)
-  # end
-
-  # # Explicitly match on all other structs to avoid pattern matching them as maps below
-  # def validate_value_type(_expected_type, %_{} = _unsupported_struct) do
-  #   {:error, :unexpected_value_type}
-  # end
-
-  # def validate_value_type(%{} = expected_types, %{} = object) do
-  #   Enum.reduce_while(object, :ok, fn {key, value}, _acc ->
-  #     with {:ok, expected_type} <- Map.fetch(expected_types, key),
-  #          :ok <- ValueType.validate_value(expected_type, value) do
-  #       {:cont, :ok}
-  #     else
-  #       {:error, reason} ->
-  #         {:halt, {:error, reason}}
-
-  #       :error ->
-  #         Logger.warning("Unexpected key #{inspect(key)} in object #{inspect(object)}.",
-  #           tag: "unexpected_object_key"
-  #         )
-
-  #         {:halt, {:error, :unexpected_object_key}}
-  #     end
-  #   end)
-  # end
-
-  # # TODO: we should test for this kind of unexpected messages
-  # # We expected an individual value, but we received an aggregated
-  # def validate_value_type(_expected_types, %{} = _object) do
-  #   {:error, :unexpected_value_type}
-  # end
-
-  # # TODO: we should test for this kind of unexpected messages
-  # # We expected an aggregated, but we received an individual
-  # def validate_value_type(%{} = _expected_types, _object) do
-  #   {:error, :unexpected_value_type}
-  # end
-
-  # def validate_value_type(expected_type, value) do
-  #   if value != nil do
-  #     ValueType.validate_value(expected_type, value)
-  #   else
-  #     :ok
-  #   end
-  # end
-
-  # defp extract_expected_types(_path, interface_descriptor, endpoint, mappings) do
-  #   case interface_descriptor.aggregation do
-  #     :individual ->
-  #       endpoint.value_type
-
-  #     :object ->
-  #       # TODO: we should probably cache this
-  #       Enum.flat_map(mappings, fn {_id, mapping} ->
-  #         if mapping.interface_id == interface_descriptor.interface_id do
-  #           expected_key =
-  #             mapping.endpoint
-  #             |> String.split("/")
-  #             |> List.last()
-
-  #           [{expected_key, mapping.value_type}]
-  #         else
-  #           []
-  #         end
-  #       end)
-  #       |> Enum.into(%{})
-  #   end
-  # end
+  def handle_data(%State{discard_messages: true} = state, _, _, _, _) do
+    {:ack, :discard_messages, state}
+  end
+
+  def handle_data(state, interface, path, payload, timestamp) do
+    {:ok, db_client} = Database.connect(realm: state.realm)
+
+    new_state = execute_time_based_actions(state, timestamp, db_client)
+
+    with :ok <- validate_interface(interface),
+         :ok <- validate_path(path),
+         maybe_descriptor <- Map.get(new_state.interfaces, interface),
+         {:ok, interface_descriptor, new_state} <-
+           maybe_handle_cache_miss(maybe_descriptor, interface, new_state, db_client),
+         :ok <- can_write_on_interface?(interface_descriptor),
+         interface_id <- interface_descriptor.interface_id,
+         {:ok, endpoint} <- resolve_path(path, interface_descriptor, new_state.mappings),
+         endpoint_id <- endpoint.endpoint_id,
+         db_retention_policy = endpoint.database_retention_policy,
+         db_ttl = endpoint.database_retention_ttl,
+         {value, value_timestamp, _metadata} <-
+           PayloadsDecoder.decode_bson_payload(payload, timestamp),
+         expected_types <-
+           extract_expected_types(path, interface_descriptor, endpoint, new_state.mappings),
+         :ok <- validate_value_type(expected_types, value) do
+      device_id_string = Device.encode_device_id(new_state.device_id)
+
+      maybe_explicit_value_timestamp =
+        if endpoint.explicit_timestamp do
+          value_timestamp
+        else
+          div(timestamp, 10000)
+        end
+
+      execute_incoming_data_triggers(
+        new_state,
+        device_id_string,
+        interface_descriptor.name,
+        interface_id,
+        path,
+        endpoint_id,
+        payload,
+        value,
+        maybe_explicit_value_timestamp
+      )
+
+      {has_change_triggers, change_triggers} =
+        get_value_change_triggers(new_state, interface_id, endpoint_id, path, value)
+
+      previous_value =
+        with {:has_change_triggers, :ok} <- {:has_change_triggers, has_change_triggers},
+             {:ok, property_value} <-
+               Data.fetch_property(
+                 new_state.realm,
+                 new_state.device_id,
+                 interface_descriptor,
+                 endpoint,
+                 path
+               ) do
+          property_value
+        else
+          {:has_change_triggers, _not_ok} ->
+            nil
+
+          {:error, :property_not_set} ->
+            nil
+        end
+
+      if has_change_triggers == :ok do
+        :ok =
+          execute_pre_change_triggers(
+            change_triggers,
+            new_state.realm,
+            device_id_string,
+            interface_descriptor.name,
+            path,
+            previous_value,
+            value,
+            maybe_explicit_value_timestamp,
+            state.trigger_id_to_policy_name
+          )
+      end
+
+      realm_max_ttl = state.datastream_maximum_storage_retention
+
+      db_max_ttl =
+        cond do
+          db_retention_policy == :use_ttl and is_integer(realm_max_ttl) ->
+            min(db_ttl, realm_max_ttl)
+
+          db_retention_policy == :use_ttl ->
+            db_ttl
+
+          is_integer(realm_max_ttl) ->
+            realm_max_ttl
+
+          true ->
+            nil
+        end
+
+      cond do
+        interface_descriptor.type == :datastream and value != nil ->
+          :ok =
+            cond do
+              Cache.has_key?(new_state.paths_cache, {interface, path}) ->
+                :ok
+
+              is_still_valid?(
+                Queries.fetch_path_expiry(
+                  db_client,
+                  new_state.device_id,
+                  interface_descriptor,
+                  endpoint,
+                  path
+                ),
+                db_max_ttl
+              ) ->
+                :ok
+
+              true ->
+                Queries.insert_path_into_db(
+                  db_client,
+                  new_state.device_id,
+                  interface_descriptor,
+                  endpoint,
+                  path,
+                  maybe_explicit_value_timestamp,
+                  timestamp,
+                  ttl: path_ttl(db_max_ttl)
+                )
+            end
+
+        interface_descriptor.type == :datastream ->
+          Logger.warning("Tried to unset a datastream.", tag: "unset_on_datastream")
+          continue_arg = {:unset_on_datastream, interface, path, payload, timestamp}
+          {:discard, :unset_on_datastream, new_state, {:continue, continue_arg}}
+
+        true ->
+          :ok
+      end
+
+      # TODO: handle insert failures here
+      insert_result =
+        Queries.insert_value_into_db(
+          db_client,
+          new_state.device_id,
+          interface_descriptor,
+          endpoint,
+          path,
+          value,
+          maybe_explicit_value_timestamp,
+          timestamp,
+          ttl: db_max_ttl
+        )
+
+      :ok = insert_result
+
+      if has_change_triggers == :ok do
+        :ok =
+          execute_post_change_triggers(
+            change_triggers,
+            new_state.realm,
+            device_id_string,
+            interface_descriptor.name,
+            path,
+            previous_value,
+            value,
+            maybe_explicit_value_timestamp,
+            state.trigger_id_to_policy_name
+          )
+      end
+
+      ttl = db_max_ttl
+      paths_cache = Cache.put(new_state.paths_cache, {interface, path}, %CachedPath{}, ttl)
+      new_state = %{new_state | paths_cache: paths_cache}
+
+      continue_arg = {:processed_message, interface_descriptor, interface, path, payload}
+      {:ack, :ok, new_state, {:continue, continue_arg}}
+    else
+      {:error, :cannot_write_on_server_owned_interface} ->
+        Logger.warning(
+          "Tried to write on server owned interface: #{interface} on " <>
+            "path: #{path}, base64-encoded payload: #{inspect(Base.encode64(payload))}, timestamp: #{inspect(timestamp)}.",
+          tag: "write_on_server_owned_interface"
+        )
+
+        {:ok, new_state} = ask_clean_session(new_state, timestamp)
+        continue_arg = {:write_on_server_owned_interface, interface, path, payload, timestamp}
+        {:discard, :cannot_write_on_server_owned_interface, new_state, {:continue, continue_arg}}
+
+      {:error, :invalid_interface} ->
+        Logger.warning("Received invalid interface: #{inspect(interface)}.",
+          tag: "invalid_interface"
+        )
+
+        {:ok, new_state} = ask_clean_session(new_state, timestamp)
+        continue_arg = {:invalid_interface, interface, path, payload, timestamp}
+        {:discard, :invalid_interface, new_state, {:continue, continue_arg}}
+
+      {:error, :invalid_path} ->
+        Logger.warning("Received invalid path: #{inspect(path)}.", tag: "invalid_path")
+        {:ok, new_state} = ask_clean_session(new_state, timestamp)
+        continue_arg = {:invalid_path, interface, path, payload, timestamp}
+        {:discard, :invalid_path, new_state, {:continue, continue_arg}}
+
+      {:error, :mapping_not_found} ->
+        Logger.warning("Mapping not found for #{interface}#{path}. Maybe outdated introspection?",
+          tag: "mapping_not_found"
+        )
+
+        {:ok, new_state} = ask_clean_session(new_state, timestamp)
+        continue_arg = {:mapping_not_found, interface, path, payload, timestamp}
+        {:discard, :mapping_not_found, new_state, {:continue, continue_arg}}
+
+      {:error, :interface_loading_failed} ->
+        Logger.warning("Cannot load interface: #{interface}.", tag: "interface_loading_failed")
+        # TODO: think about additional actions since the problem
+        # could be a missing interface in the DB
+        {:ok, new_state} = ask_clean_session(new_state, timestamp)
+        continue_arg = {:interface_loading_failed, interface, path, payload, timestamp}
+        {:discard, :interface_loading_failed, new_state, {:continue, continue_arg}}
+
+      {:guessed, _guessed_endpoints} ->
+        Logger.warning("Mapping guessed for #{interface}#{path}. Maybe outdated introspection?",
+          tag: "ambiguous_path"
+        )
+
+        {:ok, new_state} = ask_clean_session(new_state, timestamp)
+        continue_arg = {:ambiguous_path, interface, path, payload, timestamp}
+        {:discard, :ambiguous_path, new_state, {:continue, continue_arg}}
+
+      {:error, :undecodable_bson_payload} ->
+        Logger.warning(
+          "Invalid BSON base64-encoded payload: #{inspect(Base.encode64(payload))} sent to #{interface}#{path}.",
+          tag: "undecodable_bson_payload"
+        )
+
+        {:ok, new_state} = ask_clean_session(new_state, timestamp)
+        continue_arg = {:undecodable_bson_payload, interface, path, payload, timestamp}
+        {:discard, :undecodable_bson_payload, new_state, {:continue, continue_arg}}
+
+      {:error, :unexpected_value_type} ->
+        Logger.warning(
+          "Received invalid value: #{inspect(Base.encode64(payload))} sent to #{interface}#{path}.",
+          tag: "unexpected_value_type"
+        )
+
+        {:ok, new_state} = ask_clean_session(new_state, timestamp)
+        continue_arg = {:unexpected_value_type, interface, path, payload, timestamp}
+        {:discard, :unexpected_value_type, new_state, {:continue, continue_arg}}
+
+      {:error, :value_size_exceeded} ->
+        Logger.warning(
+          "Received huge base64-encoded payload: #{inspect(Base.encode64(payload))} sent to #{interface}#{path}.",
+          tag: "value_size_exceeded"
+        )
+
+        {:ok, new_state} = ask_clean_session(new_state, timestamp)
+        continue_arg = {:value_size_exceeded, interface, path, payload, timestamp}
+        {:discard, :value_size_exceeded, new_state, {:continue, continue_arg}}
+
+      {:error, :unexpected_object_key} ->
+        base64_payload = Base.encode64(payload)
+
+        Logger.warning(
+          "Received object with unexpected key, object base64 is: #{base64_payload} sent to #{interface}#{path}.",
+          tag: "unexpected_object_key"
+        )
+
+        {:ok, new_state} = ask_clean_session(new_state, timestamp)
+        continue_arg = {:unexpected_object_key, interface, path, payload, timestamp}
+        {:discard, :unexpected_object_key, new_state, {:continue, continue_arg}}
+    end
+  end
+
+  @impl Handler
+  def handle_continue({:processed_message, interface_descriptor, interface, path, payload}, state) do
+    :telemetry.execute(
+      [:astarte, :data_updater_plant, :data_updater, :processed_message],
+      %{},
+      %{
+        realm: state.realm,
+        interface_type: interface_descriptor.type
+      }
+    )
+
+    new_state = update_stats(state, interface, interface_descriptor.major_version, path, payload)
+    {:ok, new_state}
+  end
+
+  @impl Handler
+  def handle_continue({:unset_on_datastream, interface, path, payload, timestamp}, state) do
+    :telemetry.execute(
+      [:astarte, :data_updater_plant, :data_updater, :discarded_message],
+      %{},
+      %{realm: state.realm}
+    )
+
+    base64_payload = Base.encode64(payload)
+
+    error_metadata = %{
+      "interface" => inspect(interface),
+      "path" => inspect(path),
+      "base64_payload" => base64_payload
+    }
+
+    execute_device_error_triggers(
+      state,
+      "unset_on_datastream",
+      error_metadata,
+      timestamp
+    )
+
+    # TODO this comes from a previous implementation, change to {:ok, state}
+    raise "Unsupported"
+  end
+
+  @impl Handler
+  def handle_continue({:invalid_interface, interface, path, payload, timestamp}, state) do
+    :telemetry.execute(
+      [:astarte, :data_updater_plant, :data_updater, :discarded_message],
+      %{},
+      %{realm: state.realm}
+    )
+
+    base64_payload = Base.encode64(payload)
+
+    error_metadata = %{
+      "interface" => inspect(interface),
+      "path" => inspect(path),
+      "base64_payload" => base64_payload
+    }
+
+    execute_device_error_triggers(
+      state,
+      "invalid_interface",
+      error_metadata,
+      timestamp
+    )
+
+    # We dont't update stats on an invalid interface
+    {:ok, state}
+  end
+
+  @impl Handler
+  def handle_continue({failure, interface, path, payload, timestamp}, state)
+      when failure in [
+             :write_on_server_owned_interface,
+             :invalid_path,
+             :interface_loading_failed,
+             :mapping_not_found,
+             :ambiguous_path,
+             :unencodable_bson_payload,
+             :unexpected_value_type,
+             :value_size_exceeded,
+             :unexpected_object_key
+           ] do
+    :telemetry.execute(
+      [:astarte, :data_updater_plant, :data_updater, :discarded_message],
+      %{},
+      %{realm: state.realm}
+    )
+
+    base64_payload = Base.encode64(payload)
+
+    error_metadata = %{
+      "interface" => inspect(interface),
+      "path" => inspect(path),
+      "base64_payload" => base64_payload
+    }
+
+    execute_device_error_triggers(
+      state,
+      Atom.to_string(failure),
+      error_metadata,
+      timestamp
+    )
+
+    new_state = update_stats(state, interface, nil, path, payload)
+    {:ok, new_state}
+  end
+
+  defp path_ttl(nil) do
+    nil
+  end
+
+  defp path_ttl(retention_secs) do
+    retention_secs * 2 + div(retention_secs, 2)
+  end
+
+  defp is_still_valid?({:error, :property_not_set}, _ttl) do
+    false
+  end
+
+  defp is_still_valid?({:ok, :no_expiry}, _ttl) do
+    true
+  end
+
+  defp is_still_valid?({:ok, _expiry_date}, nil) do
+    false
+  end
+
+  defp is_still_valid?({:ok, expiry_date}, ttl) do
+    expiry_secs = DateTime.to_unix(expiry_date)
+
+    now_secs =
+      DateTime.utc_now()
+      |> DateTime.to_unix()
+
+    # 3600 seconds is one hour
+    # this adds 1 hour of tolerance to clock synchronization issues
+    now_secs + ttl + 3600 < expiry_secs
+  end
+
+  defp validate_interface(interface) do
+    if String.valid?(interface) do
+      :ok
+    else
+      {:error, :invalid_interface}
+    end
+  end
+
+  defp validate_path(path) do
+    cond do
+      # Make sure the path is a valid unicode string
+      not String.valid?(path) ->
+        {:error, :invalid_path}
+
+      # TODO: this is a temporary fix to work around a bug in EndpointsAutomaton.resolve_path/2
+      String.contains?(path, "//") ->
+        {:error, :invalid_path}
+
+      true ->
+        :ok
+    end
+  end
+
+  # TODO: We need tests for this function
+  def validate_value_type(expected_type, %DateTime{} = value) do
+    ValueType.validate_value(expected_type, value)
+  end
+
+  # From Cyanide 2.0, binaries are decoded as %Cyanide.Binary{}
+  def validate_value_type(expected_type, %Cyanide.Binary{} = value) do
+    %Cyanide.Binary{subtype: _subtype, data: bin} = value
+    validate_value_type(expected_type, bin)
+  end
+
+  # Explicitly match on all other structs to avoid pattern matching them as maps below
+  def validate_value_type(_expected_type, %_{} = _unsupported_struct) do
+    {:error, :unexpected_value_type}
+  end
+
+  def validate_value_type(%{} = expected_types, %{} = object) do
+    Enum.reduce_while(object, :ok, fn {key, value}, _acc ->
+      with {:ok, expected_type} <- Map.fetch(expected_types, key),
+           :ok <- ValueType.validate_value(expected_type, value) do
+        {:cont, :ok}
+      else
+        {:error, reason} ->
+          {:halt, {:error, reason}}
+
+        :error ->
+          Logger.warning("Unexpected key #{inspect(key)} in object #{inspect(object)}.",
+            tag: "unexpected_object_key"
+          )
+
+          {:halt, {:error, :unexpected_object_key}}
+      end
+    end)
+  end
+
+  # TODO: we should test for this kind of unexpected messages
+  # We expected an individual value, but we received an aggregated
+  def validate_value_type(_expected_types, %{} = _object) do
+    {:error, :unexpected_value_type}
+  end
+
+  # TODO: we should test for this kind of unexpected messages
+  # We expected an aggregated, but we received an individual
+  def validate_value_type(%{} = _expected_types, _object) do
+    {:error, :unexpected_value_type}
+  end
+
+  def validate_value_type(expected_type, value) do
+    if value != nil do
+      ValueType.validate_value(expected_type, value)
+    else
+      :ok
+    end
+  end
+
+  defp extract_expected_types(_path, interface_descriptor, endpoint, mappings) do
+    case interface_descriptor.aggregation do
+      :individual ->
+        endpoint.value_type
+
+      :object ->
+        # TODO: we should probably cache this
+        Enum.flat_map(mappings, fn {_id, mapping} ->
+          if mapping.interface_id == interface_descriptor.interface_id do
+            expected_key =
+              mapping.endpoint
+              |> String.split("/")
+              |> List.last()
+
+            [{expected_key, mapping.value_type}]
+          else
+            []
+          end
+        end)
+        |> Enum.into(%{})
+    end
+  end
 
   defp update_stats(state, interface, major, path, payload) do
     exchanged_bytes = byte_size(payload) + byte_size(interface) + byte_size(path)
@@ -2152,91 +2026,91 @@ defmodule Astarte.DataUpdaterPlant.DataUpdater.Impl do
     }
   end
 
-  # defp maybe_handle_cache_miss(nil, interface_name, state, db_client) do
-  #   with {:ok, major_version} <-
-  #          DeviceQueries.interface_version(state.realm, state.device_id, interface_name),
-  #        {:ok, interface_row} <-
-  #          InterfaceQueries.retrieve_interface_row(state.realm, interface_name, major_version),
-  #        %InterfaceDescriptor{interface_id: interface_id} = interface_descriptor <-
-  #          InterfaceDescriptor.from_db_result!(interface_row),
-  #        {:ok, mappings} <-
-  #          Mappings.fetch_interface_mappings_map(state.realm, interface_id),
-  #        new_interfaces_by_expiry <-
-  #          state.interfaces_by_expiry ++
-  #            [{state.last_seen_message + @interface_lifespan_decimicroseconds, interface_name}],
-  #        new_state <- %State{
-  #          state
-  #          | interfaces: Map.put(state.interfaces, interface_name, interface_descriptor),
-  #            interface_ids_to_name:
-  #              Map.put(
-  #                state.interface_ids_to_name,
-  #                interface_id,
-  #                interface_name
-  #              ),
-  #            interfaces_by_expiry: new_interfaces_by_expiry,
-  #            mappings: Map.merge(state.mappings, mappings)
-  #        },
-  #        new_state <-
-  #          populate_triggers_for_object!(
-  #            new_state,
-  #            db_client,
-  #            interface_descriptor.interface_id,
-  #            :interface
-  #          ),
-  #        device_and_interface_object_id =
-  #          SimpleTriggersProtobufUtils.get_device_and_interface_object_id(
-  #            state.device_id,
-  #            interface_id
-  #          ),
-  #        new_state =
-  #          populate_triggers_for_object!(
-  #            new_state,
-  #            db_client,
-  #            device_and_interface_object_id,
-  #            :device_and_interface
-  #          ),
-  #        new_state =
-  #          populate_triggers_for_group_and_interface!(
-  #            new_state,
-  #            db_client,
-  #            interface_id
-  #          ) do
-  #     # TODO: make everything with-friendly
-  #     {:ok, interface_descriptor, new_state}
-  #   else
-  #     # Known errors. TODO: handle specific cases (e.g. ask for new introspection etc.)
-  #     {:error, :interface_not_in_introspection} ->
-  #       {:error, :interface_loading_failed}
+  defp maybe_handle_cache_miss(nil, interface_name, state, db_client) do
+    with {:ok, major_version} <-
+           DeviceQueries.interface_version(state.realm, state.device_id, interface_name),
+         {:ok, interface_row} <-
+           InterfaceQueries.retrieve_interface_row(state.realm, interface_name, major_version),
+         %InterfaceDescriptor{interface_id: interface_id} = interface_descriptor <-
+           InterfaceDescriptor.from_db_result!(interface_row),
+         {:ok, mappings} <-
+           Mappings.fetch_interface_mappings_map(state.realm, interface_id),
+         new_interfaces_by_expiry <-
+           state.interfaces_by_expiry ++
+             [{state.last_seen_message + @interface_lifespan_decimicroseconds, interface_name}],
+         new_state <- %State{
+           state
+           | interfaces: Map.put(state.interfaces, interface_name, interface_descriptor),
+             interface_ids_to_name:
+               Map.put(
+                 state.interface_ids_to_name,
+                 interface_id,
+                 interface_name
+               ),
+             interfaces_by_expiry: new_interfaces_by_expiry,
+             mappings: Map.merge(state.mappings, mappings)
+         },
+         new_state <-
+           populate_triggers_for_object!(
+             new_state,
+             db_client,
+             interface_descriptor.interface_id,
+             :interface
+           ),
+         device_and_interface_object_id =
+           SimpleTriggersProtobufUtils.get_device_and_interface_object_id(
+             state.device_id,
+             interface_id
+           ),
+         new_state =
+           populate_triggers_for_object!(
+             new_state,
+             db_client,
+             device_and_interface_object_id,
+             :device_and_interface
+           ),
+         new_state =
+           populate_triggers_for_group_and_interface!(
+             new_state,
+             db_client,
+             interface_id
+           ) do
+      # TODO: make everything with-friendly
+      {:ok, interface_descriptor, new_state}
+    else
+      # Known errors. TODO: handle specific cases (e.g. ask for new introspection etc.)
+      {:error, :interface_not_in_introspection} ->
+        {:error, :interface_loading_failed}
 
-  #     {:error, :device_not_found} ->
-  #       {:error, :interface_loading_failed}
+      {:error, :device_not_found} ->
+        {:error, :interface_loading_failed}
 
-  #     {:error, :database_error} ->
-  #       {:error, :interface_loading_failed}
+      {:error, :database_error} ->
+        {:error, :interface_loading_failed}
 
-  #     {:error, :interface_not_found} ->
-  #       {:error, :interface_loading_failed}
+      {:error, :interface_not_found} ->
+        {:error, :interface_loading_failed}
 
-  #     other ->
-  #       Logger.warning("maybe_handle_cache_miss failed: #{inspect(other)}")
-  #       {:error, :interface_loading_failed}
-  #   end
-  # end
+      other ->
+        Logger.warning("maybe_handle_cache_miss failed: #{inspect(other)}")
+        {:error, :interface_loading_failed}
+    end
+  end
 
-  # defp maybe_handle_cache_miss(interface_descriptor, _interface_name, state, _db_client) do
-  #   {:ok, interface_descriptor, state}
-  # end
+  defp maybe_handle_cache_miss(interface_descriptor, _interface_name, state, _db_client) do
+    {:ok, interface_descriptor, state}
+  end
 
-  # defp populate_triggers_for_group_and_interface!(state, db_client, interface_id) do
-  #   Enum.map(
-  #     state.groups,
-  #     &SimpleTriggersProtobufUtils.get_group_and_interface_object_id(&1, interface_id)
-  #   )
-  #   |> Enum.reduce(
-  #     state,
-  #     &populate_triggers_for_object!(&2, db_client, &1, :group_and_interface)
-  #   )
-  # end
+  defp populate_triggers_for_group_and_interface!(state, db_client, interface_id) do
+    Enum.map(
+      state.groups,
+      &SimpleTriggersProtobufUtils.get_group_and_interface_object_id(&1, interface_id)
+    )
+    |> Enum.reduce(
+      state,
+      &populate_triggers_for_object!(&2, db_client, &1, :group_and_interface)
+    )
+  end
 
   # defp prune_device_properties(state, decoded_payload, timestamp) do
   #   {:ok, paths_set} =
@@ -2423,45 +2297,45 @@ defmodule Astarte.DataUpdaterPlant.DataUpdater.Impl do
     end
   end
 
-  # defp get_on_data_triggers(state, event, interface_id, endpoint_id) do
-  #   key = {event, interface_id, endpoint_id}
+  defp get_on_data_triggers(state, event, interface_id, endpoint_id) do
+    key = {event, interface_id, endpoint_id}
 
-  #   Map.get(state.data_triggers, key, [])
-  # end
+    Map.get(state.data_triggers, key, [])
+  end
 
-  # defp get_on_data_triggers(state, event, interface_id, endpoint_id, path, value \\ nil) do
-  #   key = {event, interface_id, endpoint_id}
+  defp get_on_data_triggers(state, event, interface_id, endpoint_id, path, value \\ nil) do
+    key = {event, interface_id, endpoint_id}
 
-  #   candidate_triggers = Map.get(state.data_triggers, key, nil)
+    candidate_triggers = Map.get(state.data_triggers, key, nil)
 
-  #   if candidate_triggers do
-  #     ["" | path_tokens] = String.split(path, "/")
+    if candidate_triggers do
+      ["" | path_tokens] = String.split(path, "/")
 
-  #     for trigger <- candidate_triggers,
-  #         path_matches?(path_tokens, trigger.path_match_tokens) and
-  #           ValueMatchOperators.value_matches?(
-  #             value,
-  #             trigger.value_match_operator,
-  #             trigger.known_value
-  #           ) do
-  #       trigger
-  #     end
-  #   else
-  #     []
-  #   end
-  # end
+      for trigger <- candidate_triggers,
+          path_matches?(path_tokens, trigger.path_match_tokens) and
+            ValueMatchOperators.value_matches?(
+              value,
+              trigger.value_match_operator,
+              trigger.known_value
+            ) do
+        trigger
+      end
+    else
+      []
+    end
+  end
 
-  # defp path_matches?([], []) do
-  #   true
-  # end
+  defp path_matches?([], []) do
+    true
+  end
 
-  # defp path_matches?([path_token | path_tokens], [path_match_token | path_match_tokens]) do
-  #   if path_token == path_match_token or path_match_token == "" do
-  #     path_matches?(path_tokens, path_match_tokens)
-  #   else
-  #     false
-  #   end
-  # end
+  defp path_matches?([path_token | path_tokens], [path_match_token | path_match_tokens]) do
+    if path_token == path_match_token or path_match_token == "" do
+      path_matches?(path_tokens, path_match_tokens)
+    else
+      false
+    end
+  end
 
   defp populate_triggers_for_object!(state, client, object_id, object_type) do
     object_type_int = SimpleTriggersProtobufUtils.object_type_to_int!(object_type)
@@ -2638,114 +2512,114 @@ defmodule Astarte.DataUpdaterPlant.DataUpdater.Impl do
     end
   end
 
-  # defp resolve_path(path, interface_descriptor, mappings) do
-  #   case interface_descriptor.aggregation do
-  #     :individual ->
-  #       with {:ok, endpoint_id} <-
-  #              EndpointsAutomaton.resolve_path(path, interface_descriptor.automaton),
-  #            {:ok, endpoint} <- Map.fetch(mappings, endpoint_id) do
-  #         {:ok, endpoint}
-  #       else
-  #         :error ->
-  #           # Map.fetch failed
-  #           Logger.warning(
-  #             "endpoint_id for path #{inspect(path)} not found in mappings #{inspect(mappings)}."
-  #           )
+  defp resolve_path(path, interface_descriptor, mappings) do
+    case interface_descriptor.aggregation do
+      :individual ->
+        with {:ok, endpoint_id} <-
+               EndpointsAutomaton.resolve_path(path, interface_descriptor.automaton),
+             {:ok, endpoint} <- Map.fetch(mappings, endpoint_id) do
+          {:ok, endpoint}
+        else
+          :error ->
+            # Map.fetch failed
+            Logger.warning(
+              "endpoint_id for path #{inspect(path)} not found in mappings #{inspect(mappings)}."
+            )
 
-  #           {:error, :mapping_not_found}
+            {:error, :mapping_not_found}
 
-  #         {:error, reason} ->
-  #           Logger.warning(
-  #             "EndpointsAutomaton.resolve_path failed with reason #{inspect(reason)}."
-  #           )
+          {:error, reason} ->
+            Logger.warning(
+              "EndpointsAutomaton.resolve_path failed with reason #{inspect(reason)}."
+            )
 
-  #           {:error, :mapping_not_found}
+            {:error, :mapping_not_found}
 
-  #         {:guessed, guessed_endpoints} ->
-  #           {:guessed, guessed_endpoints}
-  #       end
+          {:guessed, guessed_endpoints} ->
+            {:guessed, guessed_endpoints}
+        end
 
-  #     :object ->
-  #       with {:guessed, [first_endpoint_id | _tail] = guessed_endpoints} <-
-  #              EndpointsAutomaton.resolve_path(path, interface_descriptor.automaton),
-  #            :ok <- check_object_aggregation_prefix(path, guessed_endpoints, mappings),
-  #            {:ok, first_mapping} <- Map.fetch(mappings, first_endpoint_id) do
-  #         # We return the first guessed mapping changing just its endpoint id, using the canonical
-  #         # endpoint id used in object aggregated interfaces. This way all mapping properties
-  #         # (database_retention_ttl, reliability etc) are correctly set since they're the same in
-  #         # all mappings (this is enforced by Realm Management when the interface is installed)
+      :object ->
+        with {:guessed, [first_endpoint_id | _tail] = guessed_endpoints} <-
+               EndpointsAutomaton.resolve_path(path, interface_descriptor.automaton),
+             :ok <- check_object_aggregation_prefix(path, guessed_endpoints, mappings),
+             {:ok, first_mapping} <- Map.fetch(mappings, first_endpoint_id) do
+          # We return the first guessed mapping changing just its endpoint id, using the canonical
+          # endpoint id used in object aggregated interfaces. This way all mapping properties
+          # (database_retention_ttl, reliability etc) are correctly set since they're the same in
+          # all mappings (this is enforced by Realm Management when the interface is installed)
 
-  #         endpoint_id =
-  #           CQLUtils.endpoint_id(
-  #             interface_descriptor.name,
-  #             interface_descriptor.major_version,
-  #             ""
-  #           )
+          endpoint_id =
+            CQLUtils.endpoint_id(
+              interface_descriptor.name,
+              interface_descriptor.major_version,
+              ""
+            )
 
-  #         {:ok, %{first_mapping | endpoint_id: endpoint_id}}
-  #       else
-  #         {:ok, _endpoint_id} ->
-  #           # This is invalid here, publish doesn't happen on endpoints in object aggregated interfaces
-  #           Logger.warning(
-  #             "Tried to publish on endpoint #{inspect(path)} for object aggregated " <>
-  #               "interface #{inspect(interface_descriptor.name)}. You should publish on " <>
-  #               "the common prefix",
-  #             tag: "invalid_path"
-  #           )
+          {:ok, %{first_mapping | endpoint_id: endpoint_id}}
+        else
+          {:ok, _endpoint_id} ->
+            # This is invalid here, publish doesn't happen on endpoints in object aggregated interfaces
+            Logger.warning(
+              "Tried to publish on endpoint #{inspect(path)} for object aggregated " <>
+                "interface #{inspect(interface_descriptor.name)}. You should publish on " <>
+                "the common prefix",
+              tag: "invalid_path"
+            )
 
-  #           {:error, :mapping_not_found}
+            {:error, :mapping_not_found}
 
-  #         {:error, :not_found} ->
-  #           Logger.warning(
-  #             "Tried to publish on invalid path #{inspect(path)} for object aggregated " <>
-  #               "interface #{inspect(interface_descriptor.name)}",
-  #             tag: "invalid_path"
-  #           )
+          {:error, :not_found} ->
+            Logger.warning(
+              "Tried to publish on invalid path #{inspect(path)} for object aggregated " <>
+                "interface #{inspect(interface_descriptor.name)}",
+              tag: "invalid_path"
+            )
 
-  #           {:error, :mapping_not_found}
+            {:error, :mapping_not_found}
 
-  #         {:error, :invalid_object_aggregation_path} ->
-  #           Logger.warning(
-  #             "Tried to publish on invalid path #{inspect(path)} for object aggregated " <>
-  #               "interface #{inspect(interface_descriptor.name)}",
-  #             tag: "invalid_path"
-  #           )
+          {:error, :invalid_object_aggregation_path} ->
+            Logger.warning(
+              "Tried to publish on invalid path #{inspect(path)} for object aggregated " <>
+                "interface #{inspect(interface_descriptor.name)}",
+              tag: "invalid_path"
+            )
 
-  #           {:error, :mapping_not_found}
-  #       end
-  #   end
-  # end
+            {:error, :mapping_not_found}
+        end
+    end
+  end
 
-  # defp check_object_aggregation_prefix(path, guessed_endpoints, mappings) do
-  #   received_path_depth = path_or_endpoint_depth(path)
+  defp check_object_aggregation_prefix(path, guessed_endpoints, mappings) do
+    received_path_depth = path_or_endpoint_depth(path)
 
-  #   Enum.reduce_while(guessed_endpoints, :ok, fn
-  #     endpoint_id, _acc ->
-  #       with {:ok, %Mapping{endpoint: endpoint}} <- Map.fetch(mappings, endpoint_id),
-  #            endpoint_depth when received_path_depth == endpoint_depth - 1 <-
-  #              path_or_endpoint_depth(endpoint) do
-  #         {:cont, :ok}
-  #       else
-  #         _ ->
-  #           {:halt, {:error, :invalid_object_aggregation_path}}
-  #       end
-  #   end)
-  # end
+    Enum.reduce_while(guessed_endpoints, :ok, fn
+      endpoint_id, _acc ->
+        with {:ok, %Mapping{endpoint: endpoint}} <- Map.fetch(mappings, endpoint_id),
+             endpoint_depth when received_path_depth == endpoint_depth - 1 <-
+               path_or_endpoint_depth(endpoint) do
+          {:cont, :ok}
+        else
+          _ ->
+            {:halt, {:error, :invalid_object_aggregation_path}}
+        end
+    end)
+  end
 
-  # defp path_or_endpoint_depth(path) when is_binary(path) do
-  #   String.split(path, "/", trim: true)
-  #   |> length()
-  # end
+  defp path_or_endpoint_depth(path) when is_binary(path) do
+    String.split(path, "/", trim: true)
+    |> length()
+  end
 
-  # defp can_write_on_interface?(interface_descriptor) do
-  #   case interface_descriptor.ownership do
-  #     :device ->
-  #       :ok
+  defp can_write_on_interface?(interface_descriptor) do
+    case interface_descriptor.ownership do
+      :device ->
+        :ok
 
-  #     :server ->
-  #       {:error, :cannot_write_on_server_owned_interface}
-  #   end
-  # end
+      :server ->
+        {:error, :cannot_write_on_server_owned_interface}
+    end
+  end
 
   # defp each_interface_mapping(mappings, interface_descriptor, fun) do
   #   Enum.each(mappings, fn {_endpoint_id, mapping} ->
