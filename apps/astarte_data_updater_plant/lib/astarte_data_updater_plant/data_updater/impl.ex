@@ -59,7 +59,7 @@ defmodule Astarte.DataUpdaterPlant.DataUpdater.Impl do
   # @realm_header "x_astarte_realm"
   # @device_id_header "x_astarte_device_id"
   @ip_header "x_astarte_remote_ip"
-  # @control_path_header "x_astarte_control_path"
+  @control_path_header "x_astarte_control_path"
   @interface_header "x_astarte_interface"
   @path_header "x_astarte_path"
   @internal_path_header "x_astarte_internal_path"
@@ -137,6 +137,10 @@ defmodule Astarte.DataUpdaterPlant.DataUpdater.Impl do
       "data" ->
         %{@interface_header => interface, @path_header => path} = headers
         handle_data(state, interface, path, payload, timestamp)
+
+      "control" ->
+        %{@control_path_header => control_path} = headers
+        handle_control(state, control_path, payload, timestamp)
 
       _ ->
         # ack to discard unhandled messages
@@ -1537,180 +1541,183 @@ defmodule Astarte.DataUpdaterPlant.DataUpdater.Impl do
     {:ack, :ok, final_state}
   end
 
-  # def handle_control(%State{discard_messages: true} = state, _, _, message_id, _) do
-  #   MessageTracker.discard(state.message_tracker, message_id)
-  #   state
-  # end
+  def handle_control(%State{discard_messages: true} = state, _, _, _) do
+    {:ack, :discard_messages, state}
+  end
 
-  # def handle_control(state, "/producer/properties", <<0, 0, 0, 0>>, message_id, timestamp) do
-  #   {:ok, db_client} = Database.connect(realm: state.realm)
+  def handle_control(state, "/producer/properties", <<0, 0, 0, 0>>, timestamp) do
+    {:ok, db_client} = Database.connect(realm: state.realm)
 
-  #   new_state = execute_time_based_actions(state, timestamp, db_client)
+    new_state = execute_time_based_actions(state, timestamp, db_client)
 
-  #   timestamp_ms = div(timestamp, 10_000)
+    timestamp_ms = div(timestamp, 10_000)
 
-  #   :ok = prune_device_properties(new_state, "", timestamp_ms)
+    :ok = prune_device_properties(new_state, "", timestamp_ms)
 
-  #   MessageTracker.ack_delivery(new_state.message_tracker, message_id)
+    final_state = %{
+      new_state
+      | total_received_msgs: new_state.total_received_msgs + 1,
+        total_received_bytes:
+          new_state.total_received_bytes + byte_size(<<0, 0, 0, 0>>) +
+            byte_size("/producer/properties")
+    }
 
-  #   %{
-  #     new_state
-  #     | total_received_msgs: new_state.total_received_msgs + 1,
-  #       total_received_bytes:
-  #         new_state.total_received_bytes + byte_size(<<0, 0, 0, 0>>) +
-  #           byte_size("/producer/properties")
-  #   }
-  # end
+    # TODO before we had ack -> update state, check if doing this is still ok
+    {:ack, :ok, final_state}
+  end
 
-  # def handle_control(state, "/producer/properties", payload, message_id, timestamp) do
-  #   {:ok, db_client} = Database.connect(realm: state.realm)
+  def handle_control(state, "/producer/properties", payload, timestamp) do
+    {:ok, db_client} = Database.connect(realm: state.realm)
 
-  #   new_state = execute_time_based_actions(state, timestamp, db_client)
+    new_state = execute_time_based_actions(state, timestamp, db_client)
 
-  #   timestamp_ms = div(timestamp, 10_000)
+    timestamp_ms = div(timestamp, 10_000)
 
-  #   # TODO: check payload size, to avoid anoying crashes
+    # TODO: check payload size, to avoid anoying crashes
 
-  #   <<_size_header::size(32), zlib_payload::binary>> = payload
+    <<_size_header::size(32), zlib_payload::binary>> = payload
 
-  #   case PayloadsDecoder.safe_inflate(zlib_payload) do
-  #     {:ok, decoded_payload} ->
-  #       :ok = prune_device_properties(new_state, decoded_payload, timestamp_ms)
-  #       MessageTracker.ack_delivery(new_state.message_tracker, message_id)
+    case PayloadsDecoder.safe_inflate(zlib_payload) do
+      {:ok, decoded_payload} ->
+        :ok = prune_device_properties(new_state, decoded_payload, timestamp_ms)
 
-  #       %{
-  #         new_state
-  #         | total_received_msgs: new_state.total_received_msgs + 1,
-  #           total_received_bytes:
-  #             new_state.total_received_bytes + byte_size(payload) +
-  #               byte_size("/producer/properties")
-  #       }
+        final_state = %{
+          new_state
+          | total_received_msgs: new_state.total_received_msgs + 1,
+            total_received_bytes:
+              new_state.total_received_bytes + byte_size(payload) +
+                byte_size("/producer/properties")
+        }
 
-  #     :error ->
-  #       Logger.warning("Invalid purge_properties payload", tag: "purge_properties_error")
+        # TODO before we had ack -> update state, check if doing this is still ok
+        {:ack, :ok, final_state}
 
-  #       {:ok, new_state} = ask_clean_session(new_state, timestamp)
-  #       MessageTracker.discard(new_state.message_tracker, message_id)
+      :error ->
+        Logger.warning("Invalid purge_properties payload", tag: "purge_properties_error")
 
-  #       :telemetry.execute(
-  #         [:astarte, :data_updater_plant, :data_updater, :discarded_message],
-  #         %{},
-  #         %{realm: new_state.realm}
-  #       )
+        {:ok, new_state} = ask_clean_session(new_state, timestamp)
 
-  #       new_state
-  #   end
-  # end
+        # TODO this could be handled in handle_continue
+        :telemetry.execute(
+          [:astarte, :data_updater_plant, :data_updater, :discarded_message],
+          %{},
+          %{realm: new_state.realm}
+        )
 
-  # def handle_control(state, "/emptyCache", _payload, message_id, timestamp) do
-  #   {:ok, db_client} = Database.connect(realm: state.realm)
+        # TODO before we had discard -> telemetry, check if doing this is still ok
+        {:discard, :purge_properties_error, new_state}
+    end
+  end
 
-  #   new_state = execute_time_based_actions(state, timestamp, db_client)
+  def handle_control(state, "/emptyCache", _payload, timestamp) do
+    {:ok, db_client} = Database.connect(realm: state.realm)
 
-  #   with :ok <- send_control_consumer_properties(state, db_client),
-  #        {:ok, new_state} <- resend_all_properties(state, db_client),
-  #        :ok <- Queries.set_pending_empty_cache(db_client, new_state.device_id, false) do
-  #     MessageTracker.ack_delivery(state.message_tracker, message_id)
+    new_state = execute_time_based_actions(state, timestamp, db_client)
 
-  #     :telemetry.execute(
-  #       [:astarte, :data_updater_plant, :data_updater, :processed_empty_cache],
-  #       %{},
-  #       %{realm: new_state.realm}
-  #     )
+    with :ok <- send_control_consumer_properties(state, db_client),
+         {:ok, new_state} <- resend_all_properties(state, db_client),
+         :ok <- Queries.set_pending_empty_cache(db_client, new_state.device_id, false) do
+      :telemetry.execute(
+        [:astarte, :data_updater_plant, :data_updater, :processed_empty_cache],
+        %{},
+        %{realm: new_state.realm}
+      )
 
-  #     new_state
-  #   else
-  #     {:error, :session_not_found} ->
-  #       Logger.warning("Cannot push data to device.", tag: "device_session_not_found")
+      # TODO before we had ack -> telemetry, check if doing this is still ok
+      {:ack, :ok, new_state}
+    else
+      {:error, :session_not_found} ->
+        Logger.warning("Cannot push data to device.", tag: "device_session_not_found")
 
-  #       {:ok, new_state} = ask_clean_session(new_state, timestamp)
-  #       MessageTracker.discard(new_state.message_tracker, message_id)
+        {:ok, new_state} = ask_clean_session(new_state, timestamp)
+        continue_arg = {:session_not_found, timestamp}
+        {:discard, :session_not_found, new_state, {:continue, continue_arg}}
 
-  #       :telemetry.execute(
-  #         [:astarte, :data_updater_plant, :data_updater, :discarded_message],
-  #         %{},
-  #         %{realm: new_state.realm}
-  #       )
+      {:error, :sending_properties_to_interface_failed} ->
+        Logger.warning("Cannot resend properties to interface",
+          tag: "resend_interface_properties_failed"
+        )
 
-  #       execute_device_error_triggers(new_state, "device_session_not_found", timestamp)
+        {:ok, new_state} = ask_clean_session(new_state, timestamp)
+        continue_arg = {:resend_interface_properties_failed, timestamp}
+        {:discard, :resend_interface_properties_failed, new_state, {:continue, continue_arg}}
 
-  #       new_state
+      {:error, reason} ->
+        Logger.warning("Unhandled error during emptyCache: #{inspect(reason)}",
+          tag: "empty_cache_error"
+        )
 
-  #     {:error, :sending_properties_to_interface_failed} ->
-  #       Logger.warning("Cannot resend properties to interface",
-  #         tag: "resend_interface_properties_failed"
-  #       )
+        {:ok, new_state} = ask_clean_session(new_state, timestamp)
+        continue_arg = {:empty_cache_error, reason, timestamp}
+        {:discard, :empty_cache_error, new_state, {:continue, continue_arg}}
+    end
+  end
 
-  #       {:ok, new_state} = ask_clean_session(new_state, timestamp)
-  #       MessageTracker.discard(new_state.message_tracker, message_id)
+  @impl Handler
+  def handle_continue({failure, timestamp}, state)
+      when failure in [:session_not_found, :resend_interface_properties_failed] do
+    :telemetry.execute(
+      [:astarte, :data_updater_plant, :data_updater, :discarded_message],
+      %{},
+      %{realm: state.realm}
+    )
 
-  #       :telemetry.execute(
-  #         [:astarte, :data_updater_plant, :data_updater, :discarded_message],
-  #         %{},
-  #         %{realm: new_state.realm}
-  #       )
+    execute_device_error_triggers(state, Atom.to_string(failure), timestamp)
 
-  #       execute_device_error_triggers(
-  #         new_state,
-  #         "resend_interface_properties_failed",
-  #         timestamp
-  #       )
+    {:ok, state}
+  end
 
-  #       new_state
+  @impl Handler
+  def handle_continue({:empty_cache_error, reason, timestamp}, state) do
+    :telemetry.execute(
+      [:astarte, :data_updater_plant, :data_updater, :discarded_message],
+      %{},
+      %{realm: state.realm}
+    )
 
-  #     {:error, reason} ->
-  #       Logger.warning("Unhandled error during emptyCache: #{inspect(reason)}",
-  #         tag: "empty_cache_error"
-  #       )
+    error_metadata = %{"reason" => inspect(reason)}
 
-  #       {:ok, new_state} = ask_clean_session(new_state, timestamp)
-  #       MessageTracker.discard(new_state.message_tracker, message_id)
+    execute_device_error_triggers(state, "empty_cache_error", error_metadata, timestamp)
 
-  #       :telemetry.execute(
-  #         [:astarte, :data_updater_plant, :data_updater, :discarded_message],
-  #         %{},
-  #         %{realm: new_state.realm}
-  #       )
+    {:ok, state}
+  end
 
-  #       error_metadata = %{"reason" => inspect(reason)}
+  def handle_control(state, path, payload, timestamp) do
+    Logger.warning(
+      "Unexpected control on #{path}, base64-encoded payload: #{inspect(Base.encode64(payload))}",
+      tag: "unexpected_control_message"
+    )
 
-  #       execute_device_error_triggers(new_state, "empty_cache_error", error_metadata, timestamp)
+    {:ok, new_state} = ask_clean_session(state, timestamp)
+    continue_arg = {:unexpected_control_message, path, payload, timestamp}
+    {:discard, :unexpected_control_message, new_state, {:continue, continue_arg}}
+  end
 
-  #       new_state
-  #   end
-  # end
+  @impl Handler
+  def handle_continue({:unexpected_control_message, path, payload, timestamp}, state) do
+    :telemetry.execute(
+      [:astarte, :data_updater_plant, :data_updater, :discarded_control_message],
+      %{},
+      %{realm: state.realm}
+    )
 
-  # def handle_control(state, path, payload, message_id, timestamp) do
-  #   Logger.warning(
-  #     "Unexpected control on #{path}, base64-encoded payload: #{inspect(Base.encode64(payload))}",
-  #     tag: "unexpected_control_message"
-  #   )
+    base64_payload = Base.encode64(payload)
 
-  #   {:ok, new_state} = ask_clean_session(state, timestamp)
-  #   MessageTracker.discard(new_state.message_tracker, message_id)
+    error_metadata = %{
+      "path" => inspect(path),
+      "base64_payload" => base64_payload
+    }
 
-  #   :telemetry.execute(
-  #     [:astarte, :data_updater_plant, :data_updater, :discarded_control_message],
-  #     %{},
-  #     %{realm: new_state.realm}
-  #   )
+    execute_device_error_triggers(
+      state,
+      "unexpected_control_message",
+      error_metadata,
+      timestamp
+    )
 
-  #   base64_payload = Base.encode64(payload)
-
-  #   error_metadata = %{
-  #     "path" => inspect(path),
-  #     "base64_payload" => base64_payload
-  #   }
-
-  #   execute_device_error_triggers(
-  #     new_state,
-  #     "unexpected_control_message",
-  #     error_metadata,
-  #     timestamp
-  #   )
-
-  #   update_stats(new_state, "", nil, path, payload)
-  # end
+    new_state = update_stats(state, "", nil, path, payload)
+    {:ok, new_state}
+  end
 
   defp delete_volatile_trigger(
          state,
@@ -2112,88 +2119,88 @@ defmodule Astarte.DataUpdaterPlant.DataUpdater.Impl do
     )
   end
 
-  # defp prune_device_properties(state, decoded_payload, timestamp) do
-  #   {:ok, paths_set} =
-  #     PayloadsDecoder.parse_device_properties_payload(decoded_payload, state.introspection)
+  defp prune_device_properties(state, decoded_payload, timestamp) do
+    {:ok, paths_set} =
+      PayloadsDecoder.parse_device_properties_payload(decoded_payload, state.introspection)
 
-  #   {:ok, db_client} = Database.connect(realm: state.realm)
+    {:ok, db_client} = Database.connect(realm: state.realm)
 
-  #   Enum.each(state.introspection, fn {interface, _} ->
-  #     # TODO: check result here
-  #     prune_interface(state, db_client, interface, paths_set, timestamp)
-  #   end)
+    Enum.each(state.introspection, fn {interface, _} ->
+      # TODO: check result here
+      prune_interface(state, db_client, interface, paths_set, timestamp)
+    end)
 
-  #   :ok
-  # end
+    :ok
+  end
 
-  # defp prune_interface(state, db_client, interface, all_paths_set, timestamp) do
-  #   with {:ok, interface_descriptor, new_state} <-
-  #          maybe_handle_cache_miss(
-  #            Map.get(state.interfaces, interface),
-  #            interface,
-  #            state,
-  #            db_client
-  #          ) do
-  #     cond do
-  #       interface_descriptor.type != :properties ->
-  #         # TODO: nobody uses new_state
-  #         {:ok, new_state}
+  defp prune_interface(state, db_client, interface, all_paths_set, timestamp) do
+    with {:ok, interface_descriptor, new_state} <-
+           maybe_handle_cache_miss(
+             Map.get(state.interfaces, interface),
+             interface,
+             state,
+             db_client
+           ) do
+      cond do
+        interface_descriptor.type != :properties ->
+          # TODO: nobody uses new_state
+          {:ok, new_state}
 
-  #       interface_descriptor.ownership != :device ->
-  #         Logger.warning("Tried to prune server owned interface: #{interface}.")
-  #         {:error, :maybe_outdated_introspection}
+        interface_descriptor.ownership != :device ->
+          Logger.warning("Tried to prune server owned interface: #{interface}.")
+          {:error, :maybe_outdated_introspection}
 
-  #       true ->
-  #         do_prune(new_state, db_client, interface_descriptor, all_paths_set, timestamp)
-  #         # TODO: nobody uses new_state
-  #         {:ok, new_state}
-  #     end
-  #   end
-  # end
+        true ->
+          do_prune(new_state, db_client, interface_descriptor, all_paths_set, timestamp)
+          # TODO: nobody uses new_state
+          {:ok, new_state}
+      end
+    end
+  end
 
-  # defp do_prune(state, db, interface_descriptor, all_paths_set, timestamp) do
-  #   each_interface_mapping(state.mappings, interface_descriptor, fn mapping ->
-  #     endpoint_id = mapping.endpoint_id
+  defp do_prune(state, db, interface_descriptor, all_paths_set, timestamp) do
+    each_interface_mapping(state.mappings, interface_descriptor, fn mapping ->
+      endpoint_id = mapping.endpoint_id
 
-  #     Queries.query_all_endpoint_paths!(db, state.device_id, interface_descriptor, endpoint_id)
-  #     |> Enum.each(fn path_row ->
-  #       path = path_row[:path]
+      Queries.query_all_endpoint_paths!(db, state.device_id, interface_descriptor, endpoint_id)
+      |> Enum.each(fn path_row ->
+        path = path_row[:path]
 
-  #       if not MapSet.member?(all_paths_set, {interface_descriptor.name, path}) do
-  #         device_id_string = Device.encode_device_id(state.device_id)
+        if not MapSet.member?(all_paths_set, {interface_descriptor.name, path}) do
+          device_id_string = Device.encode_device_id(state.device_id)
 
-  #         {:ok, endpoint_id} =
-  #           EndpointsAutomaton.resolve_path(path, interface_descriptor.automaton)
+          {:ok, endpoint_id} =
+            EndpointsAutomaton.resolve_path(path, interface_descriptor.automaton)
 
-  #         Queries.delete_property_from_db(state, db, interface_descriptor, endpoint_id, path)
+          Queries.delete_property_from_db(state, db, interface_descriptor, endpoint_id, path)
 
-  #         interface_id = interface_descriptor.interface_id
+          interface_id = interface_descriptor.interface_id
 
-  #         path_removed_triggers =
-  #           get_on_data_triggers(state, :on_path_removed, interface_id, endpoint_id, path)
+          path_removed_triggers =
+            get_on_data_triggers(state, :on_path_removed, interface_id, endpoint_id, path)
 
-  #         i_name = interface_descriptor.name
+          i_name = interface_descriptor.name
 
-  #         Enum.each(path_removed_triggers, fn trigger ->
-  #           target_with_policy_list =
-  #             trigger.trigger_targets
-  #             |> Enum.map(fn target ->
-  #               {target, Map.get(state.trigger_id_to_policy_name, target.parent_trigger_id)}
-  #             end)
+          Enum.each(path_removed_triggers, fn trigger ->
+            target_with_policy_list =
+              trigger.trigger_targets
+              |> Enum.map(fn target ->
+                {target, Map.get(state.trigger_id_to_policy_name, target.parent_trigger_id)}
+              end)
 
-  #           TriggersHandler.path_removed(
-  #             target_with_policy_list,
-  #             state.realm,
-  #             device_id_string,
-  #             i_name,
-  #             path,
-  #             timestamp
-  #           )
-  #         end)
-  #       end
-  #     end)
-  #   end)
-  # end
+            TriggersHandler.path_removed(
+              target_with_policy_list,
+              state.realm,
+              device_id_string,
+              i_name,
+              path,
+              timestamp
+            )
+          end)
+        end
+      end)
+    end)
+  end
 
   defp set_device_disconnected(state, db_client, timestamp) do
     timestamp_ms = div(timestamp, 10_000)
@@ -2621,169 +2628,169 @@ defmodule Astarte.DataUpdaterPlant.DataUpdater.Impl do
     end
   end
 
-  # defp each_interface_mapping(mappings, interface_descriptor, fun) do
-  #   Enum.each(mappings, fn {_endpoint_id, mapping} ->
-  #     if mapping.interface_id == interface_descriptor.interface_id do
-  #       fun.(mapping)
-  #     end
-  #   end)
-  # end
+  defp each_interface_mapping(mappings, interface_descriptor, fun) do
+    Enum.each(mappings, fn {_endpoint_id, mapping} ->
+      if mapping.interface_id == interface_descriptor.interface_id do
+        fun.(mapping)
+      end
+    end)
+  end
 
-  # defp reduce_interface_mapping(mappings, interface_descriptor, initial_acc, fun) do
-  #   Enum.reduce(mappings, initial_acc, fn {_endpoint_id, mapping}, acc ->
-  #     if mapping.interface_id == interface_descriptor.interface_id do
-  #       fun.(mapping, acc)
-  #     else
-  #       acc
-  #     end
-  #   end)
-  # end
+  defp reduce_interface_mapping(mappings, interface_descriptor, initial_acc, fun) do
+    Enum.reduce(mappings, initial_acc, fn {_endpoint_id, mapping}, acc ->
+      if mapping.interface_id == interface_descriptor.interface_id do
+        fun.(mapping, acc)
+      else
+        acc
+      end
+    end)
+  end
 
-  # defp send_control_consumer_properties(state, db_client) do
-  #   Logger.debug("Device introspection: #{inspect(state.introspection)}.")
+  defp send_control_consumer_properties(state, db_client) do
+    Logger.debug("Device introspection: #{inspect(state.introspection)}.")
 
-  #   abs_paths_list =
-  #     Enum.flat_map(state.introspection, fn {interface, _} ->
-  #       descriptor = Map.get(state.interfaces, interface)
+    abs_paths_list =
+      Enum.flat_map(state.introspection, fn {interface, _} ->
+        descriptor = Map.get(state.interfaces, interface)
 
-  #       case maybe_handle_cache_miss(descriptor, interface, state, db_client) do
-  #         {:ok, interface_descriptor, new_state} ->
-  #           gather_interface_properties(new_state, db_client, interface_descriptor)
+        case maybe_handle_cache_miss(descriptor, interface, state, db_client) do
+          {:ok, interface_descriptor, new_state} ->
+            gather_interface_properties(new_state, db_client, interface_descriptor)
 
-  #         {:error, :interface_loading_failed} ->
-  #           Logger.warning("Failed #{interface} interface loading.")
-  #           []
-  #       end
-  #     end)
+          {:error, :interface_loading_failed} ->
+            Logger.warning("Failed #{interface} interface loading.")
+            []
+        end
+      end)
 
-  #   # TODO: use the returned byte count in stats
-  #   with {:ok, _bytes} <-
-  #          send_consumer_properties_payload(state.realm, state.device_id, abs_paths_list) do
-  #     :ok
-  #   end
-  # end
+    # TODO: use the returned byte count in stats
+    with {:ok, _bytes} <-
+           send_consumer_properties_payload(state.realm, state.device_id, abs_paths_list) do
+      :ok
+    end
+  end
 
-  # defp gather_interface_properties(
-  #        %State{device_id: device_id, mappings: mappings} = _state,
-  #        db_client,
-  #        %InterfaceDescriptor{type: :properties, ownership: :server} = interface_descriptor
-  #      ) do
-  #   reduce_interface_mapping(mappings, interface_descriptor, [], fn mapping, i_acc ->
-  #     Queries.retrieve_endpoint_values(db_client, device_id, interface_descriptor, mapping)
-  #     |> Enum.reduce(i_acc, fn [{:path, path}, {_, _value}], acc ->
-  #       ["#{interface_descriptor.name}#{path}" | acc]
-  #     end)
-  #   end)
-  # end
+  defp gather_interface_properties(
+         %State{device_id: device_id, mappings: mappings} = _state,
+         db_client,
+         %InterfaceDescriptor{type: :properties, ownership: :server} = interface_descriptor
+       ) do
+    reduce_interface_mapping(mappings, interface_descriptor, [], fn mapping, i_acc ->
+      Queries.retrieve_endpoint_values(db_client, device_id, interface_descriptor, mapping)
+      |> Enum.reduce(i_acc, fn [{:path, path}, {_, _value}], acc ->
+        ["#{interface_descriptor.name}#{path}" | acc]
+      end)
+    end)
+  end
 
-  # defp gather_interface_properties(_state, _db, %InterfaceDescriptor{} = _descriptor) do
-  #   []
-  # end
+  defp gather_interface_properties(_state, _db, %InterfaceDescriptor{} = _descriptor) do
+    []
+  end
 
-  # defp resend_all_properties(state, db_client) do
-  #   Logger.debug("Device introspection: #{inspect(state.introspection)}")
+  defp resend_all_properties(state, db_client) do
+    Logger.debug("Device introspection: #{inspect(state.introspection)}")
 
-  #   Enum.reduce_while(state.introspection, {:ok, state}, fn {interface, _}, {:ok, state_acc} ->
-  #     maybe_descriptor = Map.get(state_acc.interfaces, interface)
+    Enum.reduce_while(state.introspection, {:ok, state}, fn {interface, _}, {:ok, state_acc} ->
+      maybe_descriptor = Map.get(state_acc.interfaces, interface)
 
-  #     with {:ok, interface_descriptor, new_state} <-
-  #            maybe_handle_cache_miss(maybe_descriptor, interface, state_acc, db_client),
-  #          :ok <- resend_all_interface_properties(new_state, db_client, interface_descriptor) do
-  #       {:cont, {:ok, new_state}}
-  #     else
-  #       {:error, :interface_loading_failed} ->
-  #         Logger.warning("Failed #{interface} interface loading.")
-  #         {:halt, {:error, :sending_properties_to_interface_failed}}
+      with {:ok, interface_descriptor, new_state} <-
+             maybe_handle_cache_miss(maybe_descriptor, interface, state_acc, db_client),
+           :ok <- resend_all_interface_properties(new_state, db_client, interface_descriptor) do
+        {:cont, {:ok, new_state}}
+      else
+        {:error, :interface_loading_failed} ->
+          Logger.warning("Failed #{interface} interface loading.")
+          {:halt, {:error, :sending_properties_to_interface_failed}}
 
-  #       {:error, reason} ->
-  #         {:halt, {:error, reason}}
-  #     end
-  #   end)
-  # end
+        {:error, reason} ->
+          {:halt, {:error, reason}}
+      end
+    end)
+  end
 
-  # defp resend_all_interface_properties(
-  #        %State{realm: realm, device_id: device_id, mappings: mappings} = _state,
-  #        db_client,
-  #        %InterfaceDescriptor{type: :properties, ownership: :server} = interface_descriptor
-  #      ) do
-  #   encoded_device_id = Device.encode_device_id(device_id)
+  defp resend_all_interface_properties(
+         %State{realm: realm, device_id: device_id, mappings: mappings} = _state,
+         db_client,
+         %InterfaceDescriptor{type: :properties, ownership: :server} = interface_descriptor
+       ) do
+    encoded_device_id = Device.encode_device_id(device_id)
 
-  #   each_interface_mapping(mappings, interface_descriptor, fn mapping ->
-  #     Queries.retrieve_endpoint_values(db_client, device_id, interface_descriptor, mapping)
-  #     |> Enum.reduce_while(:ok, fn [{:path, path}, {_, value}], _acc ->
-  #       case send_value(realm, encoded_device_id, interface_descriptor.name, path, value) do
-  #         {:ok, _bytes} ->
-  #           # TODO: use the returned bytes count in stats
-  #           {:cont, :ok}
+    each_interface_mapping(mappings, interface_descriptor, fn mapping ->
+      Queries.retrieve_endpoint_values(db_client, device_id, interface_descriptor, mapping)
+      |> Enum.reduce_while(:ok, fn [{:path, path}, {_, value}], _acc ->
+        case send_value(realm, encoded_device_id, interface_descriptor.name, path, value) do
+          {:ok, _bytes} ->
+            # TODO: use the returned bytes count in stats
+            {:cont, :ok}
 
-  #         {:error, reason} ->
-  #           {:halt, {:error, reason}}
-  #       end
-  #     end)
-  #   end)
-  # end
+          {:error, reason} ->
+            {:halt, {:error, reason}}
+        end
+      end)
+    end)
+  end
 
-  # defp resend_all_interface_properties(_state, _db, %InterfaceDescriptor{} = _descriptor) do
-  #   :ok
-  # end
+  defp resend_all_interface_properties(_state, _db, %InterfaceDescriptor{} = _descriptor) do
+    :ok
+  end
 
-  # defp send_consumer_properties_payload(realm, device_id, abs_paths_list) do
-  #   topic = "#{realm}/#{Device.encode_device_id(device_id)}/control/consumer/properties"
+  defp send_consumer_properties_payload(realm, device_id, abs_paths_list) do
+    topic = "#{realm}/#{Device.encode_device_id(device_id)}/control/consumer/properties"
 
-  #   uncompressed_payload = Enum.join(abs_paths_list, ";")
+    uncompressed_payload = Enum.join(abs_paths_list, ";")
 
-  #   payload_size = byte_size(uncompressed_payload)
-  #   compressed_payload = :zlib.compress(uncompressed_payload)
+    payload_size = byte_size(uncompressed_payload)
+    compressed_payload = :zlib.compress(uncompressed_payload)
 
-  #   payload = <<payload_size::unsigned-big-integer-size(32), compressed_payload::binary>>
+    payload = <<payload_size::unsigned-big-integer-size(32), compressed_payload::binary>>
 
-  #   case VMQPlugin.publish(topic, payload, 2) do
-  #     {:ok, %{local_matches: local, remote_matches: remote}} when local + remote == 1 ->
-  #       {:ok, byte_size(topic) + byte_size(payload)}
+    case VMQPlugin.publish(topic, payload, 2) do
+      {:ok, %{local_matches: local, remote_matches: remote}} when local + remote == 1 ->
+        {:ok, byte_size(topic) + byte_size(payload)}
 
-  #     {:ok, %{local_matches: local, remote_matches: remote}} when local + remote > 1 ->
-  #       # This should not happen so we print a warning, but we consider it a succesful publish
-  #       Logger.warning(
-  #         "Multiple match while publishing #{inspect(Base.encode64(payload))} on #{topic}.",
-  #         tag: "publish_multiple_matches"
-  #       )
+      {:ok, %{local_matches: local, remote_matches: remote}} when local + remote > 1 ->
+        # This should not happen so we print a warning, but we consider it a succesful publish
+        Logger.warning(
+          "Multiple match while publishing #{inspect(Base.encode64(payload))} on #{topic}.",
+          tag: "publish_multiple_matches"
+        )
 
-  #       {:ok, byte_size(topic) + byte_size(payload)}
+        {:ok, byte_size(topic) + byte_size(payload)}
 
-  #     {:ok, %{local_matches: local, remote_matches: remote}} when local + remote == 0 ->
-  #       {:error, :session_not_found}
+      {:ok, %{local_matches: local, remote_matches: remote}} when local + remote == 0 ->
+        {:error, :session_not_found}
 
-  #     {:error, reason} ->
-  #       {:error, reason}
-  #   end
-  # end
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
 
-  # defp send_value(realm, device_id_string, interface_name, path, value) do
-  #   topic = "#{realm}/#{device_id_string}/#{interface_name}#{path}"
-  #   encapsulated_value = %{v: value}
+  defp send_value(realm, device_id_string, interface_name, path, value) do
+    topic = "#{realm}/#{device_id_string}/#{interface_name}#{path}"
+    encapsulated_value = %{v: value}
 
-  #   bson_value = Cyanide.encode!(encapsulated_value)
+    bson_value = Cyanide.encode!(encapsulated_value)
 
-  #   Logger.debug("Going to publish #{inspect(encapsulated_value)} on #{topic}.")
+    Logger.debug("Going to publish #{inspect(encapsulated_value)} on #{topic}.")
 
-  #   case VMQPlugin.publish(topic, bson_value, 2) do
-  #     {:ok, %{local_matches: local, remote_matches: remote}} when local + remote == 1 ->
-  #       {:ok, byte_size(topic) + byte_size(bson_value)}
+    case VMQPlugin.publish(topic, bson_value, 2) do
+      {:ok, %{local_matches: local, remote_matches: remote}} when local + remote == 1 ->
+        {:ok, byte_size(topic) + byte_size(bson_value)}
 
-  #     {:ok, %{local_matches: local, remote_matches: remote}} when local + remote > 1 ->
-  #       # This should not happen so we print a warning, but we consider it a succesful publish
-  #       Logger.warning(
-  #         "Multiple match while publishing #{inspect(encapsulated_value)} on #{topic}.",
-  #         tag: "publish_multiple_matches"
-  #       )
+      {:ok, %{local_matches: local, remote_matches: remote}} when local + remote > 1 ->
+        # This should not happen so we print a warning, but we consider it a succesful publish
+        Logger.warning(
+          "Multiple match while publishing #{inspect(encapsulated_value)} on #{topic}.",
+          tag: "publish_multiple_matches"
+        )
 
-  #       {:ok, byte_size(topic) + byte_size(bson_value)}
+        {:ok, byte_size(topic) + byte_size(bson_value)}
 
-  #     {:ok, %{local_matches: local, remote_matches: remote}} when local + remote == 0 ->
-  #       {:error, :session_not_found}
+      {:ok, %{local_matches: local, remote_matches: remote}} when local + remote == 0 ->
+        {:error, :session_not_found}
 
-  #     {:error, reason} ->
-  #       {:error, reason}
-  #   end
-  # end
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
 end
