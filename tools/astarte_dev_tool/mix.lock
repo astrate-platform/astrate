@@ -1,7 +1,7 @@
 %{
   "astarte_client": {:git, "https://github.com/astarte-platform/astarte-client-elixir.git", "8286db6df9a43a2b5e30cdcdeb60ca5b38933559", []},
-  "astarte_core": {:git, "https://github.com/astarte-platform/astarte_core.git", "6d2f92a63fdc495ca6031e5cbdfbfb58b62b2660", []},
-  "astarte_data_access": {:git, "https://github.com/astarte-platform/astarte_data_access.git", "5b7f25eded8d5c0d3492c2622c33ff2d961acb46", []},
+  "astarte_core": {:git, "https://github.com/noaccOS/astarte_core.git", "bab5ccdb0ea9fa4a686834e041433c68a60ce90f", [ref: "refactor/standard-ecto-functions-bangs"]},
+  "astarte_data_access": {:git, "https://github.com/noaccOS/astarte_data_access.git", "24248ba7fe747417a3e0de87887f300910c557af", [ref: "24248ba7fe747417a3e0de87887f300910c557af"]},
   "castore": {:hex, :castore, "1.0.8", "dedcf20ea746694647f883590b82d9e96014057aff1d44d03ec90f36a5c0dc6e", [:mix], [], "hexpm", "0b2b66d2ee742cb1d9cb8c8be3b43c3a70ee8651f37b75a8b982e036752983f1"},
   "cqerl": {:hex, :cqerl, "2.0.1", "c92929e885adc50cda1f11b73eb0121363e8418533312f8a44defb5f14853445", [:rebar3], [{:lz4, "~> 0.2.4", [hex: :lz4_erl, repo: "hexpm", optional: false]}, {:re2, "1.9.5", [hex: :re2, repo: "hexpm", optional: false]}, {:semver, "~> 0.0.1", [hex: :semver_erl, repo: "hexpm", optional: false]}, {:snappyer, "1.2.6", [hex: :snappyer, repo: "hexpm", optional: false]}, {:uuid, "~> 2.0.0", [hex: :uuid_erl, repo: "hexpm", optional: false]}], "hexpm", "96e9ee407830508187a5edff9fc49983a7122b5c4127c640320a226b59ae12fe"},
   "cqex": {:hex, :cqex, "1.0.1", "bc9980ac3b82d039879f8d6ca589deab799fe08f80ff449d60ad709f2524718f", [:mix], [{:cqerl, "~> 2.0.1", [hex: :cqerl, repo: "hexpm", optional: false]}], "hexpm", "1bbf2079c044cbf0f747f60dcf0409a951eaa8f1a2447cd6d80d6ff1b7c4dc6b"},
