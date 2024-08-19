@@ -39,7 +39,11 @@ defmodule AstarteDevTool.MixProject do
   # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
-      {:astarte_client, github: "astarte-platform/astarte-client-elixir"}
+      {:xandra, "~> 0.18"},
+      {:exandra, "~> 0.10"},
+      {:astarte_client, github: "astarte-platform/astarte-client-elixir"},
+      {:astarte_core, github: "astarte-platform/astarte_core"},
+      {:astarte_data_access, github: "astarte-platform/astarte_data_access"}
     ]
   end
 end
