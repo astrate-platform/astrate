@@ -16,35 +16,32 @@
 # limitations under the License.
 #
 
-defmodule Mix.Tasks.AstarteDevTool.Realm.Create do
+defmodule Mix.Tasks.AstarteDevTool.System.Check do
   use Mix.Task
-  alias AstarteDevTool.Commands.System.Down
+  alias AstarteDevTool.Commands.System.Check
   alias AstarteDevTool.Utilities.Path
 
-  @shortdoc "Create realm/s into the running Astarte"
+  @shortdoc "Check if the current Astarte is up & running"
 
   @aliases [
-    #   p: :path,
-    #   v: :volumes
+    p: :path
   ]
 
   @switches [
-    #   path: :string,
-    #   volumes: :boolean,
-    #   log_level: :string
+    path: :string,
+    log_level: :string
   ]
 
   @moduledoc """
-  Create realm/s into the running Astarte platform.
+  Check if the current Astarte is up & running.
 
   ## Examples
 
-      $ mix astarte_dev_tool.realm.create realm_1 realm_a
+      $ mix astarte_dev_tool.system.check -p /absolute/path/astarte
+      $ mix astarte_dev_tool.system.check -p ../../relative/to/astarte
 
   ## Command line options
     * `-p` `--path` - (required) working Astarte project directory
-
-    * `-v` `--volumes` - remove volumes after switching off
 
     * `--log-level` - the level to set for `Logger`. This task
       does not start your application, so whatever level you have configured in
@@ -64,13 +61,15 @@ defmodule Mix.Tasks.AstarteDevTool.Realm.Create do
 
     with path <- opts[:path],
          {:ok, abs_path} <- Path.directory_path_from(path),
-         _ = Mix.shell().info("Stopping astarte system..."),
-         :ok <- Down.exec(abs_path, opts[:volumes]) do
-      Mix.shell().info("Astarte's system stopped successfully.")
+         {:list, :ok} <- {:list, Check.exec(abs_path)} do
+      Mix.shell().info("All Astarte's services are up & ready")
       :ok
     else
+      {:list, {:error, list}} ->
+        Mix.raise("Some Astarte's services do not seem to be working: #{list}")
+
       {:error, output} ->
-        Mix.raise("Failed to stop Astarte's system. Output: #{output}")
+        Mix.raise("Failed to check Astarte's system. Output: #{output}")
     end
   end
 end
