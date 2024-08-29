@@ -32,19 +32,17 @@ defmodule AstarteDevTool.MixProject do
   # Run "mix help compile.app" to learn about applications.
   def application do
     [
-      extra_applications: [:logger, :astarte_data_access]
+      extra_applications: [:logger, :astarte_core, :astarte_data_access]
     ]
   end
 
   # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
-      {:xandra, "~> 0.18"},
-      {:exandra, "~> 0.10"},
-      {:astarte_client, github: "astarte-platform/astarte-client-elixir"},
-      # @noaccOS exandra PR
-      {:astarte_data_access,
-       github: "noaccOS/astarte_data_access", ref: "24248ba7fe747417a3e0de87887f300910c557af"}
+      {:xandra, "~> 0.19"},
+      {:astarte_core, github: "astarte-platform/astarte_core"},
+      {:astarte_data_access, github: "astarte-platform/astarte_data_access"},
+      {:astarte_client, github: "astarte-platform/astarte-client-elixir"}
     ]
   end
 end
