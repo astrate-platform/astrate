@@ -60,14 +60,17 @@ defmodule Mix.Tasks.AstarteDevTool.System.Check do
       do: Logger.configure(level: String.to_existing_atom(log_level))
 
     with path <- opts[:path],
-         {:ok, abs_path} <- Path.directory_path_from(path),
-         {:list, :ok} <- {:list, Check.exec(abs_path)} do
-      Mix.shell().info("All Astarte's services are up & ready")
-      :ok
-    else
-      {:list, {:error, list}} ->
-        Mix.raise("Some Astarte's services do not seem to be working: #{list}")
+         {:ok, abs_path} <- Path.directory_path_from(path) do
+      case Check.exec(abs_path) do
+        :ok ->
+          Mix.shell().info("All Astarte's services are up & ready")
+          :ok
 
+        {:error, list} = data ->
+          Mix.raise("Some Astarte's services do not seem to be working: #{list}")
+          data
+      end
+    else
       {:error, output} ->
         Mix.raise("Failed to check Astarte's system. Output: #{output}")
     end

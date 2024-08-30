@@ -18,18 +18,37 @@
 
 defmodule AstarteDevTool.Commands.Realm.Create do
   @moduledoc false
-  alias AstarteDevTool.Constants.System, as: Constants
+  alias Astarte.DataAccess.Database
+  alias Astarte.DataAccess.Realm, as: RealmDataAccess
 
-  def exec(path, volumes \\ false) do
-    args =
-      if volumes,
-        do: Constants.command_down_args() ++ ["-v"],
-        else: Constants.command_down_args()
-
-    case System.cmd(Constants.command(), args, Constants.base_opts() ++ [cd: path]) do
-      {_result, 0} -> :ok
-      {:error, reason} -> {:error, "System is not up and running: #{reason}"}
-      {result, exit_code} -> {:error, "Cannot exec system.down: #{result}, #{exit_code}"}
+  @start_apps [
+    :logger,
+    :crypto,
+    :ssl,
+    :xandra,
+    :astarte_data_access
+  ]
+  def exec(
+        [{_, _} | _] = nodes,
+        realm_name,
+        replication \\ 1,
+        max_retention \\ 1,
+        public_key_pem \\ "@@@@",
+        device_registration_limit \\ nil,
+        realm_schema_version \\ 10
+      ) do
+    with :ok <- Enum.each(@start_apps, &Application.ensure_all_started/1),
+         {:ok, _client} <- Database.connect(cassandra_nodes: nodes),
+         :ok <-
+           RealmDataAccess.create_realm(
+             realm_name,
+             replication,
+             max_retention,
+             public_key_pem,
+             device_registration_limit,
+             realm_schema_version
+           ) do
+      :ok
     end
   end
 end

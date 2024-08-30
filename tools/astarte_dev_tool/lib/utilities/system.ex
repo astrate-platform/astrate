@@ -24,7 +24,7 @@ defmodule AstarteDevTool.Utilities.System do
     command = "docker"
 
     args =
-      ~w(ps -a --no-trunc --format {{.ID}}#{@field_separator}{{.Names}} -f label=com.docker.compose.project.working_dir=#{path})
+      ~w(ps -a --no-trunc --format {{.ID}}#{@field_separator}{{.Names}} -f status=running -f label=com.docker.compose.project.working_dir=#{path})
 
     {pids_str, 0} = System.cmd(command, args, cd: path)
 
