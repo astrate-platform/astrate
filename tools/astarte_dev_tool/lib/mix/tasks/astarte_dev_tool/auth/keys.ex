@@ -16,33 +16,30 @@
 # limitations under the License.
 #
 
-defmodule Mix.Tasks.AstarteDevTool.System.Check do
+defmodule Mix.Tasks.AstarteDevTool.Auth.Keys do
   use Mix.Task
-  alias AstarteDevTool.Commands.System.Check
-  alias AstarteDevTool.Utilities.Path
+  alias AstarteDevTool.Commands.Auth.Keys
 
-  @shortdoc "Check if the current Astarte is up & running"
+  @shortdoc "Astarte keys generation"
 
-  @aliases [
-    p: :path
-  ]
+  @aliases []
 
   @switches [
-    path: :string,
     log_level: :string
   ]
 
   @moduledoc """
-  Check if the current Astarte is up & running.
+  Astarte auth key generation.
+  If no `arg` is provided, a private key is released
+  If a private key is provided via `arg`, the linked public key is released.
 
   ## Examples
 
-      $ mix astarte_dev_tool.system.check -p /absolute/path/astarte
-      $ mix astarte_dev_tool.system.check -p ../../relative/to/astarte
+      $ mix astarte_dev_tool.auth.key
+      $ mix astarte_dev_tool.auth.key "-----BEGIN EC PRIVATE KEY-----Base64-----END EC PRIVATE KEY-----"
+      $ mix astarte_dev_tool.auth.key $(mix astarte_dev_tool.auth.key)"
 
   ## Command line options
-    * `-p` `--path` - (required) working Astarte project directory
-
     * `--log-level` - the level to set for `Logger`. This task
       does not start your application, so whatever level you have configured in
       your config files will not be used. If this is not provided, no level
@@ -52,27 +49,21 @@ defmodule Mix.Tasks.AstarteDevTool.System.Check do
 
   @impl true
   def run(args) do
-    {opts, _} = OptionParser.parse!(args, strict: @switches, aliases: @aliases)
+    {opts, args} = OptionParser.parse!(args, strict: @switches, aliases: @aliases)
 
-    unless Keyword.has_key?(opts, :path), do: Mix.raise("The --path argument is required")
+    if Enum.count(args) > 1,
+      do: Mix.raise("Only one optional argument - the private key - is allowed")
 
     if log_level = opts[:log_level],
       do: Logger.configure(level: String.to_existing_atom(log_level))
 
-    with path <- opts[:path],
-         {:ok, abs_path} <- Path.directory_path_from(path) do
-      case Check.exec(abs_path) do
-        :ok ->
-          Mix.shell().info("All Astarte's services are up & ready")
-          :ok
+    case Keys.exec(Enum.at(args, 0)) do
+      {:ok, key} ->
+        IO.puts(key)
+        {:ok, key}
 
-        {:error, list} = data ->
-          Mix.raise("Some Astarte's services do not seem to be working: #{list}")
-          data
-      end
-    else
-      {:error, output} ->
-        Mix.raise("Failed to check Astarte's system. Output: #{output}")
+      {:error, reason} ->
+        Mix.raise("Error generating key: #{reason}")
     end
   end
 end

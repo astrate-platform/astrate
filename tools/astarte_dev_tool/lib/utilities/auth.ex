@@ -18,8 +18,26 @@
 
 defmodule AstarteDevTool.Utilities.Auth do
   alias Astarte.Client.Credentials
+  alias X509.PrivateKey
+  alias X509.PublicKey
 
   def gen_auth_token(private_key) when is_bitstring(private_key) do
     Credentials.dashboard_credentials() |> Credentials.to_jwt(private_key)
+  end
+
+  def pem_key(), do: {:ok, PrivateKey.new_ec(:secp256r1) |> PrivateKey.to_pem()}
+
+  def pem_key(priv) do
+    case PrivateKey.from_pem(priv) do
+      {:ok, result} -> {:ok, result |> PublicKey.derive() |> PublicKey.to_pem()}
+      error -> error
+    end
+  end
+
+  def pem_keys() do
+    with {:ok, priv} <- pem_key(),
+         {:ok, pub} <- pem_key(priv) do
+      {:ok, {priv, pub}}
+    end
   end
 end

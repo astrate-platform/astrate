@@ -16,21 +16,11 @@
 # limitations under the License.
 #
 
-defmodule AstarteDevTool.Utilities.System do
-  @field_separator ","
-  @parse_regex ~r/^(?<id>\w+)#{@field_separator}(?:astarte-(?<name>[\w-]+)-\d)$/
+defmodule AstarteDevTool.Commands.Auth.Keys do
+  @moduledoc false
+  alias AstarteDevTool.Utilities.Auth, as: AuthUtilities
 
-  def system_status(path) do
-    command = "docker"
-
-    args =
-      ~w(ps -a --no-trunc --format {{.ID}}#{@field_separator}{{.Names}} -f status=running -f label=com.docker.compose.project.working_dir=#{path})
-
-    {pids_str, 0} = System.cmd(command, args, cd: path)
-
-    {:ok,
-     pids_str
-     |> String.split("\n", trim: true)
-     |> Enum.map(&Regex.named_captures(@parse_regex, &1))}
-  end
+  def exec(), do: AuthUtilities.pem_key()
+  def exec(nil), do: exec()
+  def exec(priv), do: AuthUtilities.pem_key(priv)
 end
