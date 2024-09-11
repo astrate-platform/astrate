@@ -16,26 +16,21 @@
 # limitations under the License.
 #
 
-defmodule AstarteDevToolTest do
-  use ExUnit.Case
-  alias AstarteDevTool.Utilities.Auth
+defmodule AstarteDevTool.Utilities.System do
+  @field_separator ","
+  @parse_regex ~r/^(?<id>\w+)#{@field_separator}(?:astarte-(?<name>[\w-]+)-\d)$/
 
-  # doctest AstarteDevTool
-  describe "unit test" do
-    test "key" do
-      assert {:ok, private} = Auth.pem_key()
-      assert {:ok, public} = Auth.pem_key(private)
-    end
+  def system_status(path) do
+    command = "docker"
 
-    test "pem_keys/0" do
-      assert {:ok, {private, public}} = Auth.pem_keys()
-    end
-  end
+    args =
+      ~w(ps -a --no-trunc --format {{.ID}}#{@field_separator}{{.Names}} -f status=running -f label=com.docker.compose.project.working_dir=#{path})
 
-  describe "mix tasks" do
-    test "auth.keys" do
-      {:ok, private} = Mix.Tasks.AstarteDevTool.Auth.Keys.run([])
-      {:ok, public} = Mix.Tasks.AstarteDevTool.Auth.Keys.run(["--", private])
-    end
+    {pids_str, 0} = System.cmd(command, args, cd: path)
+
+    {:ok,
+     pids_str
+     |> String.split("\n", trim: true)
+     |> Enum.map(&Regex.named_captures(@parse_regex, &1))}
   end
 end

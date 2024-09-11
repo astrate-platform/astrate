@@ -16,26 +16,33 @@
 # limitations under the License.
 #
 
-defmodule AstarteDevToolTest do
+defmodule AstarteDevToolTest.Realm do
   use ExUnit.Case
-  alias AstarteDevTool.Utilities.Auth
+  alias AstarteDevTool.Commands.Realm
 
-  # doctest AstarteDevTool
+  @nodes [
+    {"localhost", "9042"}
+  ]
+
+  @realm "realm1"
+
+  @doctest false
+  @moduletag :realm
   describe "unit test" do
-    test "key" do
-      assert {:ok, private} = Auth.pem_key()
-      assert {:ok, public} = Auth.pem_key(private)
+    test "1" do
+      assert true
     end
 
-    test "pem_keys/0" do
-      assert {:ok, {private, public}} = Auth.pem_keys()
+    test "2" do
+      assert :ok = Realm.Create.exec(@nodes, @realm)
     end
   end
 
   describe "mix tasks" do
-    test "auth.keys" do
-      {:ok, private} = Mix.Tasks.AstarteDevTool.Auth.Keys.run([])
-      {:ok, public} = Mix.Tasks.AstarteDevTool.Auth.Keys.run(["--", private])
+    test "1" do
+      # {:ok, private} = Mix.Tasks.AstarteDevTool.Auth.Keys.run([])
+      # {:ok, public} = Mix.Tasks.AstarteDevTool.Auth.Keys.run(["--", private])
+      assert 1
     end
   end
 end

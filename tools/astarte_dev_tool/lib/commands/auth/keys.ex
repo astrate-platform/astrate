@@ -16,26 +16,11 @@
 # limitations under the License.
 #
 
-defmodule AstarteDevToolTest do
-  use ExUnit.Case
-  alias AstarteDevTool.Utilities.Auth
+defmodule AstarteDevTool.Commands.Auth.Keys do
+  @moduledoc false
+  alias AstarteDevTool.Utilities.Auth, as: AuthUtilities
 
-  # doctest AstarteDevTool
-  describe "unit test" do
-    test "key" do
-      assert {:ok, private} = Auth.pem_key()
-      assert {:ok, public} = Auth.pem_key(private)
-    end
-
-    test "pem_keys/0" do
-      assert {:ok, {private, public}} = Auth.pem_keys()
-    end
-  end
-
-  describe "mix tasks" do
-    test "auth.keys" do
-      {:ok, private} = Mix.Tasks.AstarteDevTool.Auth.Keys.run([])
-      {:ok, public} = Mix.Tasks.AstarteDevTool.Auth.Keys.run(["--", private])
-    end
-  end
+  def exec(), do: AuthUtilities.pem_key()
+  def exec(nil), do: exec()
+  def exec(priv), do: AuthUtilities.pem_key(priv)
 end
