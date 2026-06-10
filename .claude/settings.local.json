@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(go version *)",
+      "Bash(docker version *)",
+      "Bash(git -C /Users/atsetilam/astrate status --short)"
+    ]
+  }
+}
