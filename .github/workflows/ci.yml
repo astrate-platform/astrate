@@ -1,0 +1,84 @@
+# CI pipeline skeleton (docs/ROADMAP.md §1.2 file 0.9).
+# Tiers per §0.2: lint + unit (T1) + integration (T2) active from M0;
+# e2e (T3) flips on in M6, conformance (T4) and nightly (T5) flip on in M9.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  GOLANGCI_LINT_VERSION: v2.12.2 # keep in lockstep with Makefile GOLANGCI_LINT_VERSION
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: golangci/golangci-lint-action@v8
+        with:
+          version: ${{ env.GOLANGCI_LINT_VERSION }}
+
+  unit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: make test
+
+  integration:
+    runs-on: ubuntu-latest # Docker daemon available for testcontainers
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: make test-integration
+
+  # T3 component/E2E suites — enabled in M6 (docs/ROADMAP.md §7).
+  e2e:
+    if: ${{ false }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: make test-e2e
+
+  # T4 official-SDK conformance (CP gates) — enabled in M9 (docs/ROADMAP.md §10).
+  conformance:
+    if: ${{ false }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: make test-conformance
+
+  # T5 nightly load/footprint/security — enabled in M9 with a schedule trigger.
+  nightly:
+    if: ${{ false }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: make test-conformance
