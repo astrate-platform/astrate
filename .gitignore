@@ -1,0 +1,23 @@
+# Build artifacts
+dist/
+*.exe
+*.test
+*.out
+
+# Coverage
+coverage.*
+*.cover
+
+# bbolt session stores (broker persistence, §3.1)
+*.db
+
+# Local env / editor
+.env
+.envrc
+.idea/
+.vscode/
+*.swp
+.DS_Store
+
+# Local-only compose overrides
+docker-compose.override.yml
