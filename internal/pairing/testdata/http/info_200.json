@@ -1,0 +1,1 @@
+{"data":{"protocols":{"astarte_mqtt_v1":{"broker_url":"mqtts://broker.test.example:8883","ca_crt":"<PEM>"}},"status":"confirmed","version":"0.1.0-test"}}
