@@ -1,0 +1,20 @@
+{
+  "interface_name": "com.astrate.test.DeepParametric",
+  "version_major": 0,
+  "version_minor": 1,
+  "type": "datastream",
+  "ownership": "device",
+  "description": "Astrate test fixture: deep endpoint with interleaved placeholders.",
+  "mappings": [
+    {
+      "endpoint": "/a/%{b}/c/%{d}/e",
+      "type": "longinteger",
+      "retention": "volatile",
+      "expiry": 60
+    },
+    {
+      "endpoint": "/a/%{b}/c/%{d}/f",
+      "type": "string"
+    }
+  ]
+}

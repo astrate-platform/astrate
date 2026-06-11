@@ -1,0 +1,11 @@
+{
+  "interface_name": "com.astrate.test.DuplicateEndpoint",
+  "version_major": 1,
+  "version_minor": 0,
+  "type": "datastream",
+  "ownership": "device",
+  "mappings": [
+    {"endpoint": "/%{a}/value", "type": "double"},
+    {"endpoint": "/%{b}/value", "type": "integer"}
+  ]
+}

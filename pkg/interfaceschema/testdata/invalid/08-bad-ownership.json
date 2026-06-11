@@ -1,0 +1,8 @@
+{
+  "interface_name": "com.astrate.test.BadOwnership",
+  "version_major": 1,
+  "version_minor": 0,
+  "type": "datastream",
+  "ownership": "cloud",
+  "mappings": [{"endpoint": "/value", "type": "double"}]
+}

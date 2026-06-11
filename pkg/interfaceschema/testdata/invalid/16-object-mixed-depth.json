@@ -1,0 +1,12 @@
+{
+  "interface_name": "com.astrate.test.ObjectMixedDepth",
+  "version_major": 1,
+  "version_minor": 0,
+  "type": "datastream",
+  "ownership": "device",
+  "aggregation": "object",
+  "mappings": [
+    {"endpoint": "/group/lat", "type": "double"},
+    {"endpoint": "/lng", "type": "double"}
+  ]
+}

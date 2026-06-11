@@ -1,0 +1,42 @@
+{
+  "interface_name": "com.astrate.test.ServerProperties",
+  "version_major": 1,
+  "version_minor": 2,
+  "type": "properties",
+  "ownership": "server",
+  "description": "Astrate test fixture: server-owned properties, scalar types.",
+  "mappings": [
+    {
+      "endpoint": "/limits/maxConnections",
+      "type": "integer"
+    },
+    {
+      "endpoint": "/limits/maxPayload",
+      "type": "longinteger",
+      "allow_unset": true
+    },
+    {
+      "endpoint": "/identity/displayName",
+      "type": "string",
+      "allow_unset": true
+    },
+    {
+      "endpoint": "/identity/blob",
+      "type": "binaryblob",
+      "allow_unset": true
+    },
+    {
+      "endpoint": "/maintenance/window",
+      "type": "datetime",
+      "allow_unset": true
+    },
+    {
+      "endpoint": "/maintenance/enabled",
+      "type": "boolean"
+    },
+    {
+      "endpoint": "/calibration/offset",
+      "type": "double"
+    }
+  ]
+}

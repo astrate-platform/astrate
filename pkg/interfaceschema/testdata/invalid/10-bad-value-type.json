@@ -1,0 +1,8 @@
+{
+  "interface_name": "com.astrate.test.BadValueType",
+  "version_major": 1,
+  "version_minor": 0,
+  "type": "datastream",
+  "ownership": "device",
+  "mappings": [{"endpoint": "/value", "type": "float"}]
+}

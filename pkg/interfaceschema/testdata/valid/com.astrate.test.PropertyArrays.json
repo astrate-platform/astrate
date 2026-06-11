@@ -1,0 +1,24 @@
+{
+  "interface_name": "com.astrate.test.PropertyArrays",
+  "version_major": 2,
+  "version_minor": 1,
+  "type": "properties",
+  "ownership": "device",
+  "description": "Astrate test fixture: array-typed properties with allow_unset.",
+  "mappings": [
+    {
+      "endpoint": "/config/thresholds",
+      "type": "doublearray",
+      "allow_unset": true
+    },
+    {
+      "endpoint": "/config/labels",
+      "type": "stringarray",
+      "allow_unset": false
+    },
+    {
+      "endpoint": "/config/schedule",
+      "type": "datetimearray"
+    }
+  ]
+}

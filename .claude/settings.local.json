@@ -3,7 +3,9 @@
     "allow": [
       "Bash(go version *)",
       "Bash(docker version *)",
-      "Bash(git -C /Users/atsetilam/astrate status --short)"
+      "Bash(git -C /Users/atsetilam/astrate status --short)",
+      "Bash(ruby -ryaml -e 'YAML.load_file\\(\".github/workflows/ci.yml\"\\); puts \"ci.yml parses\"')",
+      "Bash(python3 -c 'import yaml,sys; yaml.safe_load\\(open\\(\".github/workflows/ci.yml\"\\)\\); print\\(\"ci.yml parses\"\\)')"
     ]
   }
 }

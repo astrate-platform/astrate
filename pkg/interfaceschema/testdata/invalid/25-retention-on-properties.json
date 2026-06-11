@@ -1,0 +1,8 @@
+{
+  "interface_name": "com.astrate.test.RetentionOnProps",
+  "version_major": 1,
+  "version_minor": 0,
+  "type": "properties",
+  "ownership": "device",
+  "mappings": [{"endpoint": "/value", "type": "double", "retention": "stored"}]
+}

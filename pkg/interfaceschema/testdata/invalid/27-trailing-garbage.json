@@ -1,0 +1,9 @@
+{
+  "interface_name": "com.astrate.test.TrailingGarbage",
+  "version_major": 1,
+  "version_minor": 0,
+  "type": "datastream",
+  "ownership": "device",
+  "mappings": [{"endpoint": "/value", "type": "double"}]
+}
+{"second": "document"}
