@@ -1,0 +1,13 @@
+{
+  "interface_name": "com.xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx.Iface",
+  "version_major": 1,
+  "version_minor": 0,
+  "type": "datastream",
+  "ownership": "device",
+  "mappings": [
+    {
+      "endpoint": "/value",
+      "type": "double"
+    }
+  ]
+}

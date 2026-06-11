@@ -1,0 +1,9 @@
+{
+  "interface_name": "com.astrate.test.UnknownField",
+  "version_major": 1,
+  "version_minor": 0,
+  "type": "datastream",
+  "ownership": "device",
+  "quality": "producer",
+  "mappings": [{"endpoint": "/value", "type": "double"}]
+}

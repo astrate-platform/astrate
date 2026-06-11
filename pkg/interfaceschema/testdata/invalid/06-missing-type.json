@@ -1,0 +1,7 @@
+{
+  "interface_name": "com.astrate.test.MissingType",
+  "version_major": 1,
+  "version_minor": 0,
+  "ownership": "device",
+  "mappings": [{"endpoint": "/value", "type": "double"}]
+}

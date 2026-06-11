@@ -1,0 +1,23 @@
+{
+  "interface_name": "com.astrate.test.ObjectFlat",
+  "version_major": 1,
+  "version_minor": 0,
+  "type": "datastream",
+  "aggregation": "object",
+  "ownership": "device",
+  "description": "Astrate test fixture: depth-1 object aggregation (empty path prefix).",
+  "mappings": [
+    {
+      "endpoint": "/latitude",
+      "type": "double",
+      "explicit_timestamp": true,
+      "reliability": "guaranteed"
+    },
+    {
+      "endpoint": "/longitude",
+      "type": "double",
+      "explicit_timestamp": true,
+      "reliability": "guaranteed"
+    }
+  ]
+}

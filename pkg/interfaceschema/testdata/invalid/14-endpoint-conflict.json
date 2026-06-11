@@ -1,0 +1,11 @@
+{
+  "interface_name": "com.astrate.test.ConflictingEndpoints",
+  "version_major": 1,
+  "version_minor": 0,
+  "type": "datastream",
+  "ownership": "device",
+  "mappings": [
+    {"endpoint": "/sensors/%{id}", "type": "double"},
+    {"endpoint": "/sensors/calibration", "type": "double"}
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "interface_name": "com.astrate.test.ObjectMixedAttrs",
+  "version_major": 1,
+  "version_minor": 0,
+  "type": "datastream",
+  "ownership": "device",
+  "aggregation": "object",
+  "mappings": [
+    {"endpoint": "/lat", "type": "double", "reliability": "guaranteed"},
+    {"endpoint": "/lng", "type": "double", "reliability": "unreliable"}
+  ]
+}
