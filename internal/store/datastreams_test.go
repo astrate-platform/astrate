@@ -5,6 +5,7 @@ package store
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -114,6 +115,59 @@ func testDatastreams(t *testing.T, s *Store) {
 		bad.ValueInteger = &i32
 		if err := s.AppendDatastreams(ctx, DatastreamBatch{Individual: []IndividualRow{bad}}); err == nil {
 			t.Error("row with two value columns accepted")
+		}
+	})
+
+	t.Run("IndividualSnapshot", func(t *testing.T) {
+		realm := mustCreateRealm(t, s)
+		device := mustRegisterDevice(t, s, realm.ID)
+		si := mustInstallInterface(t, s, realm.ID, allTypesDef)
+
+		base := time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC)
+		var batch DatastreamBatch
+		// Two distinct paths, three samples each: the snapshot must return
+		// only the newest sample per path.
+		for _, path := range []string{"/d", "/s"} {
+			for i := range 3 {
+				r := IndividualRow{
+					RealmID: realm.ID, DeviceID: device, InterfaceID: si.ID,
+					EndpointID: si.Endpoints[path], Path: path,
+					TS: base.Add(time.Duration(i) * time.Minute), ReceptionTS: base,
+				}
+				switch path {
+				case "/d":
+					v := float64(i)
+					r.ValueDouble = &v
+				case "/s":
+					v := "v" + strconv.Itoa(i)
+					r.ValueString = &v
+				}
+				batch.Individual = append(batch.Individual, r)
+			}
+		}
+		if err := s.AppendDatastreams(ctx, batch); err != nil {
+			t.Fatalf("AppendDatastreams: %v", err)
+		}
+
+		rows, err := s.IndividualSnapshot(ctx, realm.ID, device, si.ID)
+		if err != nil {
+			t.Fatalf("IndividualSnapshot: %v", err)
+		}
+		if len(rows) != 2 {
+			t.Fatalf("snapshot rows = %d, want 2 (one per path)", len(rows))
+		}
+		latest := map[string]IndividualRow{}
+		for _, r := range rows {
+			latest[r.Path] = r
+		}
+		if r, ok := latest["/d"]; !ok || r.ValueDouble == nil || *r.ValueDouble != 2 {
+			t.Errorf("/d snapshot = %+v, want value 2", latest["/d"])
+		}
+		if r, ok := latest["/s"]; !ok || r.ValueString == nil || *r.ValueString != "v2" {
+			t.Errorf("/s snapshot = %+v, want value v2", latest["/s"])
+		}
+		if !latest["/d"].TS.Equal(base.Add(2 * time.Minute)) {
+			t.Errorf("/d snapshot ts = %v, want newest", latest["/d"].TS)
 		}
 	})
 

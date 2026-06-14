@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/astrate-platform/astrate/internal/store"
@@ -88,6 +89,22 @@ func (s *Service) GetData(ctx context.Context, realm, deviceID, ifaceName, path 
 // re-encodes the typed value per §2.3. A downsample_to opt reduces a numeric
 // individual series to bucket averages.
 func (s *Service) datastreamData(ctx context.Context, r *resolved, path string, opts QueryOpts) (any, error) {
+	// Interface-root query (no path) on an individual datastream: the upstream
+	// "data-snapshot" view — the latest sample for every endpoint, rendered as
+	// a nested {segment: {... : {value, timestamp}}} tree (astarte-go walks it
+	// via parseDatastreamMap, keyed on the "value" leaf field).
+	if path == "" && opts.DownsampleTo == nil && r.iface.Aggregation != interfaceschema.AggregationObject {
+		rows, err := s.st.IndividualSnapshot(ctx, r.rid, r.id, r.iface.ID)
+		if err != nil {
+			return nil, err
+		}
+		leaves := make(map[string]any, len(rows))
+		for i := range rows {
+			leaves[rows[i].Path] = Sample{Value: individualValue(&rows[i]), Timestamp: rows[i].TS}
+		}
+		return nestTree(leaves), nil
+	}
+
 	q := store.SeriesQuery{
 		RealmID: r.rid, DeviceID: r.id, InterfaceID: r.iface.ID, Path: path,
 		Since: opts.Since, SinceAfter: opts.SinceAfter, To: opts.To,
@@ -136,8 +153,10 @@ type objectSample struct {
 }
 
 // propertiesData reads a properties interface. With a concrete path it returns
-// the single value; at the interface root it returns a flat {path: value} map
-// of every set property. The stored jsonb already carries the §2.3 rendering.
+// the single value; at the interface root it returns the nested {segment: {...:
+// value}} tree of every set property (the upstream interface snapshot shape,
+// which astarte-go flattens via parsePropertiesMap). The stored jsonb already
+// carries the §2.3 rendering.
 func (s *Service) propertiesData(ctx context.Context, r *resolved, path string) (any, error) {
 	if path != "" {
 		p, err := s.st.GetProperty(ctx, r.rid, r.id, r.iface.ID, path)
@@ -150,11 +169,36 @@ func (s *Service) propertiesData(ctx context.Context, r *resolved, path string) 
 	if err != nil {
 		return nil, err
 	}
-	tree := make(map[string]json.RawMessage, len(props))
+	leaves := make(map[string]any, len(props))
 	for i := range props {
-		tree[props[i].Path] = json.RawMessage(props[i].Value)
+		leaves[props[i].Path] = json.RawMessage(props[i].Value)
 	}
-	return tree, nil
+	return nestTree(leaves), nil
+}
+
+// nestTree expands a flat map of Astarte endpoint paths ("/a/b") into the
+// nested JSON object an AppEngine interface-root query returns: each "/"
+// segment becomes a level and the leaf value is placed at the full path. An
+// empty input yields an empty object.
+func nestTree(leaves map[string]any) map[string]any {
+	root := map[string]any{}
+	for p, leaf := range leaves {
+		segs := strings.Split(strings.TrimPrefix(p, "/"), "/")
+		m := root
+		for i, seg := range segs {
+			if i == len(segs)-1 {
+				m[seg] = leaf
+				break
+			}
+			child, ok := m[seg].(map[string]any)
+			if !ok {
+				child = map[string]any{}
+				m[seg] = child
+			}
+			m = child
+		}
+	}
+	return root
 }
 
 // PublishData writes a server-owned value (upstream PUT/POST

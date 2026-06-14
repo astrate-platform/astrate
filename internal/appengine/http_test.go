@@ -235,15 +235,41 @@ func TestAppEngine(t *testing.T) {
 	})
 
 	t.Run("PropertyTree", func(t *testing.T) {
+		// Interface-root query is the nested upstream snapshot tree, not a flat
+		// {path: value} map (astarte-go's parsePropertiesMap walks the nesting).
 		var tree map[string]json.RawMessage
 		decodeData(t, r.req(t, http.MethodGet, r.dpath("/interfaces/"+aeConf), "", r.token), &tree)
-		if string(tree["/alpha"]) != `"a"` || string(tree["/beta"]) != `"b"` {
+		if string(tree["alpha"]) != `"a"` || string(tree["beta"]) != `"b"` {
 			t.Errorf("property tree = %v", tree)
 		}
 		var one json.RawMessage
 		decodeData(t, r.req(t, http.MethodGet, r.dpath("/interfaces/"+aeConf+"/alpha"), "", r.token), &one)
 		if string(one) != `"a"` {
 			t.Errorf("property /alpha = %s", one)
+		}
+	})
+
+	t.Run("DatastreamSnapshot", func(t *testing.T) {
+		// Interface-root query on an individual datastream returns the latest
+		// sample per endpoint as a nested {endpoint: {value, timestamp}} tree.
+		var snap map[string]Sample
+		decodeData(t, r.req(t, http.MethodGet, r.dpath("/interfaces/"+aeSensors), "", r.token), &snap)
+		v, ok := snap["value"]
+		if !ok {
+			t.Fatalf("snapshot missing /value endpoint: %v", snap)
+		}
+		if got, ok := v.Value.(float64); !ok || got != 3.0 {
+			t.Errorf("snapshot /value = %v (%T), want newest 3.0", v.Value, v.Value)
+		}
+		if !v.Timestamp.Equal(r.t3) {
+			t.Errorf("snapshot /value timestamp = %v, want newest %v", v.Timestamp, r.t3)
+		}
+		big, ok := snap["big"]
+		if !ok {
+			t.Fatalf("snapshot missing /big endpoint: %v", snap)
+		}
+		if got, ok := big.Value.(string); !ok || got != "1152921504606846976" {
+			t.Errorf("snapshot /big = %v (%T), want longinteger string", big.Value, big.Value)
 		}
 	})
 

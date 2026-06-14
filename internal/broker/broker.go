@@ -125,7 +125,7 @@ func New(ctx context.Context, cfg Config, st Store, intake Intake, sink Lifecycl
 		log:      log,
 		closing:  make(chan struct{}),
 	}
-	b.pools = newRealmPools(st, cfg.ServerTLSCert)
+	b.pools = newRealmPools(st, cfg.ServerTLSCert, log)
 	if err := b.pools.Reload(ctx); err != nil {
 		return nil, fmt.Errorf("broker: loading realm CA pools: %w", err)
 	}
