@@ -364,6 +364,31 @@ func TestCPC(t *testing.T) {
 		}
 	})
 
+	// 5b. AppEngine device-metadata and groups (CP-C superset, ROADMAP §9.5):
+	// aliases + attributes PATCH round-trips and group membership via astartectl.
+	t.Run("DeviceMetadataAndGroups", func(t *testing.T) {
+		dev := id.String()
+		ae := func(args ...string) string {
+			return runAstartectl(t, bin, append(append([]string{"appengine"}, args...),
+				"--realm-key", f.realmKey, "-r", f.realmName, "-u", url)...)
+		}
+		ae("devices", "aliases", "add", dev, "room=lab1")
+		if out := ae("devices", "aliases", "list", dev); !strings.Contains(out, "lab1") {
+			t.Fatalf("alias not listed after add:\n%s", out)
+		}
+		ae("devices", "aliases", "remove", dev, "room")
+
+		ae("devices", "attributes", "set", dev, "owner=ops")
+		if out := ae("devices", "attributes", "list", dev); !strings.Contains(out, "ops") {
+			t.Fatalf("attribute not listed after set:\n%s", out)
+		}
+
+		ae("groups", "create", "cpc-group", dev)
+		if out := ae("groups", "list"); !strings.Contains(out, "cpc-group") {
+			t.Fatalf("group not listed after create:\n%s", out)
+		}
+	})
+
 	// 6. Realm Management trigger CRUD round-trip.
 	t.Run("TriggerCRUD", func(t *testing.T) {
 		triggerFile := filepath.Join(t.TempDir(), "trigger.json")
