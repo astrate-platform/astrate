@@ -199,19 +199,15 @@ func (q *SeriesQuery) tail() string {
 	return order
 }
 
-// Series reads one individual-datastream series.
-func (s *Store) Series(ctx context.Context, q SeriesQuery) ([]IndividualRow, error) {
-	where, args := q.where()
-	rows, err := s.pool.Query(ctx, `
-		SELECT realm_id, device_id, interface_id, endpoint_id, path, ts, reception_ts,
-		       value_double, value_integer, value_longinteger, value_boolean,
-		       value_string, value_binaryblob, value_datetime, value_array
-		FROM individual_datastreams `+where+q.tail(), args...)
-	if err != nil {
-		return nil, fmt.Errorf("store: querying series %s: %w", q.Path, err)
-	}
-	defer rows.Close()
+// individualSelect is the column list shared by the individual-datastream
+// read queries; scanIndividualRows consumes rows in this exact order.
+const individualSelect = `realm_id, device_id, interface_id, endpoint_id, path, ts, reception_ts,
+	       value_double, value_integer, value_longinteger, value_boolean,
+	       value_string, value_binaryblob, value_datetime, value_array`
 
+// scanIndividualRows drains rows selecting individualSelect into IndividualRows.
+func scanIndividualRows(rows pgx.Rows) ([]IndividualRow, error) {
+	defer rows.Close()
 	var out []IndividualRow
 	for rows.Next() {
 		var (
@@ -222,15 +218,43 @@ func (s *Store) Series(ctx context.Context, q SeriesQuery) ([]IndividualRow, err
 			&r.TS, &r.ReceptionTS,
 			&r.ValueDouble, &r.ValueInteger, &r.ValueLonginteger, &r.ValueBoolean,
 			&r.ValueString, &r.ValueBinaryblob, &r.ValueDatetime, &r.ValueArray); err != nil {
-			return nil, fmt.Errorf("store: scanning series row: %w", err)
+			return nil, fmt.Errorf("store: scanning datastream row: %w", err)
 		}
 		r.DeviceID = deviceid.ID(u.Bytes)
 		out = append(out, r)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("store: reading series %s: %w", q.Path, err)
+		return nil, fmt.Errorf("store: reading datastream rows: %w", err)
 	}
 	return out, nil
+}
+
+// Series reads one individual-datastream series.
+func (s *Store) Series(ctx context.Context, q SeriesQuery) ([]IndividualRow, error) {
+	where, args := q.where()
+	rows, err := s.pool.Query(ctx,
+		`SELECT `+individualSelect+` FROM individual_datastreams `+where+q.tail(), args...)
+	if err != nil {
+		return nil, fmt.Errorf("store: querying series %s: %w", q.Path, err)
+	}
+	return scanIndividualRows(rows)
+}
+
+// IndividualSnapshot returns the most recent sample for each distinct path of
+// an individual-datastream interface — the AppEngine interface-root snapshot
+// ("data-snapshot") view upstream renders as a nested tree. Paths that never
+// received a sample are absent; the result is ordered by path.
+func (s *Store) IndividualSnapshot(ctx context.Context, realmID int16, deviceID deviceid.ID, interfaceID int64) ([]IndividualRow, error) {
+	rows, err := s.pool.Query(ctx,
+		`SELECT DISTINCT ON (path) `+individualSelect+`
+		 FROM individual_datastreams
+		 WHERE realm_id = $1 AND device_id = $2 AND interface_id = $3
+		 ORDER BY path, ts DESC`,
+		realmID, uuidParam(deviceID), interfaceID)
+	if err != nil {
+		return nil, fmt.Errorf("store: querying individual snapshot: %w", err)
+	}
+	return scanIndividualRows(rows)
 }
 
 // ObjectSeries reads one object-datastream series (the path is the

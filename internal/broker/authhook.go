@@ -60,20 +60,25 @@ type realmCA struct {
 type realmPools struct {
 	st         Store
 	serverCert tls.Certificate
+	log        *slog.Logger
 
 	mu     sync.RWMutex
 	byName map[string]*realmCA
 	tlsCfg *tls.Config
 }
 
-func newRealmPools(st Store, serverCert tls.Certificate) *realmPools {
-	p := &realmPools{st: st, serverCert: serverCert, byName: map[string]*realmCA{}}
+func newRealmPools(st Store, serverCert tls.Certificate, log *slog.Logger) *realmPools {
+	p := &realmPools{st: st, serverCert: serverCert, log: log, byName: map[string]*realmCA{}}
 	p.rebuildTLSLocked()
 	return p
 }
 
 // Reload re-reads every realm's CA certificate and rebuilds the union client
-// pool used for the TLS handshake.
+// pool used for the TLS handshake. A realm whose stored CA fails to parse is
+// skipped with a warning rather than failing the whole broker: one corrupt
+// realm must not deny service to every other realm (docs/DESIGN.md §6
+// single-process blast-radius). Devices in a skipped realm simply fail the
+// handshake until the realm is re-keyed.
 func (p *realmPools) Reload(ctx context.Context) error {
 	realms, err := p.st.ListRealms(ctx)
 	if err != nil {
@@ -84,7 +89,8 @@ func (p *realmPools) Reload(ctx context.Context) error {
 		r := &realms[i]
 		cert, err := ca.ParseCertificatePEM(r.CACertificatePEM)
 		if err != nil {
-			return err
+			p.log.Warn("skipping realm with unparseable CA certificate", "realm", r.Name, "error", err)
+			continue
 		}
 		pool := x509.NewCertPool()
 		pool.AddCert(cert)
