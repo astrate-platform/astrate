@@ -63,7 +63,7 @@ func newHKRig(t *testing.T) *hkRig {
 	instancePub := pubPEM(t, &instanceKey.PublicKey)
 
 	mux := http.NewServeMux()
-	NewAPI(NewService(st, sealer, discardLogger()), auth.NewMiddleware(st), []string{instancePub}).Mount(mux)
+	NewAPI(NewService(st, sealer, nil, discardLogger()), auth.NewMiddleware(st), []string{instancePub}).Mount(mux)
 
 	return &hkRig{
 		st: st, sealer: sealer, mux: mux,

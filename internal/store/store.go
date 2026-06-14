@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/golang-migrate/migrate/v4"
 	migratepgx "github.com/golang-migrate/migrate/v4/database/pgx/v5"
@@ -152,6 +153,32 @@ func (s *Store) HasToolkitLTTB() bool { return s.hasToolkit }
 func (s *Store) Health(ctx context.Context) error {
 	if err := s.pool.Ping(ctx); err != nil {
 		return fmt.Errorf("store: health check: %w", err)
+	}
+	return nil
+}
+
+// Stat returns a snapshot of the connection pool statistics
+// (docs/DESIGN.md §5.2: the DB-pool observability gauges read it).
+func (s *Store) Stat() *pgxpool.Stat { return s.pool.Stat() }
+
+// ApplyGlobalRetention sets a global drop-chunks retention policy on both
+// datastream hypertables (docs/DESIGN.md §2.5: optional and config-driven; the
+// per-endpoint TTL job remains the fine-grained path). A non-positive d clears
+// any existing policy. The configured duration is re-applied idempotently, so
+// changing it in config and restarting takes effect.
+func (s *Store) ApplyGlobalRetention(ctx context.Context, d time.Duration) error {
+	for _, tbl := range []string{"individual_datastreams", "object_datastreams"} {
+		if _, err := s.pool.Exec(ctx, `SELECT remove_retention_policy($1, if_exists => true)`, tbl); err != nil {
+			return fmt.Errorf("store: clearing retention on %s: %w", tbl, err)
+		}
+		if d <= 0 {
+			continue
+		}
+		if _, err := s.pool.Exec(ctx,
+			`SELECT add_retention_policy($1, drop_after => make_interval(secs => $2), if_not_exists => true)`,
+			tbl, d.Seconds()); err != nil {
+			return fmt.Errorf("store: setting retention on %s: %w", tbl, err)
+		}
 	}
 	return nil
 }

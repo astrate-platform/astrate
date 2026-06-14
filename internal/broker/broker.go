@@ -216,6 +216,10 @@ func (b *Broker) DevAddr() string {
 // Publisher returns the inline publishing facade for the engine/AppEngine.
 func (b *Broker) Publisher() *Publisher { return b.pub }
 
+// SessionCount returns the number of live authenticated device sessions
+// (docs/DESIGN.md §5.2: the broker-sessions observability gauge reads it).
+func (b *Broker) SessionCount() int { return b.registry.count() }
+
 // ReloadRealms rebuilds the per-realm client-CA pools from the store. Realm
 // CRUD (M7 housekeeping) calls it after creating, deleting, or re-keying a
 // realm; new TLS handshakes pick the change up immediately.

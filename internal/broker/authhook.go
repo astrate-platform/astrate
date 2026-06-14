@@ -229,6 +229,12 @@ func (r *sessionRegistry) get(clientID string) *deviceSession {
 	return r.sessions[clientID]
 }
 
+func (r *sessionRegistry) count() int {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return len(r.sessions)
+}
+
 func (r *sessionRegistry) put(s *deviceSession) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
