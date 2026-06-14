@@ -57,15 +57,28 @@ func TestCheckACLMatrix(t *testing.T) {
 		{"pub wildcard plus interface", base + "/+/value", true, false},
 		{"pub oversized topic", base + "/com.ex.DeviceData/" + strings.Repeat("x", maxTopicBytes), true, false},
 
-		// --- SUBSCRIBE / delivery: allowed rows ---
+		// --- SUBSCRIBE filters: any filter within the device's own subtree is
+		// a tolerated superset (§3.2); delivery is gated separately below. ---
 		{"sub control consumer properties", base + "/control/consumer/properties", false, true},
 		{"sub superset hash", base + "/#", false, true},
 		{"sub server-owned wildcard", base + "/com.ex.ServerData/#", false, true},
 		{"sub server-owned inner wildcard", base + "/com.ex.ServerData/+/value", false, true},
+		// The official SDK subscribes to server-owned interfaces before its
+		// introspection is known; device-owned/uninstalled filters under base
+		// are harmless (no device-owned data is ever delivered, below).
+		{"sub device-owned interface", base + "/com.ex.DeviceData/#", false, true},
+		{"sub uninstalled interface", base + "/com.ex.Unknown/#", false, true},
+		{"sub control hash", base + "/control/#", false, true},
+		{"sub wildcard interface segment", base + "/+/value", false, true},
+
+		// --- DELIVERY (concrete topics): gated on server ownership ---
 		{"deliver server-owned concrete", base + "/com.ex.ServerData/value", false, true},
 		{"deliver server-owned nested", base + "/com.ex.ServerData/0/sample", false, true},
+		{"deliver device-owned concrete", base + "/com.ex.DeviceData/value", false, false},
+		{"deliver uninstalled concrete", base + "/com.ex.Unknown/value", false, false},
+		{"deliver control producer properties", base + "/control/producer/properties", false, false},
 
-		// --- SUBSCRIBE / delivery: denied ---
+		// --- SUBSCRIBE / delivery: denied (outside the device's subtree) ---
 		{"sub base topic", base, false, false},
 		{"sub other device hash", other + "/#", false, false},
 		{"sub other device consumer properties", other + "/control/consumer/properties", false, false},
@@ -74,12 +87,6 @@ func TestCheckACLMatrix(t *testing.T) {
 		{"sub global plus pair", "+/+", false, false},
 		{"sub global plus hash", "+/#", false, false},
 		{"sub realm hash", "test/#", false, false},
-		{"sub device-owned interface", base + "/com.ex.DeviceData/#", false, false},
-		{"deliver device-owned concrete", base + "/com.ex.DeviceData/value", false, false},
-		{"sub uninstalled interface", base + "/com.ex.Unknown/#", false, false},
-		{"sub control producer properties", base + "/control/producer/properties", false, false},
-		{"sub control hash", base + "/control/#", false, false},
-		{"sub wildcard interface segment", base + "/+/value", false, false},
 		{"sub sys topics", "$SYS/#", false, false},
 		{"sub empty topic", "", false, false},
 		{"sub oversized filter", base + "/" + strings.Repeat("x", maxTopicBytes) + "/#", false, false},
@@ -96,8 +103,10 @@ func TestCheckACLMatrix(t *testing.T) {
 }
 
 // TestCheckACLNoIntrospection covers a freshly-registered device that has
-// not introspected yet: only the base topic and control publishes plus the
-// control/superset subscriptions are allowed.
+// not introspected yet — the official SDK connect sequence subscribes before
+// it sends its introspection. Base + control publishes and any own-subtree
+// subscribe filter are allowed; concrete data delivery still needs the
+// interface's server ownership to be known.
 func TestCheckACLNoIntrospection(t *testing.T) {
 	const base = "test/h4-Dx_RYTU-RbpDOTabhRg"
 	none := func(string) (interfaceschema.Ownership, bool) { return 0, false }
@@ -111,6 +120,9 @@ func TestCheckACLNoIntrospection(t *testing.T) {
 		{base + "/control/producer/properties", true},
 		{base + "/control/consumer/properties", false},
 		{base + "/#", false},
+		// Server-owned subscriptions must succeed before introspection: this
+		// is exactly the official SDK's connect-time subscribe (CP-B).
+		{base + "/com.ex.ServerData/#", false},
 	}
 	for _, tc := range allowed {
 		if !checkACL(base, tc.topic, tc.write, none) {
@@ -121,8 +133,8 @@ func TestCheckACLNoIntrospection(t *testing.T) {
 		topic string
 		write bool
 	}{
-		{base + "/com.ex.DeviceData/value", true},
-		{base + "/com.ex.ServerData/#", false},
+		{base + "/com.ex.DeviceData/value", true},  // publish to a non-introspected interface
+		{base + "/com.ex.ServerData/value", false}, // concrete delivery, ownership unknown
 	}
 	for _, tc := range denied {
 		if checkACL(base, tc.topic, tc.write, none) {

@@ -411,9 +411,9 @@ func TestUnhandledDispatch(t *testing.T) {
 
 	// Wired seams take over (and own the acknowledgment).
 	var introBody string
-	rig.e.onIntrospection = func(_ context.Context, m broker.InboundMessage) { introBody = string(m.Payload) }
+	rig.e.onIntrospection = func(_ context.Context, m broker.InboundMessage, _ *realmSchema) { introBody = string(m.Payload) }
 	var controlSub string
-	rig.e.onControl = func(_ context.Context, _ broker.InboundMessage, subpath string) { controlSub = subpath }
+	rig.e.onControl = func(_ context.Context, _ broker.InboundMessage, _ *realmSchema, subpath string) { controlSub = subpath }
 
 	ack = &ackCounter{}
 	rig.handle(deviceMsg("", "", 2, []byte("a:1:0;b:0:3"), ack))
