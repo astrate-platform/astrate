@@ -1,0 +1,3 @@
+# Pinned official Astarte Python device SDK for the CP-D pysdk runner
+# (docs/ROADMAP.md §0.3, §10 file 9.3). Upgraded deliberately, never by drift.
+astarte-device-sdk==0.14.0

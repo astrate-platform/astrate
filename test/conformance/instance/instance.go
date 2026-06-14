@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/astrate-platform/astrate/internal/auth"
 	"github.com/astrate-platform/astrate/internal/broker"
@@ -62,6 +63,9 @@ type Config struct {
 	CertTTL time.Duration
 	// Interfaces are installed into the realm and keyed by name in Interfaces.
 	Interfaces map[string]string
+	// Registerer receives the engine's Prometheus collectors (reject counters,
+	// shard depth) so the load runner can assert on them; nil leaves them off.
+	Registerer prometheus.Registerer
 }
 
 // dialDSN finds a reachable database: ASTRATE_TEST_DSN first, then compose.
@@ -139,7 +143,8 @@ func New(t testing.TB, cfg Config) *Instance {
 	}
 
 	e, err := engine.New(st, nil, engine.Config{
-		Shards: 4, BatchMaxRows: 8, BatchMaxWait: 20 * time.Millisecond, Logger: discard(),
+		Shards: 4, BatchMaxRows: 8, BatchMaxWait: 20 * time.Millisecond,
+		Registerer: cfg.Registerer, Logger: discard(),
 	})
 	if err != nil {
 		t.Fatalf("engine.New: %v", err)
