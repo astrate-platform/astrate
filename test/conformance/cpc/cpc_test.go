@@ -222,7 +222,7 @@ func newFixture(t *testing.T) *fixture {
 	mw := auth.NewMiddleware(st)
 	mux := http.NewServeMux()
 	pairing.NewAPI(pairer, mw, pairing.APIConfig{}).Mount(mux)
-	housekeeping.NewAPI(housekeeping.NewService(st, sealer, nil), mw, []string{instPubPEM}).Mount(mux)
+	housekeeping.NewAPI(housekeeping.NewService(st, sealer, b, nil), mw, []string{instPubPEM}).Mount(mux)
 	realm.NewAPI(realm.NewService(st, e, nil), mw).Mount(mux)
 	appengine.NewAPI(appengine.NewService(st, e, nil), mw).Mount(mux)
 	apstream.NewAPI(e.Bus(), mw).Mount(mux)

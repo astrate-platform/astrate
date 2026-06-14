@@ -501,3 +501,43 @@ func testTTLJob(t *testing.T, s *Store) {
 		t.Errorf("object rows after TTL run: %d, want 1 (only the fresh row)", n)
 	}
 }
+
+// testRetention exercises the config-driven global drop-chunks policy
+// (docs/DESIGN.md §2.5): applying it registers a policy_retention job on both
+// hypertables, and clearing it (d <= 0) removes them.
+func testRetention(t *testing.T, s *Store) {
+	ctx := context.Background()
+
+	policies := func() int {
+		var n int
+		if err := s.pool.QueryRow(ctx, `
+			SELECT count(*) FROM timescaledb_information.jobs
+			WHERE proc_name = 'policy_retention'
+			  AND hypertable_name IN ('individual_datastreams', 'object_datastreams')`).Scan(&n); err != nil {
+			t.Fatalf("counting retention jobs: %v", err)
+		}
+		return n
+	}
+
+	if err := s.ApplyGlobalRetention(ctx, 90*24*time.Hour); err != nil {
+		t.Fatalf("ApplyGlobalRetention(set): %v", err)
+	}
+	if n := policies(); n != 2 {
+		t.Fatalf("retention jobs after set = %d, want 2 (one per hypertable)", n)
+	}
+
+	// Idempotent re-apply with a new duration must not error or duplicate.
+	if err := s.ApplyGlobalRetention(ctx, 30*24*time.Hour); err != nil {
+		t.Fatalf("ApplyGlobalRetention(re-set): %v", err)
+	}
+	if n := policies(); n != 2 {
+		t.Fatalf("retention jobs after re-set = %d, want 2", n)
+	}
+
+	if err := s.ApplyGlobalRetention(ctx, 0); err != nil {
+		t.Fatalf("ApplyGlobalRetention(clear): %v", err)
+	}
+	if n := policies(); n != 0 {
+		t.Fatalf("retention jobs after clear = %d, want 0", n)
+	}
+}

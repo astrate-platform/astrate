@@ -27,20 +27,42 @@ type RealmView struct {
 	DeviceRegistrationLimit *int32
 }
 
+// Reloader is the broker port a realm mutation notifies so a freshly-created
+// (or torn-down) realm's CA pool is trusted for new TLS handshakes without a
+// restart (docs/DESIGN.md §3.1). *broker.Broker satisfies it via ReloadRealms;
+// it may be nil (read-only or broker-less deployments).
+type Reloader interface {
+	ReloadRealms(ctx context.Context) error
+}
+
 // Service implements the Housekeeping business logic over the store, holding
 // the key sealer used to protect freshly-minted CA private keys.
 type Service struct {
-	st     *store.Store
-	sealer *store.KeySealer
-	log    *slog.Logger
+	st       *store.Store
+	sealer   *store.KeySealer
+	reloader Reloader
+	log      *slog.Logger
 }
 
-// NewService builds the service. log defaults to slog.Default().
-func NewService(st *store.Store, sealer *store.KeySealer, log *slog.Logger) *Service {
+// NewService builds the service. reloader (the broker) may be nil; log
+// defaults to slog.Default().
+func NewService(st *store.Store, sealer *store.KeySealer, reloader Reloader, log *slog.Logger) *Service {
 	if log == nil {
 		log = slog.Default()
 	}
-	return &Service{st: st, sealer: sealer, log: log}
+	return &Service{st: st, sealer: sealer, reloader: reloader, log: log}
+}
+
+// notifyBrokerReload asks the broker to rebuild its per-realm CA pools. A
+// failure is logged but never fails the mutation: the realm row is already
+// committed, and a later reload (or the broker's own self-heal) recovers.
+func (s *Service) notifyBrokerReload(ctx context.Context, realm string) {
+	if s.reloader == nil {
+		return
+	}
+	if err := s.reloader.ReloadRealms(ctx); err != nil {
+		s.log.Warn("broker realm reload failed after housekeeping mutation", "realm", realm, "error", err)
+	}
 }
 
 // CreateRealm provisions a realm: mint a self-signed realm CA (ECDSA P-256,
@@ -81,6 +103,7 @@ func (s *Service) CreateRealm(ctx context.Context, name, jwtPublicKeyPEM string,
 		}
 		return nil, err
 	}
+	s.notifyBrokerReload(ctx, name)
 	return view(r), nil
 }
 
@@ -112,7 +135,11 @@ func (s *Service) ListRealms(ctx context.Context) ([]string, error) {
 // DeleteRealm tears a realm down, cascading its interfaces, devices,
 // properties, and datastream rows (store.DeleteRealm, docs/DESIGN.md §2.1).
 func (s *Service) DeleteRealm(ctx context.Context, name string) error {
-	return s.st.DeleteRealm(ctx, name)
+	if err := s.st.DeleteRealm(ctx, name); err != nil {
+		return err
+	}
+	s.notifyBrokerReload(ctx, name)
+	return nil
 }
 
 // view projects a stored realm into its API shape, dropping CA material.

@@ -50,6 +50,7 @@ func TestStore(t *testing.T) {
 	t.Run("Devices", func(t *testing.T) { testDevices(t, s) })
 	t.Run("Properties", func(t *testing.T) { testProperties(t, s) })
 	t.Run("Datastreams", func(t *testing.T) { testDatastreams(t, s) })
+	t.Run("Retention", func(t *testing.T) { testRetention(t, s) })
 	t.Run("TTLJob", func(t *testing.T) { testTTLJob(t, s) })
 	t.Run("Groups", func(t *testing.T) { testGroups(t, s) })
 	t.Run("Triggers", func(t *testing.T) { testTriggers(t, s) })

@@ -1,0 +1,13 @@
+# Keep the build context lean: only the source the cmd/astrate build needs.
+# NOTE: migrations/ must stay — internal/store go:embeds it.
+.git
+.github
+.claude
+.codex
+.golangci.yml
+dist
+*.db
+sessions.db
+.DS_Store
+docs
+test

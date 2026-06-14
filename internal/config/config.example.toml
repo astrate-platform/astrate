@@ -1,0 +1,86 @@
+# Astrate configuration example (docs/DESIGN.md §5.1).
+#
+# Precedence: built-in defaults < this file < ASTRATE_* environment variables.
+# Only [database].dsn and — outside dev mode — the broker TLS files are
+# strictly required; everything else has a single-VPS default.
+#
+# Every value shown below is the built-in default unless noted. Environment
+# overrides exist for the operationally critical fields, named
+# ASTRATE_<SECTION>_<FIELD> (e.g. ASTRATE_DATABASE_DSN, ASTRATE_HTTP_ADDR,
+# ASTRATE_MQTT_INSECURE_DEV_MODE, ASTRATE_ENGINE_SHARDS, ASTRATE_LOG_LEVEL).
+
+[database]
+# PostgreSQL + TimescaleDB connection string. Required.
+dsn = "postgres://astrate:astrate@127.0.0.1:5432/astrate?sslmode=disable"
+
+[http]
+# Single REST listener for pairing, realm-management, housekeeping, appengine,
+# and the Astrate-native /astrate/v1 health/metrics/socket endpoints.
+addr = ":8080"
+# Optional in-binary TLS. Leave empty to terminate TLS at a reverse proxy.
+# tls_cert_file = "/etc/astrate/http.crt"
+# tls_key_file  = "/etc/astrate/http.key"
+
+[mqtt]
+# Embedded MQTT broker (Astarte MQTT v1, mTLS).
+addr = ":8883"
+# Broker server identity. Required unless insecure_dev_mode is true. Devices
+# trust the per-realm CA, so issue this cert from a CA your fleet trusts.
+# tls_cert_file = "/etc/astrate/broker.crt"
+# tls_key_file  = "/etc/astrate/broker.key"
+# Local development only: also bind a plaintext listener that trusts the
+# claimed client ID. Never enable in production.
+insecure_dev_mode = true
+dev_addr = ":1883"
+# bbolt session store (survives restarts). On a read-only container FS this
+# must point at the writable session volume.
+session_store_path = "sessions.db"
+# Broker URL handed to devices by the pairing info endpoint. Empty derives
+# "mqtts://<addr>"; set it when devices reach the broker by another host.
+# advertised_url = "mqtts://astrate.example.com:8883"
+
+[engine]
+# Ordered ingestion pipeline (§1.4).
+shards = 16
+shard_queue = 4096
+batch_max_rows = 64
+batch_max_wait = "50ms"
+max_payload_bytes = 65536
+
+[pairing]
+# Issued client-certificate validity and credential rate limits (§4.3, §4.5).
+cert_ttl = "720h"
+# Reject connections presenting a certificate older than the device's latest
+# issuance (always-online-CRL behaviour).
+enforce_latest_cert = false
+register_rate = 5.0
+register_burst = 10
+credentials_rate = 5.0
+credentials_burst = 10
+bcrypt_cost = 10
+
+[housekeeping]
+# Instance-admin JWT public keys (claim a_ha) guarding /housekeeping/v1.
+# Provide PEM blocks inline and/or by file reference.
+jwt_public_keys = []
+# jwt_public_key_files = ["/etc/astrate/housekeeping.pub"]
+
+[storage]
+# Optional global drop-chunks retention. Empty/0 disables it (per-endpoint TTL
+# from §2.5 still applies). Example: keep one year of datastreams.
+# retention = "8760h"
+
+[security]
+# File holding the AES-256 master key that seals realm CA private keys. When
+# empty, the store reads ASTRATE_MASTER_KEY or ASTRATE_MASTER_KEY_FILE.
+# master_key_file = "/etc/astrate/master.key"
+
+# [realm]
+# Optionally auto-provision a realm on first boot (no-op if it already exists).
+# name = "test"
+# jwt_public_key_file = "/etc/astrate/test_realm.pub"
+# device_registration_limit = 0
+
+[log]
+level = "info"   # debug | info | warn | error
+format = "json"  # json | text

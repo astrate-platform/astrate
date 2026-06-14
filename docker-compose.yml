@@ -1,12 +1,26 @@
-# Local development stack — M0 ships the database only; the `astrate` service
-# joins in M8 (docs/ROADMAP.md §9). Tuning per docs/DESIGN.md §5.4.
+# Astrate local/dev stack (docs/ROADMAP.md §9 file 8.7, tuning per
+# docs/DESIGN.md §5.4): TimescaleDB plus the single Astrate binary.
 #
-# Fast T2 iteration against this database instead of per-test containers:
+# This file ships the *development* profile: the broker runs in
+# insecure_dev_mode, so devices connect over the plaintext :1883 listener and
+# Astrate mints a throwaway self-signed cert for the (unused) :8883 mTLS
+# listener. For production, terminate TLS properly — see docs/OPERATIONS.md:
+# provide ASTRATE_MQTT_TLS_CERT_FILE / _KEY_FILE (and HTTP TLS or a reverse
+# proxy), set a real ASTRATE_MASTER_KEY, and drop insecure_dev_mode.
+#
+# The astrate service sits behind the "full" compose profile, so plain
+# `docker compose up -d` (and `make up`) brings up only the database for fast
+# T2 iteration. Bring up the whole stack with the profile:
+#
+# Quick start (full stack):
+#   docker compose --profile full up -d --build
+#   curl localhost:8080/astrate/v1/readiness
+#
+# Fast T2 iteration against just the database (no astrate container):
 #   make up
-#   ASTRATE_TEST_DSN="postgres://astrate:astrate@127.0.0.1:5432/astrate?sslmode=disable" \
-#     make test-integration
+#   ASTRATE_TEST_DSN="postgres://astrate:astrate@127.0.0.1:5432/astrate?sslmode=disable" make test-integration
 #
-# Credentials below are for local development only.
+# Credentials and the master key below are throwaway local-dev values.
 services:
   timescaledb:
     image: timescale/timescaledb:latest-pg16
@@ -30,5 +44,31 @@ services:
       timeout: 3s
       retries: 12
 
+  astrate:
+    profiles: ["full"]
+    build:
+      context: .
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+    environment:
+      ASTRATE_DATABASE_DSN: "postgres://astrate:astrate@timescaledb:5432/astrate?sslmode=disable"
+      ASTRATE_MQTT_INSECURE_DEV_MODE: "true"
+      ASTRATE_MQTT_SESSION_STORE_PATH: "/var/lib/astrate/sessions.db"
+      # CHANGE for any non-throwaway use: 64 hex chars (32 bytes), kept secret.
+      ASTRATE_MASTER_KEY: "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff"
+      ASTRATE_LOG_FORMAT: "json"
+      ASTRATE_LOG_LEVEL: "info"
+    ports:
+      - "127.0.0.1:8080:8080" # REST API
+      - "127.0.0.1:1883:1883" # plaintext MQTT (dev only)
+      - "127.0.0.1:8883:8883" # mTLS MQTT
+    volumes:
+      - sessions:/var/lib/astrate
+    read_only: true
+    tmpfs:
+      - /tmp
+
 volumes:
   pgdata:
+  sessions:
