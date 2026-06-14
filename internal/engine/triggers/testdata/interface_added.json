@@ -1,0 +1,1 @@
+{"timestamp":"2026-06-12T10:00:00.123Z","device_id":"f0VMRgIBAQAAAAAAAAAAAA","event":{"type":"interface_added","interface":"com.ex.Sensors","major_version":1,"minor_version":2},"trigger_name":"example_trigger"}

@@ -350,6 +350,8 @@ func encodeValueJSON(v payload.Value) ([]byte, error) {
 // values under the conventions above.
 func jsonable(v payload.Value) (any, error) {
 	switch x := v.(type) {
+	case nil:
+		return nil, nil // property unset renders as JSON null (events only)
 	case float64, int32, bool, string:
 		return x, nil
 	case int64:

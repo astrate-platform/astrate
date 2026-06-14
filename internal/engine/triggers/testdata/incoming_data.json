@@ -1,0 +1,1 @@
+{"timestamp":"2026-06-12T10:00:00.123Z","device_id":"f0VMRgIBAQAAAAAAAAAAAA","event":{"type":"incoming_data","interface":"org.astarte-platform.genericsensors.Values","path":"/streamTest/value","value":0.3},"trigger_name":"example_trigger"}

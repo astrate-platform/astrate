@@ -13,6 +13,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/astrate-platform/astrate/internal/broker"
+	"github.com/astrate-platform/astrate/internal/engine/stream"
+	"github.com/astrate-platform/astrate/internal/engine/triggers"
 	"github.com/astrate-platform/astrate/internal/store"
 	"github.com/astrate-platform/astrate/pkg/payload"
 )
@@ -79,14 +81,25 @@ type Engine struct {
 	quit     chan struct{}
 	quitOnce sync.Once
 
+	// broker is the server→device publish + introspection-refresh port,
+	// wired by New/AttachBroker (M6b file 6.14).
+	broker BrokerPort
+	// exec executes matched trigger actions (M6b file 6.12); set by New.
+	exec *triggers.Executor
+	// bus is the live fan-out hub (M6b file 6.13); set by New.
+	bus *stream.Bus
+	// bg tracks asynchronous control sends (consumer/properties after a
+	// connect) so Drain can wait them out.
+	bg sync.WaitGroup
+
 	// onIntrospection handles device introspection publishes (M6b file 6.7).
 	// While nil, such messages are acknowledged, counted as unhandled, and
 	// dropped — the safe default until the handler is wired.
-	onIntrospection func(ctx context.Context, m broker.InboundMessage)
+	onIntrospection func(ctx context.Context, m broker.InboundMessage, realm *realmSchema)
 	// onControl handles `/control/...` publishes (M6b file 6.8); subpath is
 	// the topic remainder after "control/" (e.g. "emptyCache"). Nil behaves
 	// like onIntrospection.
-	onControl func(ctx context.Context, m broker.InboundMessage, subpath string)
+	onControl func(ctx context.Context, m broker.InboundMessage, realm *realmSchema, subpath string)
 	// afterCommit observes every persisted op right after its batch commits,
 	// in-shard, preserving per-device order. M6b wires trigger evaluation
 	// and live fan-out here (docs/ROADMAP.md §7.2). Nil means no observers.

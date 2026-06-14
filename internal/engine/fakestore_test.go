@@ -14,6 +14,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"sort"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -132,15 +133,41 @@ type fakeStore struct {
 	unsets  []unsetCall
 	hints   map[deviceKey]string
 
+	// properties is the in-memory property table for the M6b control and
+	// server-data paths, keyed by (interfaceID, path) per device.
+	properties map[propsKey]map[store.PropertyRef]store.Property
+	// triggersByRealm feeds ListTriggers.
+	triggersByRealm map[int16][]store.Trigger
+	// updateIntroErrs holds errors returned by the next UpdateIntrospection
+	// calls (consumed front to back).
+	updateIntroErrs []error
+	// purgeCalls records PurgeDeviceOwnedExcept invocations.
+	purgeCalls []purgeCall
+
 	notifyCh chan store.Notification
+}
+
+// propsKey addresses one device's property table.
+type propsKey struct {
+	realmID int16
+	id      deviceid.ID
+}
+
+// purgeCall records one PurgeDeviceOwnedExcept invocation.
+type purgeCall struct {
+	realmID  int16
+	deviceID deviceid.ID
+	keep     []store.PropertyRef
 }
 
 func newFakeStore() *fakeStore {
 	return &fakeStore{
-		interfaces: make(map[int16][]*store.StoredInterface),
-		devices:    make(map[deviceKey]*store.Device),
-		hints:      make(map[deviceKey]string),
-		notifyCh:   make(chan store.Notification, 16),
+		interfaces:      make(map[int16][]*store.StoredInterface),
+		devices:         make(map[deviceKey]*store.Device),
+		hints:           make(map[deviceKey]string),
+		properties:      make(map[propsKey]map[store.PropertyRef]store.Property),
+		triggersByRealm: make(map[int16][]store.Trigger),
+		notifyCh:        make(chan store.Notification, 16),
 	}
 }
 
@@ -290,6 +317,11 @@ func (f *fakeStore) AppendDatastreams(_ context.Context, batch store.DatastreamB
 func (f *fakeStore) UpsertProperty(_ context.Context, p store.Property) error {
 	f.mu.Lock()
 	f.upserts = append(f.upserts, p)
+	key := propsKey{realmID: p.RealmID, id: p.DeviceID}
+	if f.properties[key] == nil {
+		f.properties[key] = make(map[store.PropertyRef]store.Property)
+	}
+	f.properties[key][store.PropertyRef{InterfaceID: p.InterfaceID, Path: p.Path}] = p
 	f.mu.Unlock()
 	return nil
 }
@@ -297,8 +329,128 @@ func (f *fakeStore) UpsertProperty(_ context.Context, p store.Property) error {
 func (f *fakeStore) UnsetProperty(_ context.Context, realmID int16, deviceID deviceid.ID, interfaceID int64, path string) (bool, error) {
 	f.mu.Lock()
 	f.unsets = append(f.unsets, unsetCall{realmID, deviceID, interfaceID, path})
+	key := propsKey{realmID: realmID, id: deviceID}
+	ref := store.PropertyRef{InterfaceID: interfaceID, Path: path}
+	_, existed := f.properties[key][ref]
+	delete(f.properties[key], ref)
 	f.mu.Unlock()
-	return true, nil
+	return existed, nil
+}
+
+func (f *fakeStore) UpdateIntrospection(_ context.Context, realmID int16, id deviceid.ID, intro map[string]store.InterfaceVersion) (map[string]store.InterfaceVersion, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if len(f.updateIntroErrs) > 0 {
+		err := f.updateIntroErrs[0]
+		f.updateIntroErrs = f.updateIntroErrs[1:]
+		return nil, err
+	}
+	for key, dev := range f.devices {
+		if key.id == id && dev.RealmID == realmID {
+			removed := map[string]store.InterfaceVersion{}
+			for name, v := range dev.Introspection {
+				if nv, ok := intro[name]; !ok || nv.Major != v.Major {
+					removed[name] = v
+				}
+			}
+			dev.Introspection = intro
+			return removed, nil
+		}
+	}
+	return nil, fmt.Errorf("%w: device %s", store.ErrNotFound, id)
+}
+
+func (f *fakeStore) PurgeDeviceOwnedExcept(_ context.Context, realmID int16, deviceID deviceid.ID, keep []store.PropertyRef) (int64, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.purgeCalls = append(f.purgeCalls, purgeCall{realmID: realmID, deviceID: deviceID, keep: keep})
+	kept := make(map[store.PropertyRef]bool, len(keep))
+	for _, ref := range keep {
+		kept[ref] = true
+	}
+	var purged int64
+	key := propsKey{realmID: realmID, id: deviceID}
+	for ref := range f.properties[key] {
+		if f.ownershipOf(realmID, ref.InterfaceID) != interfaceschema.OwnershipDevice || kept[ref] {
+			continue
+		}
+		delete(f.properties[key], ref)
+		purged++
+	}
+	return purged, nil
+}
+
+func (f *fakeStore) ListServerOwnedProperties(_ context.Context, realmID int16, deviceID deviceid.ID) ([]store.Property, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var out []store.Property
+	for ref, p := range f.properties[propsKey{realmID: realmID, id: deviceID}] {
+		if f.ownershipOf(realmID, ref.InterfaceID) == interfaceschema.OwnershipServer {
+			out = append(out, p)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].InterfaceID != out[j].InterfaceID {
+			return out[i].InterfaceID < out[j].InterfaceID
+		}
+		return out[i].Path < out[j].Path
+	})
+	return out, nil
+}
+
+func (f *fakeStore) ListTriggers(_ context.Context, realmID int16) ([]store.Trigger, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := make([]store.Trigger, len(f.triggersByRealm[realmID]))
+	copy(out, f.triggersByRealm[realmID])
+	return out, nil
+}
+
+// ownershipOf resolves an interface ID's ownership; zero when unknown.
+// Callers hold f.mu.
+func (f *fakeStore) ownershipOf(realmID int16, interfaceID int64) interfaceschema.Ownership {
+	for _, si := range f.interfaces[realmID] {
+		if si.ID == interfaceID {
+			return si.Ownership
+		}
+	}
+	return 0
+}
+
+// addTrigger installs a trigger definition into a realm.
+func (f *fakeStore) addTrigger(realmID int16, name string, definition string) {
+	f.mu.Lock()
+	f.triggersByRealm[realmID] = append(f.triggersByRealm[realmID],
+		store.Trigger{RealmID: realmID, Name: name, Definition: []byte(definition)})
+	f.mu.Unlock()
+}
+
+// setProperty seeds a property row directly (control/server-data tests).
+func (f *fakeStore) setProperty(p store.Property) {
+	f.mu.Lock()
+	key := propsKey{realmID: p.RealmID, id: p.DeviceID}
+	if f.properties[key] == nil {
+		f.properties[key] = make(map[store.PropertyRef]store.Property)
+	}
+	f.properties[key][store.PropertyRef{InterfaceID: p.InterfaceID, Path: p.Path}] = p
+	f.mu.Unlock()
+}
+
+// propertyRefs lists the device's property refs, sorted (assertions).
+func (f *fakeStore) propertyRefs(realmID int16, deviceID deviceid.ID) []store.PropertyRef {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var out []store.PropertyRef
+	for ref := range f.properties[propsKey{realmID: realmID, id: deviceID}] {
+		out = append(out, ref)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].InterfaceID != out[j].InterfaceID {
+			return out[i].InterfaceID < out[j].InterfaceID
+		}
+		return out[i].Path < out[j].Path
+	})
+	return out
 }
 
 // individualRows flattens every committed individual row in commit order.
@@ -376,6 +528,7 @@ const (
 	ifaceServerProps = int64(13)
 	ifacePropArrays  = int64(14)
 	ifaceMinimal     = int64(15)
+	ifaceServerCmds  = int64(16)
 )
 
 // seedAlpha installs the fixture corpus into realm alpha and registers
@@ -390,14 +543,16 @@ func seedAlpha(t testing.TB, fs *fakeStore) {
 	fs.addInterface(realmAlphaID, fixtureStored(t, realmAlphaID, ifaceServerProps, "com.astrate.test.ServerProperties.json"))
 	fs.addInterface(realmAlphaID, fixtureStored(t, realmAlphaID, ifacePropArrays, "com.astrate.test.PropertyArrays.json"))
 	fs.addInterface(realmAlphaID, fixtureStored(t, realmAlphaID, ifaceMinimal, "com.astrate.test.Minimal.json"))
+	fs.addInterface(realmAlphaID, fixtureStored(t, realmAlphaID, ifaceServerCmds, "org.astarte-platform.genericcommands.ServerCommands.json"))
 	fs.addDevice(realmAlpha, realmAlphaID, devAlpha, map[string]store.InterfaceVersion{
-		"com.astrate.test.AllScalarTypes":                 {Major: 1, Minor: 0},
-		"com.astrate.test.ObjectFlat":                     {Major: 1, Minor: 0},
-		"org.astarte-platform.genericsensors.Geolocation": {Major: 1, Minor: 0},
-		"com.astrate.test.ServerProperties":               {Major: 1, Minor: 2},
-		"com.astrate.test.PropertyArrays":                 {Major: 2, Minor: 1},
-		"com.astrate.test.Minimal":                        {Major: 0, Minor: 1},
-		"com.astrate.test.DeclaredButMissing":             {Major: 1, Minor: 0},
+		"com.astrate.test.AllScalarTypes":                     {Major: 1, Minor: 0},
+		"com.astrate.test.ObjectFlat":                         {Major: 1, Minor: 0},
+		"org.astarte-platform.genericsensors.Geolocation":     {Major: 1, Minor: 0},
+		"com.astrate.test.ServerProperties":                   {Major: 1, Minor: 2},
+		"com.astrate.test.PropertyArrays":                     {Major: 2, Minor: 1},
+		"com.astrate.test.Minimal":                            {Major: 0, Minor: 1},
+		"com.astrate.test.DeclaredButMissing":                 {Major: 1, Minor: 0},
+		"org.astarte-platform.genericcommands.ServerCommands": {Major: 0, Minor: 1},
 	}, "")
 }
 
@@ -485,9 +640,111 @@ func startTestEngine(t testing.TB, fs *fakeStore, cfg Config) *Engine {
 	return e
 }
 
-// Compile-time guards: the fake satisfies the port, and so does the real
+// ---------------------------------------------------------------------------
+// Fake broker port (M6b): records publishes and introspection refreshes.
+// ---------------------------------------------------------------------------
+
+// pubCall records one BrokerPort.Publish invocation.
+type pubCall struct {
+	topic   string
+	payload []byte
+	qos     byte
+	retain  bool
+	expiry  time.Duration
+}
+
+// refreshCall records one BrokerPort.RefreshIntrospection invocation.
+type refreshCall struct {
+	realm string
+	id    deviceid.ID
+}
+
+// fakePort is an in-memory BrokerPort with programmable publish failures.
+type fakePort struct {
+	mu        sync.Mutex
+	pubs      []pubCall
+	refreshes []refreshCall
+	// pubErrs holds errors returned by the next Publish calls.
+	pubErrs []error
+}
+
+func (p *fakePort) Publish(topic string, payload []byte, qos byte, retain bool, expiry time.Duration) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if len(p.pubErrs) > 0 {
+		err := p.pubErrs[0]
+		p.pubErrs = p.pubErrs[1:]
+		return err
+	}
+	p.pubs = append(p.pubs, pubCall{topic: topic, payload: append([]byte(nil), payload...), qos: qos, retain: retain, expiry: expiry})
+	return nil
+}
+
+func (p *fakePort) RefreshIntrospection(_ context.Context, realm string, id deviceid.ID) error {
+	p.mu.Lock()
+	p.refreshes = append(p.refreshes, refreshCall{realm: realm, id: id})
+	p.mu.Unlock()
+	return nil
+}
+
+// published returns a copy of the recorded publishes.
+func (p *fakePort) published() []pubCall {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	out := make([]pubCall, len(p.pubs))
+	copy(out, p.pubs)
+	return out
+}
+
+// publishedTo filters the recorded publishes by topic.
+func (p *fakePort) publishedTo(topic string) []pubCall {
+	var out []pubCall
+	for _, c := range p.published() {
+		if c.topic == topic {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
+// refreshCount returns the number of introspection refreshes.
+func (p *fakePort) refreshCount() int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return len(p.refreshes)
+}
+
+// newWiredRig builds a single-shard engine through New — full M6b wiring
+// (control handlers, triggers, bus) — over a fake store and broker port,
+// with the schema snapshot preloaded. Tests drive handle synchronously.
+func newWiredRig(t testing.TB, cfg Config) (*pipelineRig, *fakeStore, *fakePort) {
+	t.Helper()
+	fs := newFakeStore()
+	seedAlpha(t, fs)
+	cfg.Shards = 1
+	cfg.Logger = discardLogger()
+	port := &fakePort{}
+	e, err := New(fs, port, cfg)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if err := e.schemas.loadAll(context.Background()); err != nil {
+		t.Fatalf("loadAll: %v", err)
+	}
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := e.Drain(ctx); err != nil {
+			t.Errorf("Drain: %v", err)
+		}
+	})
+	return &pipelineRig{e: e, sh: e.shards[0]}, fs, port
+}
+
+// Compile-time guards: the fakes satisfy the ports, and so does the real
 // store (M8 wiring is a plain assignment).
 var (
-	_ Store = (*fakeStore)(nil)
-	_ Store = (*store.Store)(nil)
+	_ Store      = (*fakeStore)(nil)
+	_ Store      = (*store.Store)(nil)
+	_ BrokerPort = (*fakePort)(nil)
 )

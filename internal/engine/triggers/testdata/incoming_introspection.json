@@ -1,0 +1,1 @@
+{"timestamp":"2026-06-12T10:00:00.123Z","device_id":"f0VMRgIBAQAAAAAAAAAAAA","event":{"type":"incoming_introspection","introspection":"com.ex.Sensors:1:0;com.ex.Geo:0:1"},"trigger_name":"example_trigger"}

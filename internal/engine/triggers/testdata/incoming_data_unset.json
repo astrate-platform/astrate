@@ -1,0 +1,1 @@
+{"timestamp":"2026-06-12T10:00:00.123Z","device_id":"f0VMRgIBAQAAAAAAAAAAAA","event":{"type":"incoming_data","interface":"com.example.Props","path":"/setting","value":null},"trigger_name":"example_trigger"}

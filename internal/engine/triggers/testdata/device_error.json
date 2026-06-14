@@ -1,0 +1,1 @@
+{"timestamp":"2026-06-12T10:00:00.123Z","device_id":"f0VMRgIBAQAAAAAAAAAAAA","event":{"type":"device_error","error_name":"interface_not_in_introspection","metadata":{"detail":"no introspected interface matches x"}},"trigger_name":"example_trigger"}

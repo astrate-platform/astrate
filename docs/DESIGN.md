@@ -480,7 +480,7 @@ For an authenticated identity `<realm>/<device_id>` with base topic `B = <realm>
 | Action | Allowed topics |
 |---|---|
 | PUBLISH | `B` (introspection), `B/control/emptyCache`, `B/control/producer/properties`, `B/<interface_name><path>` for interfaces in its introspection with `ownership: device` |
-| SUBSCRIBE | `B/control/consumer/properties`, `B/<interface_name>/#` for `ownership: server` interfaces in its introspection (the hook permits the `B/#` superset some SDKs request, then delivery is naturally scoped by what the engine publishes) |
+| SUBSCRIBE | Any filter within the device's own subtree `B/...` — `B/control/consumer/properties`, `B/<interface_name>/#`, the `B/#` superset some SDKs request. Subscription is *not* gated on introspection: a device can only ever match its own topics, and the official SDKs subscribe to server-owned interfaces **before** sending the introspection that would prove ownership. Scoping happens at delivery: a concrete `B/<interface_name><path>` is delivered only for `ownership: server` interfaces in the device's introspection (wildcards never appear in delivery topics, so filters and deliveries are told apart by that). |
 
 Everything else is denied and logged. Server-side (engine/AppEngine) publishes use mochi's
 inline client and bypass ACLs.

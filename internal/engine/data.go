@@ -37,6 +37,14 @@ const (
 	// reasonUnexpectedPath: §2.6 step 2 — the path resolves no endpoint
 	// mapping (or no valid object aggregation prefix).
 	reasonUnexpectedPath = "unexpected_path"
+	// reasonIntrospectionInvalid: the introspection payload is oversized or
+	// malformed (docs/ROADMAP.md §7.2 file 6.7).
+	reasonIntrospectionInvalid = "introspection_invalid"
+	// reasonControlUnknown: a control publish on an unknown subpath.
+	reasonControlUnknown = "control_unknown"
+	// reasonControlInvalid: a control payload with a bad zlib frame, a
+	// declared size above the ceiling, or a lying size header (§4.5).
+	reasonControlInvalid = "control_payload_invalid"
 )
 
 // engineRejectReasons pre-registers the labels above (newMetrics).
@@ -44,6 +52,7 @@ var engineRejectReasons = []string{
 	reasonRealmUnknown, reasonDeviceUnknown, reasonMalformedTopic,
 	reasonInterfaceNotDeclared, reasonInterfaceNotInstalled,
 	reasonOwnershipViolation, reasonUnexpectedPath,
+	reasonIntrospectionInvalid, reasonControlUnknown, reasonControlInvalid,
 }
 
 // Shard-parking backoff bounds for transient store failures
@@ -144,7 +153,11 @@ func (e *Engine) handle(ctx context.Context, sh *shard, m broker.InboundMessage)
 	switch kind {
 	case kindIntrospection:
 		if e.onIntrospection != nil {
-			e.onIntrospection(ctx, m)
+			// Flush first: introspection (and control) handlers act on
+			// persisted state, so the device's pending data ops must commit
+			// before them to preserve in-shard ordering semantics.
+			e.flushShard(ctx, sh)
+			e.onIntrospection(ctx, m, realm)
 			return
 		}
 		e.met.unhandled.WithLabelValues("introspection").Inc()
@@ -154,7 +167,8 @@ func (e *Engine) handle(ctx context.Context, sh *shard, m broker.InboundMessage)
 		return
 	case kindControl:
 		if e.onControl != nil {
-			e.onControl(ctx, m, subpath)
+			e.flushShard(ctx, sh)
+			e.onControl(ctx, m, realm, subpath)
 			return
 		}
 		e.met.unhandled.WithLabelValues("control").Inc()

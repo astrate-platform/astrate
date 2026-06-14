@@ -33,12 +33,20 @@ type ownershipFn func(iface string) (interfaceschema.Ownership, bool)
 //
 //	PUBLISH:   base | base/control/emptyCache | base/control/producer/properties
 //	           | base/<iface><path> for introspected ownership:device interfaces
-//	SUBSCRIBE: base/control/consumer/properties | base/# (tolerated superset)
-//	           | base/<iface>... for introspected ownership:server interfaces
+//	SUBSCRIBE: any filter within the device's own subtree (base/...) — a
+//	           tolerated superset; harmless because a device can only ever
+//	           match its own topics, and the official SDKs subscribe to
+//	           base/<server-iface>/# *before* sending the introspection that
+//	           would prove ownership (CP-B). Per-message delivery is gated
+//	           independently.
+//	DELIVERY:  base/control/consumer/properties | concrete
+//	           base/<iface>... for introspected ownership:server interfaces
 //
-// Everything else is denied. Read checks cover both SUBSCRIBE filters and
-// per-message delivery topics, so the server-owned rule accepts an interface
-// segment followed by any remainder (`/#`, a concrete path, or nothing).
+// Everything else is denied. Read checks (write == false) cover both SUBSCRIBE
+// filters and per-message delivery topics; the two are told apart by the
+// presence of MQTT wildcards, which only ever appear in filters. The
+// server-owned delivery rule accepts an interface segment followed by any
+// remainder (a concrete path or nothing).
 func checkACL(base, topic string, write bool, ownership ownershipFn) bool {
 	if topic == "" || len(topic) > maxTopicBytes {
 		return false
@@ -62,15 +70,17 @@ func checkACL(base, topic string, write bool, ownership ownershipFn) bool {
 		return known && own == interfaceschema.OwnershipDevice
 	}
 
-	if topic == base+"/control/consumer/properties" {
-		return true
-	}
-	if topic == base+"/#" { // superset filter some SDKs request (§3.2)
-		return true
-	}
 	rest, ok := strings.CutPrefix(topic, base+"/")
 	if !ok {
-		return false
+		return false // never another device's or realm's subtree
+	}
+	if strings.ContainsAny(topic, "+#") {
+		// A SUBSCRIBE filter within the device's own subtree. Wildcards never
+		// occur in delivery topics, so this branch only ever sees filters.
+		return true
+	}
+	if rest == "control/consumer/properties" {
+		return true
 	}
 	iface, _, _ := strings.Cut(rest, "/")
 	own, known := ownership(iface)

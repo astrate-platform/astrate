@@ -20,6 +20,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/astrate-platform/astrate/internal/engine/triggers"
 	"github.com/astrate-platform/astrate/internal/store"
 	"github.com/astrate-platform/astrate/pkg/deviceid"
 	"github.com/astrate-platform/astrate/pkg/interfaceschema"
@@ -49,6 +50,18 @@ type Store interface {
 	UpsertProperty(ctx context.Context, p store.Property) error
 	// UnsetProperty applies a property unset (row delete).
 	UnsetProperty(ctx context.Context, realmID int16, deviceID deviceid.ID, interfaceID int64, path string) (bool, error)
+	// UpdateIntrospection replaces a device's introspection, returning the
+	// (name, major) pairs that were dropped (docs/ROADMAP.md §7.2 file 6.7).
+	UpdateIntrospection(ctx context.Context, realmID int16, id deviceid.ID, intro map[string]store.InterfaceVersion) (map[string]store.InterfaceVersion, error)
+	// PurgeDeviceOwnedExcept implements the `producer/properties` resync
+	// (docs/DESIGN.md §3.3): device-owned properties not in keep are deleted.
+	PurgeDeviceOwnedExcept(ctx context.Context, realmID int16, deviceID deviceid.ID, keep []store.PropertyRef) (int64, error)
+	// ListServerOwnedProperties returns the device's server-owned properties
+	// (emptyCache resend + `consumer/properties` payload, docs/DESIGN.md §3.4).
+	ListServerOwnedProperties(ctx context.Context, realmID int16, deviceID deviceid.ID) ([]store.Property, error)
+	// ListTriggers returns a realm's installed triggers for the compiled
+	// trigger cache (docs/ROADMAP.md §7.2 file 6.10).
+	ListTriggers(ctx context.Context, realmID int16) ([]store.Trigger, error)
 }
 
 // fullReloadDebounce rate-limits snapshot self-heal reloads triggered by
@@ -64,6 +77,13 @@ type realmSchema struct {
 	// interfaces is name → major → compiled interface (docs/ROADMAP.md §7.1
 	// file 6.1).
 	interfaces map[string]map[int]*interfaceschema.CompiledInterface
+	// ifacesByID resolves storage interface IDs back to their compiled form
+	// (property rows carry interface IDs; the control channel and the
+	// server-data path need names and tries — docs/ROADMAP.md §7.2).
+	ifacesByID map[int64]*interfaceschema.CompiledInterface
+	// triggers is the realm's compiled trigger set, rebuilt together with
+	// the interfaces on every invalidation (docs/ROADMAP.md §7.2 file 6.10).
+	triggers []*triggers.Trigger
 }
 
 // iface resolves one name:major pair, or nil.
@@ -72,6 +92,30 @@ func (r *realmSchema) iface(name string, major int) *interfaceschema.CompiledInt
 		return nil
 	}
 	return r.interfaces[name][major]
+}
+
+// ifaceByID resolves a storage interface ID, or nil.
+func (r *realmSchema) ifaceByID(id int64) *interfaceschema.CompiledInterface {
+	if r == nil {
+		return nil
+	}
+	return r.ifacesByID[id]
+}
+
+// latestIface resolves an interface name to its highest installed major, or
+// nil. The server-data path uses it for devices whose introspection does not
+// (yet) pin a major (docs/ROADMAP.md §7.2 file 6.9).
+func (r *realmSchema) latestIface(name string) *interfaceschema.CompiledInterface {
+	if r == nil {
+		return nil
+	}
+	var best *interfaceschema.CompiledInterface
+	for _, ci := range r.interfaces[name] {
+		if best == nil || ci.Major > best.Major {
+			best = ci
+		}
+	}
+	return best
 }
 
 // schemaSnapshot is the immutable compiled-interface view shared by every
@@ -193,7 +237,7 @@ func (c *schemaCache) reloadRealm(ctx context.Context, realmID int16) error {
 	return nil
 }
 
-// buildRealm loads and compiles every interface of one realm.
+// buildRealm loads and compiles every interface and trigger of one realm.
 func (c *schemaCache) buildRealm(ctx context.Context, realmID int16, name string) (*realmSchema, error) {
 	stored, err := c.st.LoadRealmInterfaces(ctx, realmID)
 	if err != nil {
@@ -203,6 +247,7 @@ func (c *schemaCache) buildRealm(ctx context.Context, realmID int16, name string
 		id:         realmID,
 		name:       name,
 		interfaces: make(map[string]map[int]*interfaceschema.CompiledInterface, len(stored)),
+		ifacesByID: make(map[int64]*interfaceschema.CompiledInterface, len(stored)),
 	}
 	for _, si := range stored {
 		iface, err := interfaceschema.ParseInterface(si.Definition)
@@ -225,6 +270,28 @@ func (c *schemaCache) buildRealm(ctx context.Context, realmID int16, name string
 			rs.interfaces[ci.Name] = byMajor
 		}
 		byMajor[ci.Major] = ci
+		rs.ifacesByID[ci.ID] = ci
+	}
+
+	storedTriggers, err := c.st.ListTriggers(ctx, realmID)
+	if err != nil {
+		return nil, fmt.Errorf("engine: loading triggers of realm %s: %w", name, err)
+	}
+	rs.triggers = make([]*triggers.Trigger, 0, len(storedTriggers))
+	for i := range storedTriggers {
+		tr, err := triggers.Compile(storedTriggers[i].Name, storedTriggers[i].Definition)
+		if err != nil {
+			// Same policy as interfaces: M7 validates on install, so a
+			// stored trigger that no longer compiles is skipped loudly.
+			c.log.Error("stored trigger does not compile",
+				"realm", name, "trigger", storedTriggers[i].Name, "err", err)
+			continue
+		}
+		for _, u := range tr.Unsupported {
+			c.log.Warn("trigger condition accepted but not evaluated in this version",
+				"realm", name, "trigger", tr.Name, "condition", u)
+		}
+		rs.triggers = append(rs.triggers, tr)
 	}
 	return rs, nil
 }
@@ -287,6 +354,27 @@ func (d *deviceState) hint() string {
 	return h
 }
 
+// armHintReset arms the §3.5.4 emptyCache rule: the next BSON data payload
+// flips the outbound hint back to bson. The control handler (M6b file 6.8)
+// calls it while processing `control/emptyCache`.
+func (d *deviceState) armHintReset() {
+	d.mu.Lock()
+	d.resetHintOnBSON = true
+	d.mu.Unlock()
+}
+
+// introspectionCopy returns a copy of the cached introspection (the diff
+// input of the introspection handler, docs/ROADMAP.md §7.2 file 6.7).
+func (d *deviceState) introspectionCopy() map[string]store.InterfaceVersion {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	out := make(map[string]store.InterfaceVersion, len(d.introspection))
+	for k, v := range d.introspection {
+		out[k] = v
+	}
+	return out
+}
+
 // deviceCache holds per-connected-device state, loaded lazily on a device's
 // first message and evicted on disconnect (docs/ROADMAP.md §7.1 file 6.1),
 // so memory scales with connected devices, not registered ones.
@@ -331,6 +419,15 @@ func (c *deviceCache) get(ctx context.Context, realm string, realmID int16, id d
 	c.m[key] = st
 	c.mu.Unlock()
 	return st, nil
+}
+
+// peek returns the cached state for the device without loading on a miss.
+// The server-data publish path uses it so offline devices do not populate a
+// cache that is only evicted on disconnect (docs/ROADMAP.md §7.2 file 6.9).
+func (c *deviceCache) peek(realm string, id deviceid.ID) *deviceState {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.m[deviceKey{realm: realm, id: id}]
 }
 
 // evict drops the device's entry; the next message reloads it from the
