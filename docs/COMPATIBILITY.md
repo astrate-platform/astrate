@@ -27,8 +27,11 @@ M6), **CP-C** (`astartectl` operator flow, M7), **CP-D** (full matrix, M9).
 
 Guarded by the conformance suite against the official clients:
 
-- MQTT topics, Astarte MQTT v1 connection contract (mTLS, CN, client-ID = CN,
-  session handling), and ACL model.
+- MQTT topics, Astarte MQTT v1 connection contract (mTLS, identity from the
+  certificate CN with the wire client ID free-form and remapped to the CN —
+  the VerneMQ subscriber-id remap; session handling), and ACL model. The
+  official Python SDK connects with a random paho client ID and relies on
+  this.
 - BSON `{v, t}` data documents and the zlib + size-prefixed control payloads
   (`emptyCache`, `producer/properties`, `consumer/properties`).
 - Introspection format (`;`-separated `name:major:minor` triples).

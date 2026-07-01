@@ -461,8 +461,13 @@ Reference: the *Astarte MQTT v1 Protocol* specification in the upstream docs. No
   `insecure_dev_mode` flag for local development.
 - **Identity:** the client certificate **CN is `<realm>/<device_id>`** (exactly what the Pairing
   CA issued, §4). The auth hook parses CN, checks the cert chains to that realm's CA, checks the
-  device row exists and is not `inhibited`, and rejects otherwise. The MQTT *client ID* must
-  equal the CN (upstream behaviour); a mismatch is rejected.
+  device row exists and is not `inhibited`, and rejects otherwise. The MQTT *client ID* on the
+  wire is free-form — the official Python SDK sends a random paho-generated ID — and is
+  rewritten to the CN before the session binds, mirroring `astarte_vmq_plugin`'s subscriber-id
+  remap in VerneMQ: sessions, takeover, and offline queues are keyed per-device, and a client
+  ID naming another device cannot touch that device's session. *(Amended at CP-D: the original
+  design required client ID == CN and rejected mismatches, which broke the official Python
+  SDK.)*
 - **Sessions:** devices connect with `clean_session=false`. The broker persists session state
   (subscriptions + QoS ≥ 1 offline queue) in a bbolt/pebble file via a mochi storage hook, so
   `session_present` survives Astrate restarts — this matters because SDKs use
@@ -713,7 +718,7 @@ POST .../protocols/astarte_mqtt_v1/credentials/verify
 These two endpoints are what lets stock SDK reconnect/renewal logic run unmodified: SDKs call
 `verify` on boot and re-CSR when invalid/near expiry.
 
-**Flow D — MQTT connection:** §3.1 (mTLS, CN check, client-ID = CN, session handling).
+**Flow D — MQTT connection:** §3.1 (mTLS, CN check, client-ID remapped to CN, session handling).
 
 ```
 Agent                Astrate(pairing)          Device                 Astrate(broker)
