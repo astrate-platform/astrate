@@ -188,20 +188,40 @@ func (b *Broker) Start() error {
 	return b.srv.Serve()
 }
 
+// closeSettle is how long Close waits between stopping the accept loops and
+// running mochi's shutdown, so accepts already in flight can register on
+// mochi's client WaitGroup (see the Close comment).
+const closeSettle = 250 * time.Millisecond
+
 // Close gracefully stops the broker: blocked publish acknowledgments are
 // released (their messages stay unacknowledged on the devices, which re-send
 // after reconnecting — at-least-once, docs/DESIGN.md §5.3), clients are
 // disconnected, and the session store is flushed and closed.
 //
-// Known upstream defect: mochi's attachClient registers on ClientsWg AFTER
-// the accept (server.go, present through mochi main), so a connection landing
-// exactly at Close can race the Add against CloseAll's Wait — flagged by the
-// race detector, and in the worst case a "WaitGroup misuse" panic. Not
-// fixable from outside mochi; revisit if the pin moves past v2.7.9.
+// Known upstream defect worked around here: mochi's attachClient registers on
+// Listeners.ClientsWg AFTER the accept (server.go, present through mochi
+// main), so a connection landing exactly at Close races that Add against
+// CloseAll's Wait — flagged by the race detector, and in the worst case a
+// "WaitGroup misuse" panic. Close therefore quiesces first: it stops each
+// accept loop (passing a copy of mochi's own closeListenerClients callback,
+// because the listener's once-guard would swallow the real one on the second
+// Close), waits closeSettle for in-flight accepts to register, and only then
+// calls Server.Close, whose Wait can no longer run concurrently with an Add.
+// Revisit if the mochi pin ever moves past v2.7.9.
 func (b *Broker) Close() error {
 	var err error
 	b.closeOnce.Do(func() {
 		close(b.closing)
+		disconnectClients := func(id string) {
+			for _, cl := range b.srv.Clients.GetByListener(id) {
+				_ = b.srv.DisconnectClient(cl, packets.ErrServerShuttingDown)
+			}
+		}
+		b.srv.Listeners.Close(listenerMTLS, disconnectClients)
+		if b.devListener != nil {
+			b.srv.Listeners.Close(listenerDev, disconnectClients)
+		}
+		time.Sleep(closeSettle)
 		err = b.srv.Close()
 	})
 	return err

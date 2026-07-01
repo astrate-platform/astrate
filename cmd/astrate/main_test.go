@@ -160,13 +160,6 @@ func TestBoot(t *testing.T) {
 		done2 := make(chan error, 1)
 		go func() { done2 <- run(ctx2, cfg2, log) }()
 		waitReady(t, "http://"+cfg2.HTTP.Addr)
-		// The readiness probe TCP-dials the MQTT listener; mochi's accept
-		// goroutine for that dial calls ClientsWg.Add(1) AFTER the accept
-		// (upstream race in attachClient, present through mochi main), so a
-		// Close immediately behind a probe can race the Add against
-		// CloseAll's Wait under the race detector. Let the last probe's
-		// accept goroutine clear the window before shutting down.
-		time.Sleep(500 * time.Millisecond)
 		cancel2()
 		select {
 		case err := <-done2:
