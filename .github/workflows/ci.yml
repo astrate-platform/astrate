@@ -9,6 +9,7 @@ on:
   pull_request:
   schedule:
     - cron: "0 3 * * *" # nightly T5
+  workflow_dispatch: # on-demand full sweep incl. the nightly T5 tier
 
 permissions:
   contents: read
@@ -97,7 +98,7 @@ jobs:
 
   # T5 nightly: footprint/load budgets and the security hardening sweep.
   nightly:
-    if: github.event_name == 'schedule'
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 90
     services:
