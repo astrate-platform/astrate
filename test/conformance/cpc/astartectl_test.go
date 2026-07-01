@@ -98,15 +98,29 @@ func downloadAstartectl(url, dest string) error {
 		if filepath.Base(hdr.Name) != "astartectl" || hdr.Typeflag != tar.TypeReg {
 			continue
 		}
-		out, err := os.OpenFile(dest, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o755)
+		// Write to a temp file and rename into place: cpa and cpc race this
+		// download in parallel `go test` processes, and exec-ing a binary
+		// another process still holds open for writing is ETXTBSY on Linux.
+		// Rename is atomic, so an exec only ever sees a complete inode.
+		tmp, err := os.CreateTemp(filepath.Dir(dest), filepath.Base(dest)+".tmp-*")
 		if err != nil {
 			return err
 		}
-		if _, err := io.Copy(out, tr); err != nil { //nolint:gosec // pinned release artifact
-			_ = out.Close()
+		if _, err := io.Copy(tmp, tr); err != nil { //nolint:gosec // pinned release artifact
+			_ = tmp.Close()
+			_ = os.Remove(tmp.Name())
 			return err
 		}
-		return out.Close()
+		if err := tmp.Chmod(0o755); err != nil {
+			_ = tmp.Close()
+			_ = os.Remove(tmp.Name())
+			return err
+		}
+		if err := tmp.Close(); err != nil {
+			_ = os.Remove(tmp.Name())
+			return err
+		}
+		return os.Rename(tmp.Name(), dest)
 	}
 }
 
