@@ -22,3 +22,4 @@ coverage.*
 
 # Local-only compose overrides
 docker-compose.override.yml
+__pycache__/
