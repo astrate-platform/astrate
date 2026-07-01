@@ -192,6 +192,12 @@ func (b *Broker) Start() error {
 // released (their messages stay unacknowledged on the devices, which re-send
 // after reconnecting — at-least-once, docs/DESIGN.md §5.3), clients are
 // disconnected, and the session store is flushed and closed.
+//
+// Known upstream defect: mochi's attachClient registers on ClientsWg AFTER
+// the accept (server.go, present through mochi main), so a connection landing
+// exactly at Close can race the Add against CloseAll's Wait — flagged by the
+// race detector, and in the worst case a "WaitGroup misuse" panic. Not
+// fixable from outside mochi; revisit if the pin moves past v2.7.9.
 func (b *Broker) Close() error {
 	var err error
 	b.closeOnce.Do(func() {
