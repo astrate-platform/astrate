@@ -308,12 +308,23 @@ func testRejects(t *testing.T, env *e2eEnv) {
 		}
 	})
 
-	t.Run("ClientIDMismatch", func(t *testing.T) {
+	t.Run("FreeFormClientID", func(t *testing.T) {
+		// Upstream parity: identity comes from the certificate CN, not the
+		// client ID (the official Python SDK connects with a random paho
+		// ID). Even a client ID naming another device is remapped to the
+		// certificate CN, so the connection is attributed to the cert's
+		// device.
 		otherID, _ := deviceid.Random()
-		cn := env.realm.Name + "/" + otherID.String()
-		if _, _, err := testutil.MQTTTryConnect(t, url, cn, true, dev.tlsCfg); err == nil {
-			t.Error("client ID different from certificate CN accepted")
+		spoofCN := env.realm.Name + "/" + otherID.String()
+		client, _, err := testutil.MQTTTryConnect(t, url, spoofCN, true, dev.tlsCfg)
+		if err != nil {
+			t.Fatalf("free-form client ID rejected: %v", err)
 		}
+		defer client.Disconnect(100)
+		waitFor(t, 5*time.Second, "cert device row connected", func() bool {
+			d, err := env.st.GetDevice(ctx, env.realm.ID, dev.identity.DeviceID)
+			return err == nil && d.Connected
+		})
 	})
 
 	t.Run("Inhibited", func(t *testing.T) {

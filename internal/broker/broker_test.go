@@ -368,7 +368,11 @@ func TestBrokerInMemorySmoke(t *testing.T) {
 	})
 }
 
-func TestBrokerRejectsUnknownRealmAndBadClientID(t *testing.T) {
+// TestBrokerClientIDRemappedToCertCN: the device identity is the certificate
+// CN alone — the wire client ID is free-form (upstream parity: the official
+// Python SDK connects with a random paho-generated ID) and is rewritten to
+// the CN before the session binds, so it cannot impersonate another device.
+func TestBrokerClientIDRemappedToCertCN(t *testing.T) {
 	ctx := context.Background()
 	st, realmCA, identity, _ := newFakeEnv(t)
 	intake := newRecorderIntake(true)
@@ -396,18 +400,26 @@ func TestBrokerRejectsUnknownRealmAndBadClientID(t *testing.T) {
 	tlsCfg := testutil.DeviceTLSConfig(t, certPEM, devKeyPriv, roots)
 	url := "ssl://" + b.TLSAddr()
 
-	// Client ID different from the certificate CN.
-	if _, _, err := testutil.MQTTTryConnect(t, url, "test/AAAAAAAAAAAAAAAAAAAAAA", true, tlsCfg); err == nil {
-		t.Error("client-ID != CN accepted")
+	publishAndCheckAttribution := func(t *testing.T, clientID string) {
+		t.Helper()
+		client, _ := testutil.MQTTConnect(t, url, clientID, true, tlsCfg)
+		defer client.Disconnect(100)
+		token := client.Publish(identity.BaseTopic()+"/com.ex.DeviceData/value", 1, false, []byte("v"))
+		msg := intake.next(t, 5*time.Second)
+		if msg.Realm != identity.Realm || msg.DeviceID != identity.DeviceID {
+			t.Fatalf("publish as %q attributed to %s/%s, want the certificate identity %s",
+				clientID, msg.Realm, msg.DeviceID, identity.CN())
+		}
+		testutil.WaitToken(t, token, 5*time.Second)
 	}
-	// Garbage client ID.
-	if _, _, err := testutil.MQTTTryConnect(t, url, "not-a-cn", true, tlsCfg); err == nil {
-		t.Error("malformed client ID accepted")
-	}
-	// The legitimate identity still connects.
-	if _, _, err := testutil.MQTTTryConnect(t, url, identity.CN(), true, tlsCfg); err != nil {
-		t.Errorf("legitimate connect failed: %v", err)
-	}
+
+	// A random (paho-style) client ID connects and acts as the certificate's
+	// device.
+	publishAndCheckAttribution(t, "paho-random-3f2a")
+	// A client ID naming ANOTHER device is remapped all the same: no spoofing.
+	publishAndCheckAttribution(t, "test/AAAAAAAAAAAAAAAAAAAAAA")
+	// The CN as client ID (the Go SDK convention) still connects.
+	publishAndCheckAttribution(t, identity.CN())
 }
 
 func TestReloadRealmsPicksUpNewRealm(t *testing.T) {

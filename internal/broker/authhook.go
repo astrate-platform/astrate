@@ -212,8 +212,9 @@ func loadOwnership(ctx context.Context, st Store, realmID int16, intro map[strin
 	return ownership
 }
 
-// sessionRegistry maps live client IDs (= CNs) to their device sessions. It
-// is shared by the auth, ACL, intake, and lifecycle hooks.
+// sessionRegistry maps live client IDs (= CNs, enforced by the CONNECT
+// rewrite in OnPacketRead) to their device sessions. It is shared by the
+// auth, ACL, intake, and lifecycle hooks.
 type sessionRegistry struct {
 	mu       sync.RWMutex
 	sessions map[string]*deviceSession
@@ -256,9 +257,14 @@ func (r *sessionRegistry) removeIfOwner(clientID string, cl *mqtt.Client) *devic
 }
 
 // authHook implements OnConnectAuthenticate (docs/ROADMAP.md §6 file 5.3):
-// CN parse, chain verification against that realm's CA, device existence and
-// inhibition checks, client-ID == CN, and latest-serial enforcement behind
-// the pairing.enforce_latest_cert flag (docs/DESIGN.md §3.1, §4.3).
+// identity from the certificate CN, chain verification against that realm's
+// CA, device existence and inhibition checks, and latest-serial enforcement
+// behind the pairing.enforce_latest_cert flag (docs/DESIGN.md §3.1, §4.3).
+// The wire client ID is free-form (upstream parity: the official Python SDK
+// connects with a random paho-generated ID) — OnPacketRead rewrites it to
+// the certificate CN before the session binds, mirroring VerneMQ's
+// subscriber-id remap, so every client-ID-keyed mechanism (session registry,
+// persistence, takeover, offline delivery ACL) stays per-device.
 type authHook struct {
 	mqtt.HookBase
 	st                Store
@@ -274,10 +280,37 @@ func (h *authHook) ID() string { return "astrate-auth" }
 
 // Provides implements mqtt.Hook.
 func (h *authHook) Provides(b byte) bool {
-	return b == mqtt.OnConnectAuthenticate || b == mqtt.OnConnect
+	return b == mqtt.OnConnectAuthenticate || b == mqtt.OnConnect || b == mqtt.OnPacketRead
 }
 
-// OnConnect strips any Will message from the connection. Wills are not part
+// OnPacketRead rewrites the CONNECT client identifier of a TLS connection to
+// the certificate CN before mochi binds the session (clients.go ParseConnect
+// runs on the returned packet). Devices connect with arbitrary client IDs —
+// the official Python SDK sends a random paho ID — while the CN remains the
+// session key, exactly like upstream VerneMQ's subscriber-id remap: takeover
+// and persistence are per-device, and a client ID naming another device
+// cannot touch that device's session. Unparseable CNs pass through untouched
+// for OnConnectAuthenticate to reject.
+func (h *authHook) OnPacketRead(cl *mqtt.Client, pk packets.Packet) (packets.Packet, error) {
+	if pk.FixedHeader.Type != packets.Connect {
+		return pk, nil
+	}
+	tc, isTLS := cl.Net.Conn.(*tls.Conn)
+	if !isTLS {
+		return pk, nil
+	}
+	peers := tc.ConnectionState().PeerCertificates
+	if len(peers) == 0 {
+		return pk, nil
+	}
+	cn := peers[0].Subject.CommonName
+	if _, err := ParseCN(cn); err != nil {
+		return pk, nil
+	}
+	pk.Connect.ClientIdentifier = cn
+	return pk, nil
+}
+
 // of the Astarte MQTT v1 protocol, and mochi publishes them without a
 // publish-side ACL check — accepting them would let a device plant a
 // retained message on an arbitrary topic at disconnect time.
@@ -298,23 +331,21 @@ func (h *authHook) OnConnectAuthenticate(cl *mqtt.Client, _ packets.Packet) bool
 		return false
 	}
 
-	identity, err := ParseCN(cl.ID)
-	if err != nil {
-		return deny("client ID is not a <realm>/<device_id> CN", err)
-	}
-	rc, ok := h.pools.Lookup(identity.Realm)
-	if !ok {
-		return deny("unknown realm", nil)
-	}
-
 	if tc, isTLS := cl.Net.Conn.(*tls.Conn); isTLS {
 		peers := tc.ConnectionState().PeerCertificates
 		if len(peers) == 0 {
 			return deny("no client certificate presented", nil)
 		}
 		leaf := peers[0]
-		if leaf.Subject.CommonName != cl.ID {
-			return deny("client ID does not match certificate CN", nil)
+		// The certificate CN is the device identity (docs/DESIGN.md §3.1);
+		// the MQTT client ID plays no part in authentication.
+		identity, err := ParseCN(leaf.Subject.CommonName)
+		if err != nil {
+			return deny("certificate CN is not a <realm>/<device_id> identity", err)
+		}
+		rc, ok := h.pools.Lookup(identity.Realm)
+		if !ok {
+			return deny("unknown realm", nil)
 		}
 		if _, err := leaf.Verify(x509.VerifyOptions{
 			Roots:         rc.pool,
@@ -341,6 +372,14 @@ func (h *authHook) OnConnectAuthenticate(cl *mqtt.Client, _ packets.Packet) bool
 	// them, authenticating by claimed client ID alone (docs/DESIGN.md §3.1).
 	if h.devListenerID == "" || cl.Net.Listener != h.devListenerID {
 		return deny("plaintext connection outside insecure_dev_mode", nil)
+	}
+	identity, err := ParseCN(cl.ID)
+	if err != nil {
+		return deny("client ID is not a <realm>/<device_id> CN", err)
+	}
+	rc, ok := h.pools.Lookup(identity.Realm)
+	if !ok {
+		return deny("unknown realm", nil)
 	}
 	dev, err := h.st.GetDevice(ctx, rc.id, identity.DeviceID)
 	if err != nil {
