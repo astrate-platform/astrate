@@ -23,3 +23,11 @@ coverage.*
 # Local-only compose overrides
 docker-compose.override.yml
 __pycache__/
+
+# bench harness artifacts (bench/README.md)
+/bench/.astarte/
+/bench/keys/
+/bench/results/
+/bench/astrate/conf/
+/bench/*.json
+/bench/bench
