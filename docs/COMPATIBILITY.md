@@ -70,12 +70,34 @@ All additive or strictly-safer; none affect unmodified device SDKs.
      unverifiable token — is a uniform `401` with no existence oracle;
      authorization refusals are `error` reply frames after the upgrade, not
      HTTP status codes.
-   - **The WATCH authorization paths are reconstructed from upstream
-     documentation, not from upstream source**: `groups/<name>` for a group
+   - **The `a_ch` grammar is measured, and it is not the REST grammar.**
+     Recorded against upstream v1.2.0 in
+     `test/conformance/upstream/channels.json`. Upstream partitions the `a_ch`
+     list by an **exact** match on the verb field, keeping only entries whose
+     first field is literally `JOIN` or `WATCH` and discarding every other
+     entry; the path regex is then matched within the chosen bucket. So the
+     astartectl-style blanket `.*::.*`, which authorizes every REST surface,
+     authorizes **nothing** on Channels — `.*` is not the string `JOIN`. A join
+     is checked against the room name with `rooms:<realm>:` stripped off, and
+     `Token.AuthorizesChannel` implements this separately from `Authorizes`,
+     which stays a verb-regex match because that is what upstream's REST plug
+     does. Astrate previously read `a_ch` with the REST rule and did not check
+     `JOIN` on a join at all; both were corrected in M12 phase 06.
+   - **The WATCH authorization paths are still a reading, and one is known to
+     be narrower than upstream's**: Astrate builds `groups/<name>` for a group
      trigger, `<device_id>/<interface>` for a data trigger, and `<device_id>`
-     otherwise, each checked as `Authorizes(a_ch, "WATCH", …)`. astartectl-style
-     `.*::.*` grants behave identically under any reading; narrowly-scoped
-     `a_ch` claims are where a divergence would show.
+     otherwise. Upstream's source builds `<device_id>/<interface><path>` and
+     `groups/<name>/<interface><path>` — it appends the trigger's match path,
+     which Astrate omits. The recording could not discriminate this, because
+     every recorded watch used `WATCH::.*`; it is therefore **not yet
+     measured**, and deliberately left alone rather than changed on a reading,
+     which is the mistake this milestone exists to undo.
+   - **A device trigger's `device_id` must sit inside `simple_trigger`.**
+     Upstream refuses a watch whose `device_id` is only at the payload's top
+     level — where the AppEngine REST API puts it — and refuses a wildcard
+     `device_id: "*"`, both with the misleading reason `unauthorized`. Astrate
+     falls back to the top-level `device_id` and accepts both. Recorded, not
+     yet reconciled.
    - **Transient triggers are matcher-only.** A `watch` payload's
      `simple_trigger` is compiled to a matcher with no action, never stored and
      never handed to the trigger executor. A slow viewer drops frames rather

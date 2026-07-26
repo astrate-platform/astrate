@@ -128,3 +128,103 @@ func TestStringListLenientDecoding(t *testing.T) {
 		t.Error("numeric claim should fail to decode")
 	}
 }
+
+// TestAuthorizesChannelParity is the a_ch table recorded from upstream Astarte
+// v1.2.0 in test/conformance/upstream/channels.json. Channels reads a_ch by a
+// different rule than the REST claims: the verb field is matched by equality,
+// not compiled as a regex, so the blanket grant that authorizes every REST
+// surface authorizes nothing here.
+//
+// Each refusal is paired with an acceptance that differs only in the rule under
+// test, so a matcher that refused everything could not pass the table.
+func TestAuthorizesChannelParity(t *testing.T) {
+	const room = "probe"
+
+	cases := []struct {
+		name   string
+		grants []string // a_ch authorization strings
+		verb   string
+		path   string
+		want   bool
+		rule   string
+	}{
+		{
+			name: "blanket .*::.* authorizes no join", grants: []string{".*::.*"},
+			verb: VerbJoin, path: room, want: false,
+			rule: `".*" is not the literal string "JOIN"`,
+		},
+		{
+			name: "blanket .* authorizes no join", grants: []string{".*"},
+			verb: VerbJoin, path: room, want: false,
+			rule: "an entry without the three-field form is discarded",
+		},
+		{
+			name: "JOIN::.* authorizes the join", grants: []string{"JOIN::.*"},
+			verb: VerbJoin, path: room, want: true,
+			rule: "the paired acceptance: an explicit JOIN verb is what upstream requires",
+		},
+		{
+			name: "JOIN::<this room> authorizes the join", grants: []string{"JOIN::probe"},
+			verb: VerbJoin, path: room, want: true,
+			rule: "an exact-room grant is honoured",
+		},
+		{
+			name: "JOIN::<other room> does not", grants: []string{"JOIN::other"},
+			verb: VerbJoin, path: room, want: false,
+			rule: "the room name is really matched, not merely the verb",
+		},
+		{
+			name: "WATCH::.* authorizes a watch", grants: []string{"JOIN::.*", "WATCH::.*"},
+			verb: VerbWatch, path: "device/iface", want: true,
+			rule: "the watch bucket is selected by its own verb",
+		},
+		{
+			name: "a JOIN grant does not authorize a watch", grants: []string{"JOIN::.*"},
+			verb: VerbWatch, path: "device/iface", want: false,
+			rule: "the two verbs are separate buckets, not a shared path list",
+		},
+		{
+			name: "a WATCH grant does not authorize a join", grants: []string{"WATCH::.*"},
+			verb: VerbJoin, path: room, want: false,
+			rule: "the two verbs are separate buckets, not a shared path list",
+		},
+		{
+			name: "an unknown verb is discarded", grants: []string{"SUBSCRIBE::.*"},
+			verb: VerbJoin, path: room, want: false,
+			rule: "upstream keeps only JOIN and WATCH entries",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			b, err := json.Marshal(tc.grants)
+			if err != nil {
+				t.Fatalf("marshalling grants: %v", err)
+			}
+			tok := tokenWithClaims(t, `{"a_ch": `+string(b)+`}`)
+			if got := tok.AuthorizesChannel(tc.verb, tc.path); got != tc.want {
+				t.Errorf("AuthorizesChannel(%q, %q) with a_ch=%v = %v, want %v — %s",
+					tc.verb, tc.path, tc.grants, got, tc.want, tc.rule)
+			}
+		})
+	}
+}
+
+// TestRESTVerbStaysARegex is the invariant the change above must not break.
+// Upstream's REST plug compiles the verb field into a regex and matches it
+// against the HTTP method, so ".*::.*" grants every REST surface and "GET|POST"
+// selects two methods. Only Channels departs from this.
+func TestRESTVerbStaysARegex(t *testing.T) {
+	tok := tokenWithClaims(t, `{"a_aea": [".*::.*"]}`)
+	if !tok.Authorizes(ClaimAppEngine, "GET", "devices") {
+		t.Error(`".*::.*" must still authorize a REST GET — the verb field is a regex there`)
+	}
+	if tok.AuthorizesChannel(VerbJoin, "devices") {
+		t.Error("an a_aea grant must not authorize the Channels surface at all")
+	}
+
+	alt := tokenWithClaims(t, `{"a_aea": ["GET|POST::devices"]}`)
+	if !alt.Authorizes(ClaimAppEngine, "POST", "devices") {
+		t.Error(`"GET|POST" must still match POST — the verb field is a regex there`)
+	}
+}
