@@ -56,12 +56,12 @@ func TestNotFound(t *testing.T) {
 			wantCT:     "application/json; charset=utf-8",
 		},
 		{
-			name:       "housekeeping_unmatched_keeps_go_default",
+			name:       "housekeeping_unmatched_gets_json_envelope",
 			method:     "GET",
 			path:       "/housekeeping/v1/nope",
 			wantStatus: 404,
-			wantBody:   "404 page not found\n",
-			wantCT:     "text/plain; charset=utf-8",
+			wantBody:   `{"errors":{"detail":"Page not found"}}`,
+			wantCT:     "application/json; charset=utf-8",
 		},
 		{
 			name:       "unknown_prefix_keeps_go_default",

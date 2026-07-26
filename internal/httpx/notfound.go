@@ -44,11 +44,12 @@ func NotFound(mux *http.ServeMux) http.Handler {
 		switch seg {
 		case "appengine", "realmmanagement":
 			_ = astarteapi.WriteError(w, http.StatusNotFound, astarteapi.DetailRouteNotFound)
-		case "pairing":
+		case "pairing", "housekeeping":
 			_ = astarteapi.WriteError(w, http.StatusNotFound, astarteapi.DetailPageNotFound)
 		default:
-			// Only the three segments above were observed upstream; every
-			// other prefix keeps today's plain-text 404 deliberately.
+			// Only the four segments above were observed upstream (recorded in
+			// test/conformance/upstream/rest-errors.json); every other prefix
+			// keeps today's plain-text 404 deliberately.
 			replay()
 		}
 	})
