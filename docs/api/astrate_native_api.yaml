@@ -1,0 +1,336 @@
+openapi: "3.0.3"
+info:
+  title: Astrate Native API
+  description: |
+    Astrate-native operational and real-time API surface. Covers liveness,
+    readiness, and Prometheus metrics (no auth), compat health endpoints for
+    the Astarte Dashboard, and two WebSocket endpoints: the native live
+    event stream and the Phoenix V2-compatible channels endpoint.
+  version: "0.0.1"
+  license:
+    name: "Apache-2.0 with SECO Exclusion"
+    url: https://www.apache.org/licenses/LICENSE-2.0
+
+servers:
+  - url: "{base_url}"
+    variables:
+      base_url:
+        default: http://localhost:8080
+        description: Astrate base URL
+
+security: []
+
+paths:
+  # ── Health & Observability ──────────────────────────────────────────
+
+  /astrate/v1/health:
+    get:
+      operationId: getHealth
+      summary: Liveness probe
+      description: |
+        Returns `{"status": "ok"}` when the process is up and serving.
+        Used by orchestrators (Docker, Kubernetes) as a liveness check.
+      tags: [Observability]
+      responses:
+        "200":
+          description: Service is alive.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+              example:
+                status: ok
+
+  /astrate/v1/readiness:
+    get:
+      operationId: getReadiness
+      summary: Readiness probe
+      description: |
+        Runs every registered dependency check (database, broker). Returns 200
+        when all checks pass, or 503 with per-check status when one or more
+        dependencies are down.
+      tags: [Observability]
+      responses:
+        "200":
+          description: All dependencies are ready.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReadinessStatus"
+              example:
+                status: ok
+                checks:
+                  database: ok
+                  broker: ok
+        "503":
+          description: One or more dependencies are unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReadinessStatus"
+              example:
+                status: unavailable
+                checks:
+                  database: ok
+                  broker: "error: connection refused"
+
+  /astrate/v1/metrics:
+    get:
+      operationId: getMetrics
+      summary: Prometheus metrics endpoint
+      description: |
+        Returns metrics in Prometheus exposition format. The response content
+        type is `text/plain; version=0.0.4`.
+      tags: [Observability]
+      responses:
+        "200":
+          description: Prometheus metrics.
+          content:
+            text/plain; version=0.0.4:
+              schema:
+                type: string
+              example: |
+                # HELP astrate_devices_total Total number of devices.
+                # TYPE astrate_devices_total gauge
+                astrate_devices_total{realm="test"} 42
+
+  # ── Compat health (Astarte Dashboard) ───────────────────────────────
+
+  /appengine/health:
+    get:
+      operationId: getAppEngineHealth
+      summary: AppEngine compat health
+      description: |
+        Upstream-parity unauthenticated health endpoint. The Astarte Dashboard
+        polls this for its API status indicator.
+      tags: [Compat Health]
+      responses:
+        "200":
+          description: Service is healthy.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DataEnvelopeHealthStatus"
+              example:
+                data:
+                  status: ok
+
+  /realmmanagement/health:
+    get:
+      operationId: getRealmManagementHealth
+      summary: Realm Management compat health
+      description: |
+        Upstream-parity unauthenticated health endpoint. The Astarte Dashboard
+        polls this for its API status indicator.
+      tags: [Compat Health]
+      responses:
+        "200":
+          description: Service is healthy.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DataEnvelopeHealthStatus"
+              example:
+                data:
+                  status: ok
+
+  /pairing/health:
+    get:
+      operationId: getPairingHealth
+      summary: Pairing compat health
+      description: |
+        Upstream-parity unauthenticated health endpoint. The Astarte Dashboard
+        polls this for its API status indicator.
+      tags: [Compat Health]
+      responses:
+        "200":
+          description: Service is healthy.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DataEnvelopeHealthStatus"
+              example:
+                data:
+                  status: ok
+
+  # ── Native WebSocket (live stream) ──────────────────────────────────
+
+  /astrate/v1/{realm}/socket:
+    get:
+      operationId: nativeWebSocket
+      summary: Native live event stream (WebSocket / SSE)
+      description: |
+        Astrate-native real-time event stream. Upgrades to WebSocket by
+        default, or streams Server-Sent Events when the client sends
+        `Accept: text/event-stream` or `?transport=sse`.
+
+        Subscribes to the realm's committed data and device lifecycle events.
+        Optional `device_id` and `interface` query parameters narrow the
+        event filter.
+
+        **WebSocket protocol:** server-push only — client frames are drained
+        and ignored. Events are JSON objects:
+
+        ```json
+        {
+          "event": "incoming_data",
+          "realm": "test",
+          "device_id": "f0VMRgIBAQAAAAAAAAAAAA",
+          "interface": "org.example.Sensors",
+          "path": "/sensors/temperature/value",
+          "value": 23.5,
+          "timestamp": "2024-05-30T13:49:57.045Z"
+        }
+        ```
+
+        **SSE protocol:** each event is a `data:` frame followed by a blank line.
+
+        Authentication: `a_ch` realm JWT (via Authorization header or
+        `?token=` query parameter).
+      tags: [WebSocket]
+      parameters:
+        - $ref: "#/components/parameters/RealmName"
+        - name: device_id
+          in: query
+          schema:
+            type: string
+          description: Filter events to this device ID.
+        - name: interface
+          in: query
+          schema:
+            type: string
+          description: Filter events to this interface.
+        - name: transport
+          in: query
+          schema:
+            type: string
+            enum: [websocket, sse]
+            default: websocket
+          description: Force SSE transport instead of WebSocket.
+      responses:
+        "101":
+          description: WebSocket upgrade successful.
+        "200":
+          description: SSE stream started (when `Accept: text/event-stream`).
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  # ── Phoenix V2 compat WebSocket ─────────────────────────────────────
+
+  /appengine/v1/socket/websocket:
+    get:
+      operationId: phoenixWebSocket
+      summary: Phoenix V2-compatible WebSocket endpoint
+      description: |
+        Upstream-compatible Phoenix Channels WebSocket. Authenticates via
+        `?realm=` and `?token=` query parameters (realm JWT).
+
+        Uses the Phoenix V2 frame protocol:
+        - Client sends `phx_join` to join a room (`rooms:{realm}:{name}`)
+        - Client sends `heartbeat` for keepalive
+        - Client sends `watch` / `unwatch` to manage triggers
+        - Server pushes `new_event` frames for matching events
+
+        Frame format:
+        ```json
+        [null, null, "rooms:test:all", "new_event", {"event_data": "..."}]
+        ```
+      tags: [WebSocket]
+      parameters:
+        - name: realm
+          in: query
+          required: true
+          description: The realm name.
+          schema:
+            type: string
+        - name: token
+          in: query
+          required: true
+          description: Realm JWT for authentication.
+          schema:
+            type: string
+      responses:
+        "101":
+          description: WebSocket upgrade successful.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+components:
+  parameters:
+    RealmName:
+      name: realm
+      in: path
+      required: true
+      description: The realm name.
+      schema:
+        type: string
+
+  schemas:
+    HealthStatus:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [ok]
+          description: Liveness status.
+
+    ReadinessStatus:
+      type: object
+      required: [status, checks]
+      properties:
+        status:
+          type: string
+          enum: [ok, unavailable]
+          description: Overall readiness status.
+        checks:
+          type: object
+          additionalProperties:
+            type: string
+          description: Per-dependency check results ("ok" or "error: ...").
+
+    DataEnvelopeHealthStatus:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          required: [status]
+          properties:
+            status:
+              type: string
+              enum: [ok]
+
+    ErrorDetail:
+      type: object
+      required: [errors]
+      properties:
+        errors:
+          type: object
+          required: [detail]
+          properties:
+            detail:
+              type: string
+
+  responses:
+    Unauthorized:
+      description: Unauthorized — missing or invalid JWT/token.
+      content:
+        application/json; charset=utf-8:
+          schema:
+            $ref: "#/components/schemas/ErrorDetail"
+          example:
+            errors:
+              detail: Unauthorized
+
+    InternalServerError:
+      description: Internal Server Error — unexpected failure.
+      content:
+        application/json; charset=utf-8:
+          schema:
+            $ref: "#/components/schemas/ErrorDetail"
+          example:
+            errors:
+              detail: Internal Server Error

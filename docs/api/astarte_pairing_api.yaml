@@ -1,0 +1,558 @@
+openapi: "3.0.3"
+info:
+  title: Astarte Pairing API
+  description: |
+    Device pairing and credential management API for Astrate. Handles device
+    registration (agent flow A), certificate issuance (device flow B/C),
+    device info retrieval, and credential verification.
+
+    Agent endpoints (`/agent/`) require a realm JWT with the `a_pa` claim.
+    Device endpoints authenticate with the device's credentials secret as a
+    Bearer token.
+  version: "0.0.1"
+  license:
+    name: "Apache-2.0 with SECO Exclusion"
+    url: https://www.apache.org/licenses/LICENSE-2.0
+
+servers:
+  - url: "{base_url}"
+    variables:
+      base_url:
+        default: http://localhost:8080
+        description: Astrate base URL
+
+security: []
+
+paths:
+  /pairing/v1/{realm}/agent/devices:
+    post:
+      operationId: registerDevice
+      summary: Register a new device (flow A)
+      description: |
+        Registers a new device in the realm, generating a one-time credentials
+        secret. The request body is wrapped in a data envelope.
+
+        Rate-limited per IP.
+      tags: [Pairing]
+      security:
+        - a_pa: []
+      parameters:
+        - $ref: "#/components/parameters/RealmName"
+      requestBody:
+        required: true
+        content:
+          application/json; charset=utf-8:
+            schema:
+              type: object
+              required: [data]
+              properties:
+                data:
+                  $ref: "#/components/schemas/RegisterRequest"
+            example:
+              data:
+                hw_id: dT6hS2W9TT6LEnP25ks_lg
+      responses:
+        "201":
+          description: Device registered. Returns the one-time credentials secret.
+          content:
+            application/json; charset=utf-8:
+              schema:
+                $ref: "#/components/schemas/DataEnvelopeCredentialsSecret"
+              example:
+                data:
+                  credentials_secret: TTkd0vDHgAs6FSyhmnnpfMZlDOdUWLNxNHbLeuTpegc=
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  /pairing/v1/{realm}/agent/devices/{deviceID}:
+    delete:
+      operationId: unregisterDevice
+      summary: Unregister a device
+      description: Removes a device from the realm. Returns 204 on success.
+      tags: [Pairing]
+      security:
+        - a_pa: []
+      parameters:
+        - $ref: "#/components/parameters/RealmName"
+        - $ref: "#/components/parameters/DeviceID"
+      responses:
+        "204":
+          description: Device unregistered successfully. No body returned.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/DeviceNotFound"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  /pairing/v1/{realm}/devices/{deviceID}/protocols/astarte_mqtt_v1/credentials:
+    post:
+      operationId: requestCredentials
+      summary: Request device credentials (flow B)
+      description: |
+        Issues a client certificate for the device's MQTT connection. The device
+        authenticates with its credentials secret as a Bearer token and submits
+        a CSR.
+
+        Rate-limited per IP and per device.
+      tags: [Pairing]
+      security:
+        - bearerSecret: []
+      parameters:
+        - $ref: "#/components/parameters/RealmName"
+        - $ref: "#/components/parameters/DeviceID"
+      requestBody:
+        required: true
+        content:
+          application/json; charset=utf-8:
+            schema:
+              type: object
+              required: [data]
+              properties:
+                data:
+                  $ref: "#/components/schemas/CredentialsRequest"
+            example:
+              data:
+                csr: "-----BEGIN CERTIFICATE REQUEST-----\nMIICY...\n-----END CERTIFICATE REQUEST-----"
+      responses:
+        "201":
+          description: Client certificate issued.
+          content:
+            application/json; charset=utf-8:
+              schema:
+                $ref: "#/components/schemas/DataEnvelopeClientCert"
+              example:
+                data:
+                  client_crt: "-----BEGIN CERTIFICATE-----\nMIIB...\n-----END CERTIFICATE-----"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/DeviceNotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  /pairing/v1/{realm}/devices/{deviceID}:
+    get:
+      operationId: getDeviceInfo
+      summary: Get device pairing info (flow C)
+      description: |
+        Returns the device's pairing status, protocol details (broker URL,
+        CA certificate), and version. The device authenticates with its
+        credentials secret as a Bearer token.
+      tags: [Pairing]
+      security:
+        - bearerSecret: []
+      parameters:
+        - $ref: "#/components/parameters/RealmName"
+        - $ref: "#/components/parameters/DeviceID"
+      responses:
+        "200":
+          description: Device pairing information.
+          content:
+            application/json; charset=utf-8:
+              schema:
+                $ref: "#/components/schemas/DataEnvelopePairingInfo"
+              example:
+                data:
+                  protocols:
+                    astarte_mqtt_v1:
+                      broker_url: "mqtts://broker.test.example:8883"
+                      ca_crt: "-----BEGIN CERTIFICATE-----\nMIID...\n-----END CERTIFICATE-----"
+                  status: confirmed
+                  version: "0.1.0-test"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/DeviceNotFound"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  /pairing/v1/{realm}/devices/{deviceID}/protocols/astarte_mqtt_v1/credentials/verify:
+    post:
+      operationId: verifyCredentials
+      summary: Verify device credentials
+      description: |
+        Verifies a device's client certificate and returns its validity status
+        (valid, expired, revoked, or invalid). The device authenticates with
+        its credentials secret as a Bearer token.
+      tags: [Pairing]
+      security:
+        - bearerSecret: []
+      parameters:
+        - $ref: "#/components/parameters/RealmName"
+        - $ref: "#/components/parameters/DeviceID"
+      requestBody:
+        required: true
+        content:
+          application/json; charset=utf-8:
+            schema:
+              type: object
+              required: [data]
+              properties:
+                data:
+                  $ref: "#/components/schemas/VerifyRequest"
+            example:
+              data:
+                client_crt: "-----BEGIN CERTIFICATE-----\nMIIB...\n-----END CERTIFICATE-----"
+      responses:
+        "200":
+          description: Credential verification result.
+          content:
+            application/json; charset=utf-8:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/DataEnvelopeVerifyValid"
+                  - $ref: "#/components/schemas/DataEnvelopeVerifyInvalid"
+              examples:
+                valid:
+                  summary: Valid credentials
+                  value:
+                    data:
+                      timestamp: "2024-05-30 13:49:57.045Z"
+                      until: "2025-05-30 13:49:57.045Z"
+                      valid: true
+                expired:
+                  summary: Expired credentials
+                  value:
+                    data:
+                      cause: EXPIRED
+                      details: null
+                      timestamp: "2024-05-30 13:49:57.045Z"
+                      valid: false
+                revoked:
+                  summary: Revoked credentials
+                  value:
+                    data:
+                      cause: REVOKED
+                      details: null
+                      timestamp: "2024-05-30 13:49:57.045Z"
+                      valid: false
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/DeviceNotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+components:
+  securitySchemes:
+    a_pa:
+      type: apiKey
+      in: header
+      name: Authorization
+      description: |
+        Realm-level JWT carrying the `a_pa` claim. Used to authenticate
+        pairing agent endpoints (register/unregister devices).
+
+    bearerSecret:
+      type: http
+      scheme: bearer
+      description: |
+        Device credentials secret used as a Bearer token. The secret was
+        provided once during registration (flow A) and must be included in
+        the Authorization header for device-facing endpoints.
+
+  parameters:
+    RealmName:
+      name: realm
+      in: path
+      required: true
+      description: The realm name.
+      schema:
+        type: string
+
+    DeviceID:
+      name: deviceID
+      in: path
+      required: true
+      description: The device hardware ID (base64-encoded 128-bit).
+      schema:
+        type: string
+
+  schemas:
+    # ── Request types ──
+
+    RegisterRequest:
+      type: object
+      required: [hw_id]
+      properties:
+        hw_id:
+          type: string
+          description: Device hardware ID (base64-encoded 128-bit).
+        initial_payload_format:
+          type: string
+          description: Optional Astrate extension specifying the device's initial payload format.
+
+    CredentialsRequest:
+      type: object
+      required: [csr]
+      properties:
+        csr:
+          type: string
+          description: PEM-encoded Certificate Signing Request from the device.
+
+    VerifyRequest:
+      type: object
+      required: [client_crt]
+      properties:
+        client_crt:
+          type: string
+          description: PEM-encoded client certificate to verify.
+
+    # ── Response payload types ──
+
+    CredentialsSecret:
+      type: object
+      required: [credentials_secret]
+      properties:
+        credentials_secret:
+          type: string
+          description: One-time device credentials secret (base64-encoded).
+
+    ClientCert:
+      type: object
+      required: [client_crt]
+      properties:
+        client_crt:
+          type: string
+          description: PEM-encoded client certificate issued for the device.
+
+    PairingInfo:
+      type: object
+      required: [protocols, status, version]
+      properties:
+        protocols:
+          type: object
+          properties:
+            astarte_mqtt_v1:
+              type: object
+              required: [broker_url, ca_crt]
+              properties:
+                broker_url:
+                  type: string
+                  description: MQTT broker URL for the device.
+                ca_crt:
+                  type: string
+                  description: PEM-encoded CA certificate for the MQTT TLS connection (Astrate extension).
+        status:
+          type: string
+          enum: [confirmed, pending, denied, expired]
+          description: Device pairing status.
+        version:
+          type: string
+          description: Astrate version string.
+
+    VerifyValid:
+      type: object
+      required: [timestamp, until, valid]
+      properties:
+        timestamp:
+          type: string
+          description: Verification timestamp (Elixir DateTime format).
+        until:
+          type: string
+          description: Certificate expiration timestamp.
+        valid:
+          type: boolean
+          enum: [true]
+
+    VerifyInvalid:
+      type: object
+      required: [cause, details, timestamp, valid]
+      properties:
+        cause:
+          type: string
+          enum: [EXPIRED, INVALID, REVOKED]
+          description: Reason for credential invalidity.
+        details:
+          type: string
+          nullable: true
+          description: Additional details (currently always null).
+        timestamp:
+          type: string
+          description: Verification timestamp (Elixir DateTime format).
+        valid:
+          type: boolean
+          enum: [false]
+
+    # ── Envelope variants ──
+
+    DataEnvelopeCredentialsSecret:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/CredentialsSecret"
+
+    DataEnvelopeClientCert:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/ClientCert"
+
+    DataEnvelopePairingInfo:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/PairingInfo"
+
+    DataEnvelopeVerifyValid:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/VerifyValid"
+
+    DataEnvelopeVerifyInvalid:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/VerifyInvalid"
+
+    # ── Error envelopes ──
+
+    ErrorDetail:
+      type: object
+      required: [errors]
+      properties:
+        errors:
+          type: object
+          required: [detail]
+          properties:
+            detail:
+              type: string
+
+    ErrorFields:
+      type: object
+      required: [errors]
+      properties:
+        errors:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              type: string
+
+  responses:
+    BadRequest:
+      description: Bad Request — malformed or missing data envelope.
+      content:
+        application/json; charset=utf-8:
+          schema:
+            $ref: "#/components/schemas/ErrorDetail"
+          example:
+            errors:
+              detail: Bad Request
+
+    Unauthorized:
+      description: Unauthorized — missing or invalid JWT/Bearer token.
+      content:
+        application/json; charset=utf-8:
+          schema:
+            $ref: "#/components/schemas/ErrorDetail"
+          example:
+            errors:
+              detail: Unauthorized
+
+    Forbidden:
+      description: Forbidden — valid credentials but insufficient permissions or device inhibited.
+      content:
+        application/json; charset=utf-8:
+          schema:
+            $ref: "#/components/schemas/ErrorDetail"
+          example:
+            errors:
+              detail: Forbidden
+
+    DeviceNotFound:
+      description: Device not found — unknown device ID.
+      content:
+        application/json; charset=utf-8:
+          schema:
+            $ref: "#/components/schemas/ErrorDetail"
+          example:
+            errors:
+              detail: Device not found
+
+    ValidationError:
+      description: Unprocessable Entity — field-level validation errors.
+      content:
+        application/json; charset=utf-8:
+          schema:
+            $ref: "#/components/schemas/ErrorFields"
+          examples:
+            blank_hwid:
+              summary: Blank hw_id
+              value:
+                errors:
+                  hw_id:
+                    - "can't be blank"
+            already_registered:
+              summary: Device already registered
+              value:
+                errors:
+                  error_name:
+                    - already_registered
+            limit_reached:
+              summary: Registration limit reached
+              value:
+                errors:
+                  error_name:
+                    - device_registration_limit_reached
+            invalid_hwid:
+              summary: Invalid hw_id format
+              value:
+                errors:
+                  hw_id:
+                    - "is not a valid base64 encoded 128 bits id"
+
+    TooManyRequests:
+      description: Too Many Requests — rate limit exceeded.
+      content:
+        application/json; charset=utf-8:
+          schema:
+            $ref: "#/components/schemas/ErrorDetail"
+          example:
+            errors:
+              detail: Too Many Requests
+
+    InternalServerError:
+      description: Internal Server Error — unexpected failure.
+      content:
+        application/json; charset=utf-8:
+          schema:
+            $ref: "#/components/schemas/ErrorDetail"
+          example:
+            errors:
+              detail: Internal Server Error

@@ -1,0 +1,333 @@
+openapi: "3.0.3"
+info:
+  title: Astarte Housekeeping API
+  description: |
+    Instance-level administration API for Astrate. Manages realms — create, list,
+    inspect, and delete them. All endpoints are guarded by an instance-level JWT
+    carrying the `a_ha` claim.
+
+    This API surface mirrors the upstream Astarte Housekeeping API paths and
+    envelope conventions for wire compatibility.
+  version: "0.0.1"
+  license:
+    name: "Apache-2.0 with SECO Exclusion"
+    url: https://www.apache.org/licenses/LICENSE-2.0
+
+servers:
+  - url: "{base_url}"
+    variables:
+      base_url:
+        default: http://localhost:8080
+        description: Astrate base URL
+
+security: []
+
+paths:
+  /housekeeping/v1/realms:
+    get:
+      operationId: listRealms
+      summary: List all realms
+      description: Returns the names of all configured realms, wrapped in a data envelope.
+      tags: [Housekeeping]
+      security:
+        - a_ha: []
+      responses:
+        "200":
+          description: A list of realm names.
+          content:
+            application/json; charset=utf-8:
+              schema:
+                $ref: "#/components/schemas/DataEnvelopeRealmNames"
+              example:
+                {"data":["test","production"]}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+    post:
+      operationId: createRealm
+      summary: Create a new realm
+      description: |
+        Creates a new realm. The request body is wrapped in a data envelope and
+        contains the realm name, the JWT public key PEM, and an optional device
+        registration limit.
+      tags: [Housekeeping]
+      security:
+        - a_ha: []
+      requestBody:
+        required: true
+        content:
+          application/json; charset=utf-8:
+            schema:
+              type: object
+              required: [data]
+              properties:
+                data:
+                  $ref: "#/components/schemas/RealmCreate"
+            example:
+              data:
+                realm_name: test
+                jwt_public_key_pem: |
+                  -----BEGIN PUBLIC KEY-----
+                  MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE...
+                  -----END PUBLIC KEY-----
+                device_registration_limit: 100
+      responses:
+        "201":
+          description: Realm created successfully.
+          content:
+            application/json; charset=utf-8:
+              schema:
+                $ref: "#/components/schemas/DataEnvelopeRealm"
+              example:
+                data:
+                  realm_name: test
+                  jwt_public_key_pem: |
+                    -----BEGIN PUBLIC KEY-----
+                    MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE...
+                    -----END PUBLIC KEY-----
+                  device_registration_limit: 100
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  /housekeeping/v1/realms/{realm}:
+    get:
+      operationId: getRealm
+      summary: Get a realm by name
+      description: Returns the full representation of a single realm.
+      tags: [Housekeeping]
+      security:
+        - a_ha: []
+      parameters:
+        - $ref: "#/components/parameters/RealmName"
+      responses:
+        "200":
+          description: Realm details.
+          content:
+            application/json; charset=utf-8:
+              schema:
+                $ref: "#/components/schemas/DataEnvelopeRealm"
+              example:
+                data:
+                  realm_name: test
+                  jwt_public_key_pem: |
+                    -----BEGIN PUBLIC KEY-----
+                    MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE...
+                    -----END PUBLIC KEY-----
+                  device_registration_limit: 100
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+    delete:
+      operationId: deleteRealm
+      summary: Delete a realm
+      description: Deletes a realm and all its data. Returns 204 on success.
+      tags: [Housekeeping]
+      security:
+        - a_ha: []
+      parameters:
+        - $ref: "#/components/parameters/RealmName"
+      responses:
+        "204":
+          description: Realm deleted successfully. No body returned.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+components:
+  securitySchemes:
+    a_ha:
+      type: apiKey
+      in: header
+      name: Authorization
+      description: |
+        Instance-level JWT carrying the `a_ha` claim. Used to authenticate
+        housekeeping operations (realm CRUD).
+
+  parameters:
+    RealmName:
+      name: realm
+      in: path
+      required: true
+      description: The realm name.
+      schema:
+        type: string
+
+  schemas:
+    # ── Envelope variants ──
+
+    DataEnvelopeRealm:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/Realm"
+
+    DataEnvelopeRealmNames:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: array
+          items:
+            type: string
+          description: List of realm names.
+
+    Realm:
+      type: object
+      required: [realm_name, jwt_public_key_pem]
+      properties:
+        realm_name:
+          type: string
+          description: Unique realm identifier.
+        jwt_public_key_pem:
+          type: string
+          description: PEM-encoded public key used to verify realm JWTs.
+        device_registration_limit:
+          type: integer
+          format: int32
+          nullable: true
+          description: Maximum number of devices allowed in this realm. Null means unlimited.
+
+    RealmCreate:
+      type: object
+      required: [realm_name, jwt_public_key_pem]
+      properties:
+        realm_name:
+          type: string
+          description: Unique realm identifier.
+        jwt_public_key_pem:
+          type: string
+          description: PEM-encoded public key used to verify realm JWTs.
+        device_registration_limit:
+          type: integer
+          format: int32
+          nullable: true
+          description: Maximum number of devices allowed in this realm. Null means unlimited.
+
+    # ── Error envelopes ──
+
+    ErrorDetail:
+      type: object
+      required: [errors]
+      properties:
+        errors:
+          type: object
+          required: [detail]
+          properties:
+            detail:
+              type: string
+              description: Human-readable error detail string.
+          example:
+            detail: Bad Request
+
+    ErrorFields:
+      type: object
+      required: [errors]
+      properties:
+        errors:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              type: string
+          description: Field-level validation errors (Phoenix changeset shape).
+          example:
+            errors:
+              hw_id:
+                - "is invalid"
+
+  responses:
+    BadRequest:
+      description: Bad Request — malformed or missing data envelope.
+      content:
+        application/json; charset=utf-8:
+          schema:
+            $ref: "#/components/schemas/ErrorDetail"
+          example:
+            errors:
+              detail: Bad Request
+
+    Unauthorized:
+      description: Unauthorized — missing or invalid JWT.
+      content:
+        application/json; charset=utf-8:
+          schema:
+            $ref: "#/components/schemas/ErrorDetail"
+          example:
+            errors:
+              detail: Unauthorized
+
+    Forbidden:
+      description: Forbidden — valid JWT but insufficient permissions.
+      content:
+        application/json; charset=utf-8:
+          schema:
+            $ref: "#/components/schemas/ErrorDetail"
+          example:
+            errors:
+              detail: Forbidden
+
+    NotFound:
+      description: Not Found — resource does not exist.
+      content:
+        application/json; charset=utf-8:
+          schema:
+            $ref: "#/components/schemas/ErrorDetail"
+          example:
+            errors:
+              detail: Not Found
+
+    Conflict:
+      description: Conflict — resource already exists (e.g. realm name taken).
+      content:
+        application/json; charset=utf-8:
+          schema:
+            $ref: "#/components/schemas/ErrorDetail"
+          example:
+            errors:
+              detail: Realm already exists
+
+    ValidationError:
+      description: Unprocessable Entity — request body failed validation.
+      content:
+        application/json; charset=utf-8:
+          schema:
+            $ref: "#/components/schemas/ErrorDetail"
+          example:
+            errors:
+              detail: "housekeeping: validation failed: realm name must not be empty"
+
+    InternalServerError:
+      description: Internal Server Error — unexpected failure.
+      content:
+        application/json; charset=utf-8:
+          schema:
+            $ref: "#/components/schemas/ErrorDetail"
+          example:
+            errors:
+              detail: Internal Server Error

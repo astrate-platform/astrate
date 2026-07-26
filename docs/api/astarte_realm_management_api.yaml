@@ -1,0 +1,813 @@
+openapi: "3.0.3"
+info:
+  title: Astarte Realm Management API
+  description: |
+    Realm-level administration API for Astrate. Manages interfaces, triggers,
+    trigger delivery policies, auth configuration, device registration limits,
+    and device lifecycle within a single realm.
+
+    All endpoints are guarded by a realm JWT carrying the `a_rma` claim.
+  version: "0.0.1"
+  license:
+    name: "Apache-2.0 with SECO Exclusion"
+    url: https://www.apache.org/licenses/LICENSE-2.0
+
+servers:
+  - url: "{base_url}"
+    variables:
+      base_url:
+        default: http://localhost:8080
+        description: Astrate base URL
+
+security: []
+
+paths:
+  # ── Interfaces ──────────────────────────────────────────────────────
+
+  /realmmanagement/v1/{realm}/interfaces:
+    get:
+      operationId: listInterfaces
+      summary: List all installed interfaces
+      description: Returns the names of all interfaces installed in the realm.
+      tags: [Realm Management - Interfaces]
+      security:
+        - a_rma: []
+      parameters:
+        - $ref: "#/components/parameters/RealmName"
+      responses:
+        "200":
+          description: A list of interface names.
+          content:
+            application/json; charset=utf-8:
+              schema:
+                $ref: "#/components/schemas/DataEnvelopeStringArray"
+              example:
+                data:
+                  - org.example.Sensors
+                  - org.example.Actuators
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+    post:
+      operationId: installInterface
+      summary: Install a new interface
+      description: |
+        Installs a new interface definition in the realm. The request body
+        contains the raw JSON interface definition (wrapped in a data envelope).
+      tags: [Realm Management - Interfaces]
+      security:
+        - a_rma: []
+      parameters:
+        - $ref: "#/components/parameters/RealmName"
+      requestBody:
+        required: true
+        content:
+          application/json; charset=utf-8:
+            schema:
+              type: object
+              required: [data]
+              properties:
+                data:
+                  description: Raw JSON interface definition.
+                  type: object
+      responses:
+        "201":
+          description: Interface installed. Returns the installed interface definition.
+          content:
+            application/json; charset=utf-8:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    description: Installed interface definition.
+                    type: object
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  /realmmanagement/v1/{realm}/interfaces/{name}:
+    get:
+      operationId: listInterfaceMajors
+      summary: List major versions of an interface
+      description: Returns the installed major version numbers for the named interface.
+      tags: [Realm Management - Interfaces]
+      security:
+        - a_rma: []
+      parameters:
+        - $ref: "#/components/parameters/RealmName"
+        - $ref: "#/components/parameters/InterfaceName"
+      responses:
+        "200":
+          description: A list of major version numbers.
+          content:
+            application/json; charset=utf-8:
+              schema:
+                $ref: "#/components/schemas/DataEnvelopeIntArray"
+              example:
+                data:
+                  - 0
+                  - 1
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  /realmmanagement/v1/{realm}/interfaces/{name}/{major}:
+    get:
+      operationId: getInterface
+      summary: Get an interface definition
+      description: Returns the full interface definition for a specific major version.
+      tags: [Realm Management - Interfaces]
+      security:
+        - a_rma: []
+      parameters:
+        - $ref: "#/components/parameters/RealmName"
+        - $ref: "#/components/parameters/InterfaceName"
+        - $ref: "#/components/parameters/MajorVersion"
+      responses:
+        "200":
+          description: Interface definition.
+          content:
+            application/json; charset=utf-8:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    description: Interface definition JSON.
+                    type: object
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+    put:
+      operationId: updateInterface
+      summary: Update an interface definition
+      description: |
+        Updates an existing interface definition (same major version). Returns
+        204 on success with no body.
+      tags: [Realm Management - Interfaces]
+      security:
+        - a_rma: []
+      parameters:
+        - $ref: "#/components/parameters/RealmName"
+        - $ref: "#/components/parameters/InterfaceName"
+        - $ref: "#/components/parameters/MajorVersion"
+      requestBody:
+        required: true
+        content:
+          application/json; charset=utf-8:
+            schema:
+              type: object
+              required: [data]
+              properties:
+                data:
+                  description: Updated interface definition.
+                  type: object
+      responses:
+        "204":
+          description: Interface updated. No body returned.
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+    delete:
+      operationId: deleteInterface
+      summary: Delete an interface
+      description: |
+        Deletes an interface at a specific major version. Fails if the major
+        version is not 0 or if the interface is still used by device introspection.
+        Returns 204 on success.
+      tags: [Realm Management - Interfaces]
+      security:
+        - a_rma: []
+      parameters:
+        - $ref: "#/components/parameters/RealmName"
+        - $ref: "#/components/parameters/InterfaceName"
+        - $ref: "#/components/parameters/MajorVersion"
+      responses:
+        "204":
+          description: Interface deleted. No body returned.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          description: Unprocessable Entity — major version not 0 or interface in use.
+          content:
+            application/json; charset=utf-8:
+              schema:
+                $ref: "#/components/schemas/ErrorDetail"
+              examples:
+                major_not_zero:
+                  summary: Major version is not 0
+                  value:
+                    errors:
+                      detail: "Interface major version is not 0, can't be deleted"
+                in_use:
+                  summary: Interface in use by device
+                  value:
+                    errors:
+                      detail: "Cannot delete an interface that is used by a device introspection"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  # ── Triggers ────────────────────────────────────────────────────────
+
+  /realmmanagement/v1/{realm}/triggers:
+    get:
+      operationId: listTriggers
+      summary: List all triggers
+      description: Returns the names of all triggers in the realm.
+      tags: [Realm Management - Triggers]
+      security:
+        - a_rma: []
+      parameters:
+        - $ref: "#/components/parameters/RealmName"
+      responses:
+        "200":
+          description: A list of trigger names.
+          content:
+            application/json; charset=utf-8:
+              schema:
+                $ref: "#/components/schemas/DataEnvelopeStringArray"
+              example:
+                data:
+                  - example_trigger
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+    post:
+      operationId: createTrigger
+      summary: Create a new trigger
+      description: |
+        Creates a new trigger. The request body contains the raw JSON trigger
+        definition (wrapped in a data envelope).
+      tags: [Realm Management - Triggers]
+      security:
+        - a_rma: []
+      parameters:
+        - $ref: "#/components/parameters/RealmName"
+      requestBody:
+        required: true
+        content:
+          application/json; charset=utf-8:
+            schema:
+              type: object
+              required: [data]
+              properties:
+                data:
+                  description: Raw JSON trigger definition.
+                  type: object
+      responses:
+        "201":
+          description: Trigger created. Returns the trigger definition.
+          content:
+            application/json; charset=utf-8:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    description: Trigger definition JSON.
+                    type: object
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  /realmmanagement/v1/{realm}/triggers/{name}:
+    get:
+      operationId: getTrigger
+      summary: Get a trigger definition
+      description: Returns the full trigger definition.
+      tags: [Realm Management - Triggers]
+      security:
+        - a_rma: []
+      parameters:
+        - $ref: "#/components/parameters/RealmName"
+        - $ref: "#/components/parameters/TriggerName"
+      responses:
+        "200":
+          description: Trigger definition.
+          content:
+            application/json; charset=utf-8:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    description: Trigger definition JSON.
+                    type: object
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+    delete:
+      operationId: deleteTrigger
+      summary: Delete a trigger
+      description: Deletes a trigger by name. Returns 204 on success.
+      tags: [Realm Management - Triggers]
+      security:
+        - a_rma: []
+      parameters:
+        - $ref: "#/components/parameters/RealmName"
+        - $ref: "#/components/parameters/TriggerName"
+      responses:
+        "204":
+          description: Trigger deleted. No body returned.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  # ── Config / Auth ──────────────────────────────────────────────────
+
+  /realmmanagement/v1/{realm}/config/auth:
+    get:
+      operationId: getAuthConfig
+      summary: Get realm auth configuration
+      description: Returns the realm's JWT public key PEM.
+      tags: [Realm Management - Config]
+      security:
+        - a_rma: []
+      parameters:
+        - $ref: "#/components/parameters/RealmName"
+      responses:
+        "200":
+          description: Auth configuration.
+          content:
+            application/json; charset=utf-8:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    $ref: "#/components/schemas/AuthConfig"
+              example:
+                data:
+                  jwt_public_key_pem: |
+                    -----BEGIN PUBLIC KEY-----
+                    MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE...
+                    -----END PUBLIC KEY-----
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+    put:
+      operationId: putAuthConfig
+      summary: Update realm auth configuration
+      description: Updates the realm's JWT public key PEM. Returns 204 on success.
+      tags: [Realm Management - Config]
+      security:
+        - a_rma: []
+      parameters:
+        - $ref: "#/components/parameters/RealmName"
+      requestBody:
+        required: true
+        content:
+          application/json; charset=utf-8:
+            schema:
+              type: object
+              required: [data]
+              properties:
+                data:
+                  $ref: "#/components/schemas/AuthConfig"
+            example:
+              data:
+                jwt_public_key_pem: |
+                  -----BEGIN PUBLIC KEY-----
+                  MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE...
+                  -----END PUBLIC KEY-----
+      responses:
+        "204":
+          description: Auth configuration updated. No body returned.
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  /realmmanagement/v1/{realm}/config/device_registration_limit:
+    get:
+      operationId: getDeviceRegistrationLimit
+      summary: Get device registration limit
+      description: Returns the realm's device registration limit (null if unlimited).
+      tags: [Realm Management - Config]
+      security:
+        - a_rma: []
+      parameters:
+        - $ref: "#/components/parameters/RealmName"
+      responses:
+        "200":
+          description: Device registration limit.
+          content:
+            application/json; charset=utf-8:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: integer
+                    format: int32
+                    nullable: true
+                    description: Device registration limit. Null means unlimited.
+              example:
+                data: 100
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  # ── Version ─────────────────────────────────────────────────────────
+
+  /realmmanagement/v1/{realm}/version:
+    get:
+      operationId: getVersion
+      summary: Get emulated API version
+      description: |
+        Returns the emulated upstream API compatibility version. The Astarte
+        Dashboard gates feature UI on this value.
+      tags: [Realm Management - Misc]
+      security:
+        - a_rma: []
+      parameters:
+        - $ref: "#/components/parameters/RealmName"
+      responses:
+        "200":
+          description: API compatibility version.
+          content:
+            application/json; charset=utf-8:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: string
+                    description: Version string.
+              example:
+                data: "1.1.0"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  # ── Device lifecycle ────────────────────────────────────────────────
+
+  /realmmanagement/v1/{realm}/devices/{device}:
+    delete:
+      operationId: deleteDevice
+      summary: Delete a device
+      description: |
+        Synchronously deletes a device and all its data. This is a deliberate
+        deviation from upstream's async deletion (see COMPATIBILITY.md).
+        Returns 204 on success.
+      tags: [Realm Management - Devices]
+      security:
+        - a_rma: []
+      parameters:
+        - $ref: "#/components/parameters/RealmName"
+        - $ref: "#/components/parameters/DeviceID"
+      responses:
+        "204":
+          description: Device deleted. No body returned.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/DeviceNotFound"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  # ── Trigger delivery policies ───────────────────────────────────────
+
+  /realmmanagement/v1/{realm}/policies:
+    get:
+      operationId: listPolicies
+      summary: List trigger delivery policies
+      description: Returns the names of all trigger delivery policies in the realm.
+      tags: [Realm Management - Policies]
+      security:
+        - a_rma: []
+      parameters:
+        - $ref: "#/components/parameters/RealmName"
+      responses:
+        "200":
+          description: A list of policy names.
+          content:
+            application/json; charset=utf-8:
+              schema:
+                $ref: "#/components/schemas/DataEnvelopeStringArray"
+              example:
+                data:
+                  - default_policy
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+    post:
+      operationId: createPolicy
+      summary: Create a trigger delivery policy
+      description: |
+        Creates a new trigger delivery policy. The request body contains the
+        raw JSON policy definition (wrapped in a data envelope).
+      tags: [Realm Management - Policies]
+      security:
+        - a_rma: []
+      parameters:
+        - $ref: "#/components/parameters/RealmName"
+      requestBody:
+        required: true
+        content:
+          application/json; charset=utf-8:
+            schema:
+              type: object
+              required: [data]
+              properties:
+                data:
+                  description: Raw JSON policy definition.
+                  type: object
+      responses:
+        "201":
+          description: Policy created. Returns the policy definition.
+          content:
+            application/json; charset=utf-8:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    description: Policy definition JSON.
+                    type: object
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  /realmmanagement/v1/{realm}/policies/{name}:
+    get:
+      operationId: getPolicy
+      summary: Get a trigger delivery policy
+      description: Returns the full policy definition.
+      tags: [Realm Management - Policies]
+      security:
+        - a_rma: []
+      parameters:
+        - $ref: "#/components/parameters/RealmName"
+        - $ref: "#/components/parameters/PolicyName"
+      responses:
+        "200":
+          description: Policy definition.
+          content:
+            application/json; charset=utf-8:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    description: Policy definition JSON.
+                    type: object
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+    delete:
+      operationId: deletePolicy
+      summary: Delete a trigger delivery policy
+      description: Deletes a policy by name. Returns 204 on success.
+      tags: [Realm Management - Policies]
+      security:
+        - a_rma: []
+      parameters:
+        - $ref: "#/components/parameters/RealmName"
+        - $ref: "#/components/parameters/PolicyName"
+      responses:
+        "204":
+          description: Policy deleted. No body returned.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+components:
+  securitySchemes:
+    a_rma:
+      type: apiKey
+      in: header
+      name: Authorization
+      description: |
+        Realm-level JWT carrying the `a_rma` claim. Used to authenticate
+        realm management operations (interfaces, triggers, config, policies).
+
+  parameters:
+    RealmName:
+      name: realm
+      in: path
+      required: true
+      description: The realm name.
+      schema:
+        type: string
+
+    InterfaceName:
+      name: name
+      in: path
+      required: true
+      description: The interface name (e.g. `org.example.Sensors`).
+      schema:
+        type: string
+
+    MajorVersion:
+      name: major
+      in: path
+      required: true
+      description: The interface major version number (integer >= 0).
+      schema:
+        type: integer
+        minimum: 0
+
+    TriggerName:
+      name: name
+      in: path
+      required: true
+      description: The trigger name.
+      schema:
+        type: string
+
+    DeviceID:
+      name: device
+      in: path
+      required: true
+      description: The device hardware ID.
+      schema:
+        type: string
+
+    PolicyName:
+      name: name
+      in: path
+      required: true
+      description: The trigger delivery policy name.
+      schema:
+        type: string
+
+  schemas:
+    # ── Config types ──
+
+    AuthConfig:
+      type: object
+      required: [jwt_public_key_pem]
+      properties:
+        jwt_public_key_pem:
+          type: string
+          description: PEM-encoded JWT public key for the realm.
+
+    # ── Envelope variants ──
+
+    DataEnvelopeStringArray:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: array
+          items:
+            type: string
+
+    DataEnvelopeIntArray:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: array
+          items:
+            type: integer
+
+    # ── Error envelopes ──
+
+    ErrorDetail:
+      type: object
+      required: [errors]
+      properties:
+        errors:
+          type: object
+          required: [detail]
+          properties:
+            detail:
+              type: string
+
+  responses:
+    BadRequest:
+      description: Bad Request — malformed or missing data envelope.
+      content:
+        application/json; charset=utf-8:
+          schema:
+            $ref: "#/components/schemas/ErrorDetail"
+          example:
+            errors:
+              detail: Bad Request
+
+    Unauthorized:
+      description: Unauthorized — missing or invalid JWT.
+      content:
+        application/json; charset=utf-8:
+          schema:
+            $ref: "#/components/schemas/ErrorDetail"
+          example:
+            errors:
+              detail: Unauthorized
+
+    NotFound:
+      description: Not Found — resource does not exist.
+      content:
+        application/json; charset=utf-8:
+          schema:
+            $ref: "#/components/schemas/ErrorDetail"
+          example:
+            errors:
+              detail: Not Found
+
+    DeviceNotFound:
+      description: Device not found — unknown device ID.
+      content:
+        application/json; charset=utf-8:
+          schema:
+            $ref: "#/components/schemas/ErrorDetail"
+          example:
+            errors:
+              detail: Device not found
+
+    Conflict:
+      description: Conflict — resource already exists.
+      content:
+        application/json; charset=utf-8:
+          schema:
+            $ref: "#/components/schemas/ErrorDetail"
+          example:
+            errors:
+              detail: Already exists
+
+    ValidationError:
+      description: Unprocessable Entity — request body failed validation.
+      content:
+        application/json; charset=utf-8:
+          schema:
+            $ref: "#/components/schemas/ErrorDetail"
+          example:
+            errors:
+              detail: "realm: validation failed: interface definition is invalid"
+
+    InternalServerError:
+      description: Internal Server Error — unexpected failure.
+      content:
+        application/json; charset=utf-8:
+          schema:
+            $ref: "#/components/schemas/ErrorDetail"
+          example:
+            errors:
+              detail: Internal Server Error
