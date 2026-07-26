@@ -90,7 +90,13 @@ All additive or strictly-safer; none affect unmodified device SDKs.
    enum by `triggers.UpstreamErrorName` when an event body is built. The
    original label rides along under `metadata["astrate_reason"]`, so nothing
    diagnostic is lost, and any reason without a specific counterpart becomes
-   `interface_loading_failed` rather than an unaccepted name.
+   `interface_loading_failed` rather than an unaccepted name. The mapping table
+   is **measured**, not reconstructed: it was recorded against upstream Astarte
+   v1.2.0 in `test/conformance/upstream/channels.json`, and two rows were
+   corrected as a result. `write_on_server_owned_interface` and
+   `value_size_exceeded` remain unverified guesses — the recording realm had no
+   server-owned interface, and upstream accepted a 100 KB string without
+   bracketing a size limit.
 
 2. **JSON payload profile + `initial_payload_format`** — Astrate accepts a
    documented plain-JSON data encoding alongside BSON on the same topics, and an
