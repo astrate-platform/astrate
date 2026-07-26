@@ -1,0 +1,64 @@
+Recorded 2026-07-26T19:58:26Z against upstream Astarte v1.2.0, realm "bench".
+Every entry in rest-errors.json was produced by exactly one exchange below.
+Tokens are described, never printed: a transcript is committed, a credential is not.
+
+--- appengine unmatched route
+GET /appengine/v1/bench/no-such-route
+Authorization: none
+→ 404
+{"errors":{"detail":"Not found"}}
+
+--- realmmanagement unmatched route
+GET /realmmanagement/v1/bench/no-such-route
+Authorization: none
+→ 404
+{"errors":{"detail":"Not found"}}
+
+--- pairing unmatched route
+GET /pairing/v1/bench/no-such-route
+Authorization: none
+→ 404
+{"errors":{"detail":"Page not found"}}
+
+--- housekeeping unmatched route
+GET /housekeeping/v1/no-such-route
+Authorization: none
+→ 404
+{"errors":{"detail":"Page not found"}}
+
+--- unknown service prefix
+GET /no-such-service/v1/thing
+Authorization: none
+→ 404
+404 page not found
+
+--- authenticated route, no token
+GET /housekeeping/v1/realms
+Authorization: none
+→ 401
+{"errors":{"detail":"Unauthorized"}}
+
+--- authenticated route, malformed token
+GET /housekeeping/v1/realms
+Authorization: Bearer not-a-jwt
+→ 403
+{"errors":{"detail":"Forbidden"}}
+
+--- authenticated route, well-formed token signed by an unknown key
+GET /housekeeping/v1/realms
+Authorization: Bearer <a_ha token signed by a key upstream has never seen>
+→ 403
+{"errors":{"detail":"Forbidden"}}
+
+--- authenticated route, valid token
+GET /housekeeping/v1/realms
+Authorization: Bearer <valid a_ha token>
+→ 200
+{"data":["bench","benchprobe"]}
+
+--- create an existing realm
+POST /housekeeping/v1/realms
+Authorization: Bearer <valid a_ha token>
+(request carries a JSON body)
+→ 422
+{"errors":{"error_name":["existing_realm"],"user_readable_message":["realm already exists"]}}

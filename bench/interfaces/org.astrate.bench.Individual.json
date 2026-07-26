@@ -1,0 +1,16 @@
+{
+    "interface_name": "org.astrate.bench.Individual",
+    "version_major": 1,
+    "version_minor": 0,
+    "type": "datastream",
+    "ownership": "device",
+    "description": "Benchmark individual datastream: one double per message, QoS 1 (reliability guaranteed), explicit timestamps so both platforms index identically.",
+    "mappings": [
+        {
+            "endpoint": "/value",
+            "type": "double",
+            "reliability": "guaranteed",
+            "explicit_timestamp": true
+        }
+    ]
+}

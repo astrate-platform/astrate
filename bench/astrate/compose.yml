@@ -1,0 +1,62 @@
+# Astrate stack for benchmarking (see bench/README.md). Unlike the repo-root
+# dev compose, this one runs the broker WITHOUT insecure_dev_mode so devices
+# connect over mTLS exactly as they do against Astarte's VerneMQ, and it
+# mounts a housekeeping JWT key so realms are created through the API the
+# same way on both platforms. scripts/up-astrate.sh generates keys/, the
+# self-signed broker cert, and the config before bringing this up.
+#
+#   ./scripts/up-astrate.sh          # from bench/
+#
+# DB tuning mirrors docs/DESIGN.md §5.4 small-host guidance.
+name: astrate-bench
+
+services:
+  timescaledb:
+    image: timescale/timescaledb:latest-pg16
+    command:
+      - postgres
+      - -c
+      - shared_buffers=256MB
+      - -c
+      - max_connections=50
+    environment:
+      POSTGRES_DB: astrate
+      POSTGRES_USER: astrate
+      POSTGRES_PASSWORD: astrate
+    volumes:
+      - bench_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U astrate -d astrate"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  astrate:
+    build:
+      context: ../..
+    restart: on-failure # the DB health gate can still race postgres' first-boot re-init
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+    command: ["-config", "/etc/astrate/bench.toml"]
+    environment:
+      ASTRATE_DATABASE_DSN: "postgres://astrate:astrate@timescaledb:5432/astrate?sslmode=disable"
+      # Throwaway benchmark master key — regenerate for anything else.
+      ASTRATE_MASTER_KEY: "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff"
+      ASTRATE_MQTT_SESSION_STORE_PATH: "/var/lib/astrate/sessions.db"
+      ASTRATE_MQTT_ADVERTISED_URL: "mqtts://127.0.0.1:8883"
+      ASTRATE_LOG_FORMAT: "json"
+      ASTRATE_LOG_LEVEL: "warn"
+    ports:
+      - "127.0.0.1:8080:8080" # REST API
+      - "127.0.0.1:8883:8883" # mTLS MQTT
+    volumes:
+      - bench_sessions:/var/lib/astrate
+      - ./conf:/etc/astrate:ro
+    read_only: true
+    tmpfs:
+      - /tmp
+
+volumes:
+  bench_pgdata:
+  bench_sessions:

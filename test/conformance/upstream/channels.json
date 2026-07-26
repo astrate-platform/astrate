@@ -1,0 +1,306 @@
+{
+  "recorded_at": "2026-07-26T20:53:09Z",
+  "astarte_version": "v1.2.0",
+  "realm": "bench",
+  "recorder_command": "go run ./recordchannels",
+  "socket_path": "/appengine/v1/socket/websocket?vsn=2.0.0\u0026realm=\u003crealm\u003e\u0026token=\u003ca_ch JWT\u003e",
+  "authorization": [
+    {
+      "name": "join with blanket .*::.*",
+      "why": "M11 decision 5 assumed a blanket grant authorizes everything. Upstream refuses it: the claim is matched against JOIN::\u003croom\u003e, and `.*::.*` requires a `::` the room name does not have.",
+      "a_ch_claims": [
+        ".*::.*"
+      ],
+      "operation": "phx_join rooms:\u003crealm\u003e:probe",
+      "payload": "",
+      "reply": "[\"1\",\"1\",\"rooms:bench:probe\",\"phx_reply\",{\"status\":\"error\",\"response\":{\"reason\":\"unauthorized\"}}]",
+      "accepted": false
+    },
+    {
+      "name": "join with blanket .*",
+      "why": "The other shape of a blanket grant, refused for the same reason. Paired with the acceptances below so the refusals cannot be explained by a server that refuses every join.",
+      "a_ch_claims": [
+        ".*"
+      ],
+      "operation": "phx_join rooms:\u003crealm\u003e:probe",
+      "payload": "",
+      "reply": "[\"1\",\"1\",\"rooms:bench:probe\",\"phx_reply\",{\"status\":\"error\",\"response\":{\"reason\":\"unauthorized\"}}]",
+      "accepted": false
+    },
+    {
+      "name": "join with JOIN::.*",
+      "why": "The acceptance that makes the two refusals above mean something: an explicit JOIN verb is what upstream requires.",
+      "a_ch_claims": [
+        "JOIN::.*"
+      ],
+      "operation": "phx_join rooms:\u003crealm\u003e:probe",
+      "payload": "",
+      "reply": "[\"1\",\"1\",\"rooms:bench:probe\",\"phx_reply\",{\"status\":\"ok\",\"response\":{}}]",
+      "accepted": true
+    },
+    {
+      "name": "join with JOIN::\u003cthis room\u003e",
+      "why": "An exact-room grant is honoured, so the verb is matched per room and not merely present.",
+      "a_ch_claims": [
+        "JOIN::probe"
+      ],
+      "operation": "phx_join rooms:\u003crealm\u003e:probe",
+      "payload": "",
+      "reply": "[\"1\",\"1\",\"rooms:bench:probe\",\"phx_reply\",{\"status\":\"ok\",\"response\":{}}]",
+      "accepted": true
+    },
+    {
+      "name": "join with JOIN::\u003cother room\u003e",
+      "why": "The paired refusal for the row above: same verb, wrong room. Together they show the room name is really being matched.",
+      "a_ch_claims": [
+        "JOIN::other"
+      ],
+      "operation": "phx_join rooms:\u003crealm\u003e:probe",
+      "payload": "",
+      "reply": "[\"1\",\"1\",\"rooms:bench:probe\",\"phx_reply\",{\"status\":\"error\",\"response\":{\"reason\":\"unauthorized\"}}]",
+      "accepted": false
+    },
+    {
+      "name": "watch data_trigger with WATCH::.*",
+      "why": "A data trigger is authorized by the WATCH verb, as expected.",
+      "a_ch_claims": [
+        "JOIN::.*",
+        "WATCH::.*"
+      ],
+      "operation": "watch",
+      "payload": "{\"device_id\":\"KqYJ16Cs7lyeJ3PPzg7xQg\",\"name\":\"probe\",\"simple_trigger\":{\"interface_name\":\"*\",\"match_path\":\"/*\",\"on\":\"incoming_data\",\"type\":\"data_trigger\",\"value_match_operator\":\"*\"}}",
+      "reply": "[\"1\",\"2\",\"rooms:bench:probe\",\"phx_reply\",{\"status\":\"ok\",\"response\":{}}]",
+      "accepted": true
+    },
+    {
+      "name": "watch device_trigger, device_id inside simple_trigger",
+      "why": "A device trigger is authorized only when simple_trigger carries device_id itself.",
+      "a_ch_claims": [
+        "JOIN::.*",
+        "WATCH::.*"
+      ],
+      "operation": "watch",
+      "payload": "{\"device_id\":\"KqYJ16Cs7lyeJ3PPzg7xQg\",\"name\":\"probe\",\"simple_trigger\":{\"device_id\":\"KqYJ16Cs7lyeJ3PPzg7xQg\",\"on\":\"device_error\",\"type\":\"device_trigger\"}}",
+      "reply": "[\"1\",\"2\",\"rooms:bench:probe\",\"phx_reply\",{\"status\":\"ok\",\"response\":{}}]",
+      "accepted": true
+    },
+    {
+      "name": "watch device_trigger, device_id only at payload top level",
+      "why": "The paired refusal: identical except that device_id sits where the AppEngine REST API puts it. Upstream calls this `unauthorized`, which is a misleading reason for a payload-shape problem — a client author would look at their token.",
+      "a_ch_claims": [
+        "JOIN::.*",
+        "WATCH::.*"
+      ],
+      "operation": "watch",
+      "payload": "{\"device_id\":\"KqYJ16Cs7lyeJ3PPzg7xQg\",\"name\":\"probe\",\"simple_trigger\":{\"on\":\"device_error\",\"type\":\"device_trigger\"}}",
+      "reply": "[\"1\",\"2\",\"rooms:bench:probe\",\"phx_reply\",{\"status\":\"error\",\"response\":{\"reason\":\"unauthorized\"}}]",
+      "accepted": false
+    },
+    {
+      "name": "watch device_trigger for device_id \"*\"",
+      "why": "A wildcard device is refused even under WATCH::.*, so device triggers cannot be watched realm-wide from a room.",
+      "a_ch_claims": [
+        "JOIN::.*",
+        "WATCH::.*"
+      ],
+      "operation": "watch",
+      "payload": "{\"device_id\":\"KqYJ16Cs7lyeJ3PPzg7xQg\",\"name\":\"probe\",\"simple_trigger\":{\"device_id\":\"*\",\"on\":\"device_error\",\"type\":\"device_trigger\"}}",
+      "reply": "[\"1\",\"2\",\"rooms:bench:probe\",\"phx_reply\",{\"status\":\"error\",\"response\":{\"reason\":\"unauthorized\"}}]",
+      "accepted": false
+    }
+  ],
+  "device_errors": [
+    {
+      "name": "valid publish",
+      "why": "The acceptance row. Without it, a stack that emitted device_error for everything would satisfy every row below.",
+      "topic": "org.astrate.bench.Individual/value",
+      "payload": "EAAAAAF2AAAAAAAAAEVAAA==",
+      "error_name": "",
+      "attempts": 3,
+      "delivered": 0,
+      "never_reached_the_room": true,
+      "uncorrelated_frames": [
+        "[null,null,\"rooms:bench:probe\",\"new_event\",{\"device_id\":\"KqYJ16Cs7lyeJ3PPzg7xQg\",\"event\":{\"error_name\":\"device_session_not_found\",\"metadata\":{},\"type\":\"device_error\"},\"timestamp\":\"2026-07-26T20:53:48.830Z\"}]"
+      ],
+      "frames": null
+    },
+    {
+      "name": "interface not in introspection",
+      "why": "Astrate maps its own interface_not_in_introspection to invalid_interface. This row is what upstream actually says.",
+      "topic": "org.astrate.nonexistent.Iface/value",
+      "payload": "EAAAAAF2AAAAAAAAAPA/AA==",
+      "error_name": "interface_loading_failed",
+      "metadata_keys": [
+        "base64_payload",
+        "interface",
+        "path"
+      ],
+      "attempts": 3,
+      "delivered": 3,
+      "uncorrelated_frames": [
+        "[null,null,\"rooms:bench:probe\",\"new_event\",{\"device_id\":\"KqYJ16Cs7lyeJ3PPzg7xQg\",\"event\":{\"error_name\":\"device_session_not_found\",\"metadata\":{},\"type\":\"device_error\"},\"timestamp\":\"2026-07-26T20:55:07.678Z\"}]",
+        "[null,null,\"rooms:bench:probe\",\"new_event\",{\"device_id\":\"KqYJ16Cs7lyeJ3PPzg7xQg\",\"event\":{\"error_name\":\"device_session_not_found\",\"metadata\":{},\"type\":\"device_error\"},\"timestamp\":\"2026-07-26T20:55:35.939Z\"}]"
+      ],
+      "frames": [
+        "[null,null,\"rooms:bench:probe\",\"new_event\",{\"device_id\":\"KqYJ16Cs7lyeJ3PPzg7xQg\",\"event\":{\"error_name\":\"interface_loading_failed\",\"metadata\":{\"base64_payload\":\"EAAAAAF2AAAAAAAAAPA/AA==\",\"interface\":\"\\\"org.astrate.nonexistent.Iface\\\"\",\"path\":\"\\\"/value\\\"\"},\"type\":\"device_error\"},\"timestamp\":\"2026-07-26T20:54:39.413Z\"}]",
+        "[null,null,\"rooms:bench:probe\",\"new_event\",{\"device_id\":\"KqYJ16Cs7lyeJ3PPzg7xQg\",\"event\":{\"error_name\":\"interface_loading_failed\",\"metadata\":{\"base64_payload\":\"EAAAAAF2AAAAAAAAAPA/AA==\",\"interface\":\"\\\"org.astrate.nonexistent.Iface\\\"\",\"path\":\"\\\"/value\\\"\"},\"type\":\"device_error\"},\"timestamp\":\"2026-07-26T20:55:07.678Z\"}]",
+        "[null,null,\"rooms:bench:probe\",\"new_event\",{\"device_id\":\"KqYJ16Cs7lyeJ3PPzg7xQg\",\"event\":{\"error_name\":\"interface_loading_failed\",\"metadata\":{\"base64_payload\":\"EAAAAAF2AAAAAAAAAPA/AA==\",\"interface\":\"\\\"org.astrate.nonexistent.Iface\\\"\",\"path\":\"\\\"/value\\\"\"},\"type\":\"device_error\"},\"timestamp\":\"2026-07-26T20:55:35.939Z\"}]"
+      ]
+    },
+    {
+      "name": "unknown path on a known interface",
+      "why": "Astrate maps unexpected_path to mapping_not_found.",
+      "topic": "org.astrate.bench.Individual/nosuchpath",
+      "payload": "EAAAAAF2AAAAAAAAAPA/AA==",
+      "error_name": "mapping_not_found",
+      "metadata_keys": [
+        "base64_payload",
+        "interface",
+        "path"
+      ],
+      "attempts": 3,
+      "delivered": 3,
+      "uncorrelated_frames": [
+        "[null,null,\"rooms:bench:probe\",\"new_event\",{\"device_id\":\"KqYJ16Cs7lyeJ3PPzg7xQg\",\"event\":{\"error_name\":\"device_session_not_found\",\"metadata\":{},\"type\":\"device_error\"},\"timestamp\":\"2026-07-26T20:57:05.866Z\"}]"
+      ],
+      "frames": [
+        "[null,null,\"rooms:bench:probe\",\"new_event\",{\"device_id\":\"KqYJ16Cs7lyeJ3PPzg7xQg\",\"event\":{\"error_name\":\"mapping_not_found\",\"metadata\":{\"base64_payload\":\"EAAAAAF2AAAAAAAAAPA/AA==\",\"interface\":\"\\\"org.astrate.bench.Individual\\\"\",\"path\":\"\\\"/nosuchpath\\\"\"},\"type\":\"device_error\"},\"timestamp\":\"2026-07-26T20:55:58.587Z\"}]",
+        "[null,null,\"rooms:bench:probe\",\"new_event\",{\"device_id\":\"KqYJ16Cs7lyeJ3PPzg7xQg\",\"event\":{\"error_name\":\"mapping_not_found\",\"metadata\":{\"base64_payload\":\"EAAAAAF2AAAAAAAAAPA/AA==\",\"interface\":\"\\\"org.astrate.bench.Individual\\\"\",\"path\":\"\\\"/nosuchpath\\\"\"},\"type\":\"device_error\"},\"timestamp\":\"2026-07-26T20:56:06.758Z\"}]",
+        "[null,null,\"rooms:bench:probe\",\"new_event\",{\"device_id\":\"KqYJ16Cs7lyeJ3PPzg7xQg\",\"event\":{\"error_name\":\"mapping_not_found\",\"metadata\":{\"base64_payload\":\"EAAAAAF2AAAAAAAAAPA/AA==\",\"interface\":\"\\\"org.astrate.bench.Individual\\\"\",\"path\":\"\\\"/nosuchpath\\\"\"},\"type\":\"device_error\"},\"timestamp\":\"2026-07-26T20:56:29.409Z\"}]",
+        "[null,null,\"rooms:bench:probe\",\"new_event\",{\"device_id\":\"KqYJ16Cs7lyeJ3PPzg7xQg\",\"event\":{\"error_name\":\"mapping_not_found\",\"metadata\":{\"base64_payload\":\"EAAAAAF2AAAAAAAAAPA/AA==\",\"interface\":\"\\\"org.astrate.bench.Individual\\\"\",\"path\":\"\\\"/nosuchpath\\\"\"},\"type\":\"device_error\"},\"timestamp\":\"2026-07-26T20:56:37.585Z\"}]",
+        "[null,null,\"rooms:bench:probe\",\"new_event\",{\"device_id\":\"KqYJ16Cs7lyeJ3PPzg7xQg\",\"event\":{\"error_name\":\"mapping_not_found\",\"metadata\":{\"base64_payload\":\"EAAAAAF2AAAAAAAAAPA/AA==\",\"interface\":\"\\\"org.astrate.bench.Individual\\\"\",\"path\":\"\\\"/nosuchpath\\\"\"},\"type\":\"device_error\"},\"timestamp\":\"2026-07-26T20:57:05.866Z\"}]"
+      ]
+    },
+    {
+      "name": "payload that is not BSON at all",
+      "why": "Astrate maps unknown_format/malformed to undecodable_bson_payload.",
+      "topic": "org.astrate.bench.Individual/value",
+      "payload": "ZGVmaW5pdGVseSBub3QgYnNvbg==",
+      "error_name": "undecodable_bson_payload",
+      "metadata_keys": [
+        "base64_payload",
+        "interface",
+        "path"
+      ],
+      "attempts": 3,
+      "delivered": 2,
+      "uncorrelated_frames": [
+        "[null,null,\"rooms:bench:probe\",\"new_event\",{\"device_id\":\"KqYJ16Cs7lyeJ3PPzg7xQg\",\"event\":{\"error_name\":\"device_session_not_found\",\"metadata\":{},\"type\":\"device_error\"},\"timestamp\":\"2026-07-26T20:57:34.215Z\"}]"
+      ],
+      "frames": [
+        "[null,null,\"rooms:bench:probe\",\"new_event\",{\"device_id\":\"KqYJ16Cs7lyeJ3PPzg7xQg\",\"event\":{\"error_name\":\"undecodable_bson_payload\",\"metadata\":{\"base64_payload\":\"ZGVmaW5pdGVseSBub3QgYnNvbg==\",\"interface\":\"\\\"org.astrate.bench.Individual\\\"\",\"path\":\"\\\"/value\\\"\"},\"type\":\"device_error\"},\"timestamp\":\"2026-07-26T20:57:34.215Z\"}]",
+        "[null,null,\"rooms:bench:probe\",\"new_event\",{\"device_id\":\"KqYJ16Cs7lyeJ3PPzg7xQg\",\"event\":{\"error_name\":\"undecodable_bson_payload\",\"metadata\":{\"base64_payload\":\"ZGVmaW5pdGVseSBub3QgYnNvbg==\",\"interface\":\"\\\"org.astrate.bench.Individual\\\"\",\"path\":\"\\\"/value\\\"\"},\"type\":\"device_error\"},\"timestamp\":\"2026-07-26T20:58:19.079Z\"}]",
+        "[null,null,\"rooms:bench:probe\",\"new_event\",{\"device_id\":\"KqYJ16Cs7lyeJ3PPzg7xQg\",\"event\":{\"error_name\":\"undecodable_bson_payload\",\"metadata\":{\"base64_payload\":\"ZGVmaW5pdGVseSBub3QgYnNvbg==\",\"interface\":\"\\\"org.astrate.bench.Individual\\\"\",\"path\":\"\\\"/value\\\"\"},\"type\":\"device_error\"},\"timestamp\":\"2026-07-26T20:58:19.171Z\"}]",
+        "[null,null,\"rooms:bench:probe\",\"new_event\",{\"device_id\":\"KqYJ16Cs7lyeJ3PPzg7xQg\",\"event\":{\"error_name\":\"undecodable_bson_payload\",\"metadata\":{\"base64_payload\":\"ZGVmaW5pdGVseSBub3QgYnNvbg==\",\"interface\":\"\\\"org.astrate.bench.Individual\\\"\",\"path\":\"\\\"/value\\\"\"},\"type\":\"device_error\"},\"timestamp\":\"2026-07-26T20:58:20.274Z\"}]",
+        "[null,null,\"rooms:bench:probe\",\"new_event\",{\"device_id\":\"KqYJ16Cs7lyeJ3PPzg7xQg\",\"event\":{\"error_name\":\"undecodable_bson_payload\",\"metadata\":{\"base64_payload\":\"ZGVmaW5pdGVseSBub3QgYnNvbg==\",\"interface\":\"\\\"org.astrate.bench.Individual\\\"\",\"path\":\"\\\"/value\\\"\"},\"type\":\"device_error\"},\"timestamp\":\"2026-07-26T20:58:22.443Z\"}]",
+        "[null,null,\"rooms:bench:probe\",\"new_event\",{\"device_id\":\"KqYJ16Cs7lyeJ3PPzg7xQg\",\"event\":{\"error_name\":\"undecodable_bson_payload\",\"metadata\":{\"base64_payload\":\"ZGVmaW5pdGVseSBub3QgYnNvbg==\",\"interface\":\"\\\"org.astrate.bench.Individual\\\"\",\"path\":\"\\\"/value\\\"\"},\"type\":\"device_error\"},\"timestamp\":\"2026-07-26T20:58:26.634Z\"}]"
+      ]
+    },
+    {
+      "name": "string where the mapping says double",
+      "why": "Astrate maps type_mismatch to unexpected_value_type.",
+      "topic": "org.astrate.bench.Individual/value",
+      "payload": "EgAAAAJ2AAYAAABoZWxsbwAA",
+      "error_name": "unexpected_value_type",
+      "metadata_keys": [
+        "base64_payload",
+        "interface",
+        "path"
+      ],
+      "attempts": 3,
+      "delivered": 1,
+      "uncorrelated_frames": [
+        "[null,null,\"rooms:bench:probe\",\"new_event\",{\"device_id\":\"KqYJ16Cs7lyeJ3PPzg7xQg\",\"event\":{\"error_name\":\"device_session_not_found\",\"metadata\":{},\"type\":\"device_error\"},\"timestamp\":\"2026-07-26T20:59:09.866Z\"}]"
+      ],
+      "frames": [
+        "[null,null,\"rooms:bench:probe\",\"new_event\",{\"device_id\":\"KqYJ16Cs7lyeJ3PPzg7xQg\",\"event\":{\"error_name\":\"unexpected_value_type\",\"metadata\":{\"base64_payload\":\"EgAAAAJ2AAYAAABoZWxsbwAA\",\"interface\":\"\\\"org.astrate.bench.Individual\\\"\",\"path\":\"\\\"/value\\\"\"},\"type\":\"device_error\"},\"timestamp\":\"2026-07-26T20:59:09.866Z\"}]"
+      ]
+    },
+    {
+      "name": "BSON document with no v key",
+      "why": "Astrate maps no_value to undecodable_bson_payload.",
+      "topic": "org.astrate.bench.Individual/value",
+      "payload": "EAAAAAF4AAAAAAAAAPA/AA==",
+      "error_name": "unexpected_value_type",
+      "metadata_keys": [
+        "base64_payload",
+        "interface",
+        "path"
+      ],
+      "attempts": 3,
+      "delivered": 2,
+      "frames": [
+        "[null,null,\"rooms:bench:probe\",\"new_event\",{\"device_id\":\"KqYJ16Cs7lyeJ3PPzg7xQg\",\"event\":{\"error_name\":\"unexpected_value_type\",\"metadata\":{\"base64_payload\":\"EAAAAAF4AAAAAAAAAPA/AA==\",\"interface\":\"\\\"org.astrate.bench.Individual\\\"\",\"path\":\"\\\"/value\\\"\"},\"type\":\"device_error\"},\"timestamp\":\"2026-07-26T20:59:54.825Z\"}]",
+        "[null,null,\"rooms:bench:probe\",\"new_event\",{\"device_id\":\"KqYJ16Cs7lyeJ3PPzg7xQg\",\"event\":{\"error_name\":\"unexpected_value_type\",\"metadata\":{\"base64_payload\":\"EAAAAAF4AAAAAAAAAPA/AA==\",\"interface\":\"\\\"org.astrate.bench.Individual\\\"\",\"path\":\"\\\"/value\\\"\"},\"type\":\"device_error\"},\"timestamp\":\"2026-07-26T20:59:54.912Z\"}]",
+        "[null,null,\"rooms:bench:probe\",\"new_event\",{\"device_id\":\"KqYJ16Cs7lyeJ3PPzg7xQg\",\"event\":{\"error_name\":\"unexpected_value_type\",\"metadata\":{\"base64_payload\":\"EAAAAAF4AAAAAAAAAPA/AA==\",\"interface\":\"\\\"org.astrate.bench.Individual\\\"\",\"path\":\"\\\"/value\\\"\"},\"type\":\"device_error\"},\"timestamp\":\"2026-07-26T20:59:56.040Z\"}]",
+        "[null,null,\"rooms:bench:probe\",\"new_event\",{\"device_id\":\"KqYJ16Cs7lyeJ3PPzg7xQg\",\"event\":{\"error_name\":\"unexpected_value_type\",\"metadata\":{\"base64_payload\":\"EAAAAAF4AAAAAAAAAPA/AA==\",\"interface\":\"\\\"org.astrate.bench.Individual\\\"\",\"path\":\"\\\"/value\\\"\"},\"type\":\"device_error\"},\"timestamp\":\"2026-07-26T20:59:58.190Z\"}]",
+        "[null,null,\"rooms:bench:probe\",\"new_event\",{\"device_id\":\"KqYJ16Cs7lyeJ3PPzg7xQg\",\"event\":{\"error_name\":\"unexpected_value_type\",\"metadata\":{\"base64_payload\":\"EAAAAAF4AAAAAAAAAPA/AA==\",\"interface\":\"\\\"org.astrate.bench.Individual\\\"\",\"path\":\"\\\"/value\\\"\"},\"type\":\"device_error\"},\"timestamp\":\"2026-07-26T21:00:02.309Z\"}]",
+        "[null,null,\"rooms:bench:probe\",\"new_event\",{\"device_id\":\"KqYJ16Cs7lyeJ3PPzg7xQg\",\"event\":{\"error_name\":\"unexpected_value_type\",\"metadata\":{\"base64_payload\":\"EAAAAAF4AAAAAAAAAPA/AA==\",\"interface\":\"\\\"org.astrate.bench.Individual\\\"\",\"path\":\"\\\"/value\\\"\"},\"type\":\"device_error\"},\"timestamp\":\"2026-07-26T21:00:17.345Z\"}]",
+        "[null,null,\"rooms:bench:probe\",\"new_event\",{\"device_id\":\"KqYJ16Cs7lyeJ3PPzg7xQg\",\"event\":{\"error_name\":\"unexpected_value_type\",\"metadata\":{\"base64_payload\":\"EAAAAAF4AAAAAAAAAPA/AA==\",\"interface\":\"\\\"org.astrate.bench.Individual\\\"\",\"path\":\"\\\"/value\\\"\"},\"type\":\"device_error\"},\"timestamp\":\"2026-07-26T21:00:25.528Z\"}]"
+      ]
+    },
+    {
+      "name": "object with an unexpected key",
+      "why": "Astrate maps bad_object to unexpected_object_key.",
+      "topic": "org.astrate.bench.Object/data",
+      "payload": "LgAAAAN2ACYAAAABdGVtcAAAAAAAAADwPwFib2d1c19rZXkAAAAAAAAAAEAAAA==",
+      "error_name": "unexpected_object_key",
+      "metadata_keys": [
+        "interface",
+        "path",
+        "base64_payload"
+      ],
+      "attempts": 3,
+      "delivered": 3,
+      "uncorrelated_frames": [
+        "[null,null,\"rooms:bench:probe\",\"new_event\",{\"device_id\":\"KqYJ16Cs7lyeJ3PPzg7xQg\",\"event\":{\"error_name\":\"device_session_not_found\",\"metadata\":{},\"type\":\"device_error\"},\"timestamp\":\"2026-07-26T21:01:16.112Z\"}]",
+        "[null,null,\"rooms:bench:probe\",\"new_event\",{\"device_id\":\"KqYJ16Cs7lyeJ3PPzg7xQg\",\"event\":{\"error_name\":\"device_session_not_found\",\"metadata\":{},\"type\":\"device_error\"},\"timestamp\":\"2026-07-26T21:02:06.700Z\"}]"
+      ],
+      "frames": [
+        "[null,null,\"rooms:bench:probe\",\"new_event\",{\"device_id\":\"KqYJ16Cs7lyeJ3PPzg7xQg\",\"event\":{\"error_name\":\"unexpected_object_key\",\"metadata\":{\"base64_payload\":\"LgAAAAN2ACYAAAABdGVtcAAAAAAAAADwPwFib2d1c19rZXkAAAAAAAAAAEAAAA==\",\"interface\":\"\\\"org.astrate.bench.Object\\\"\",\"path\":\"\\\"/data\\\"\"},\"type\":\"device_error\"},\"timestamp\":\"2026-07-26T21:01:16.113Z\"}]",
+        "[null,null,\"rooms:bench:probe\",\"new_event\",{\"device_id\":\"KqYJ16Cs7lyeJ3PPzg7xQg\",\"event\":{\"error_name\":\"unexpected_object_key\",\"metadata\":{\"base64_payload\":\"LgAAAAN2ACYAAAABdGVtcAAAAAAAAADwPwFib2d1c19rZXkAAAAAAAAAAEAAAA==\",\"interface\":\"\\\"org.astrate.bench.Object\\\"\",\"path\":\"\\\"/data\\\"\"},\"type\":\"device_error\"},\"timestamp\":\"2026-07-26T21:01:38.762Z\"}]",
+        "[null,null,\"rooms:bench:probe\",\"new_event\",{\"device_id\":\"KqYJ16Cs7lyeJ3PPzg7xQg\",\"event\":{\"error_name\":\"unexpected_object_key\",\"metadata\":{\"base64_payload\":\"LgAAAAN2ACYAAAABdGVtcAAAAAAAAADwPwFib2d1c19rZXkAAAAAAAAAAEAAAA==\",\"interface\":\"\\\"org.astrate.bench.Object\\\"\",\"path\":\"\\\"/data\\\"\"},\"type\":\"device_error\"},\"timestamp\":\"2026-07-26T21:02:06.700Z\"}]"
+      ]
+    },
+    {
+      "name": "unknown control message",
+      "why": "Astrate maps control_unknown to unexpected_control_message.",
+      "topic": "control/bogusControl",
+      "payload": "MQ==",
+      "error_name": "unexpected_control_message",
+      "metadata_keys": [
+        "base64_payload",
+        "path"
+      ],
+      "attempts": 3,
+      "delivered": 2,
+      "frames": [
+        "[null,null,\"rooms:bench:probe\",\"new_event\",{\"device_id\":\"KqYJ16Cs7lyeJ3PPzg7xQg\",\"event\":{\"error_name\":\"unexpected_control_message\",\"metadata\":{\"base64_payload\":\"MQ==\",\"path\":\"\\\"/bogusControl\\\"\"},\"type\":\"device_error\"},\"timestamp\":\"2026-07-26T21:02:34.547Z\"}]",
+        "[null,null,\"rooms:bench:probe\",\"new_event\",{\"device_id\":\"KqYJ16Cs7lyeJ3PPzg7xQg\",\"event\":{\"error_name\":\"unexpected_control_message\",\"metadata\":{\"base64_payload\":\"MQ==\",\"path\":\"\\\"/bogusControl\\\"\"},\"type\":\"device_error\"},\"timestamp\":\"2026-07-26T21:03:26.166Z\"}]"
+      ]
+    },
+    {
+      "name": "invalid introspection",
+      "why": "Astrate maps introspection_invalid to invalid_introspection.",
+      "topic": "",
+      "payload": "dGhpcyBpcyBub3QgYW4gaW50cm9zcGVjdGlvbg==",
+      "error_name": "invalid_introspection",
+      "metadata_keys": [
+        "base64_payload"
+      ],
+      "attempts": 3,
+      "delivered": 2,
+      "uncorrelated_frames": [
+        "[null,null,\"rooms:bench:probe\",\"new_event\",{\"device_id\":\"KqYJ16Cs7lyeJ3PPzg7xQg\",\"event\":{\"error_name\":\"device_session_not_found\",\"metadata\":{},\"type\":\"device_error\"},\"timestamp\":\"2026-07-26T21:04:39.908Z\"}]"
+      ],
+      "frames": [
+        "[null,null,\"rooms:bench:probe\",\"new_event\",{\"device_id\":\"KqYJ16Cs7lyeJ3PPzg7xQg\",\"event\":{\"error_name\":\"invalid_introspection\",\"metadata\":{\"base64_payload\":\"dGhpcyBpcyBub3QgYW4gaW50cm9zcGVjdGlvbg==\"},\"type\":\"device_error\"},\"timestamp\":\"2026-07-26T21:04:11.645Z\"}]",
+        "[null,null,\"rooms:bench:probe\",\"new_event\",{\"device_id\":\"KqYJ16Cs7lyeJ3PPzg7xQg\",\"event\":{\"error_name\":\"invalid_introspection\",\"metadata\":{\"base64_payload\":\"dGhpcyBpcyBub3QgYW4gaW50cm9zcGVjdGlvbg==\"},\"type\":\"device_error\"},\"timestamp\":\"2026-07-26T21:04:11.736Z\"}]",
+        "[null,null,\"rooms:bench:probe\",\"new_event\",{\"device_id\":\"KqYJ16Cs7lyeJ3PPzg7xQg\",\"event\":{\"error_name\":\"invalid_introspection\",\"metadata\":{\"base64_payload\":\"dGhpcyBpcyBub3QgYW4gaW50cm9zcGVjdGlvbg==\"},\"type\":\"device_error\"},\"timestamp\":\"2026-07-26T21:04:12.853Z\"}]",
+        "[null,null,\"rooms:bench:probe\",\"new_event\",{\"device_id\":\"KqYJ16Cs7lyeJ3PPzg7xQg\",\"event\":{\"error_name\":\"invalid_introspection\",\"metadata\":{\"base64_payload\":\"dGhpcyBpcyBub3QgYW4gaW50cm9zcGVjdGlvbg==\"},\"type\":\"device_error\"},\"timestamp\":\"2026-07-26T21:04:15.001Z\"}]",
+        "[null,null,\"rooms:bench:probe\",\"new_event\",{\"device_id\":\"KqYJ16Cs7lyeJ3PPzg7xQg\",\"event\":{\"error_name\":\"invalid_introspection\",\"metadata\":{\"base64_payload\":\"dGhpcyBpcyBub3QgYW4gaW50cm9zcGVjdGlvbg==\"},\"type\":\"device_error\"},\"timestamp\":\"2026-07-26T21:04:19.101Z\"}]",
+        "[null,null,\"rooms:bench:probe\",\"new_event\",{\"device_id\":\"KqYJ16Cs7lyeJ3PPzg7xQg\",\"event\":{\"error_name\":\"invalid_introspection\",\"metadata\":{\"base64_payload\":\"dGhpcyBpcyBub3QgYW4gaW50cm9zcGVjdGlvbg==\"},\"type\":\"device_error\"},\"timestamp\":\"2026-07-26T21:04:39.908Z\"}]"
+      ]
+    }
+  ]
+}

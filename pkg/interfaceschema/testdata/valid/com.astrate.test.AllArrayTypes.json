@@ -1,0 +1,38 @@
+{
+  "interface_name": "com.astrate.test.AllArrayTypes",
+  "version_major": 0,
+  "version_minor": 2,
+  "type": "datastream",
+  "ownership": "server",
+  "description": "Astrate test fixture covering every array value type.",
+  "mappings": [
+    {
+      "endpoint": "/%{group}/doublearray",
+      "type": "doublearray"
+    },
+    {
+      "endpoint": "/%{group}/integerarray",
+      "type": "integerarray"
+    },
+    {
+      "endpoint": "/%{group}/booleanarray",
+      "type": "booleanarray"
+    },
+    {
+      "endpoint": "/%{group}/longintegerarray",
+      "type": "longintegerarray"
+    },
+    {
+      "endpoint": "/%{group}/stringarray",
+      "type": "stringarray"
+    },
+    {
+      "endpoint": "/%{group}/binaryblobarray",
+      "type": "binaryblobarray"
+    },
+    {
+      "endpoint": "/%{group}/datetimearray",
+      "type": "datetimearray"
+    }
+  ]
+}

@@ -1,0 +1,46 @@
+# golangci-lint v2 configuration (pinned v2.12.2 — see Makefile GOLANGCI_LINT_VERSION).
+# Linter set per docs/ROADMAP.md §1.2 (file 0.4): govet, staticcheck, errcheck, gosec, revive.
+version: "2"
+
+run:
+  build-tags:
+    # Lint everything, including T2/T3 suites that are tag-gated out of `go test ./...`.
+    - integration
+    - e2e
+
+linters:
+  default: none
+  enable:
+    - errcheck
+    - gosec
+    - govet
+    - revive
+    - staticcheck
+  settings:
+    gosec:
+      excludes:
+        # G104 duplicates errcheck.
+        - G104
+  exclusions:
+    generated: lax
+    rules:
+      # Tests: hardening lints and strict error checking add noise, not safety.
+      - path: _test\.go
+        linters:
+          - gosec
+      - path: _test\.go
+        linters:
+          - errcheck
+      # Test utilities are test-scoped code shipped outside _test.go files.
+      - path: internal/testutil/
+        linters:
+          - gosec
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/astrate-platform/astrate

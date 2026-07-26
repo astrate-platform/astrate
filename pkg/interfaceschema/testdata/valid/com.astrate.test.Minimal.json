@@ -1,0 +1,13 @@
+{
+  "interface_name": "com.astrate.test.Minimal",
+  "version_major": 0,
+  "version_minor": 1,
+  "type": "datastream",
+  "ownership": "device",
+  "mappings": [
+    {
+      "endpoint": "/value",
+      "type": "double"
+    }
+  ]
+}

@@ -1,0 +1,98 @@
+{
+  "recorded_at": "2026-07-26T19:58:26Z",
+  "astarte_version": "v1.2.0",
+  "realm": "bench",
+  "recorder_command": "ASTARTE_UPSTREAM_URL=… ASTARTE_UPSTREAM_REALM=bench ASTARTE_UPSTREAM_HOUSEKEEPING_KEY=… go run ./record",
+  "observations": [
+    {
+      "name": "appengine unmatched route",
+      "why": "phase 01 inferred the envelope shape and the 404 status; only the detail string was observed",
+      "method": "GET",
+      "path": "/appengine/v1/bench/no-such-route",
+      "auth": "none",
+      "status": 404,
+      "body": "{\"errors\":{\"detail\":\"Not found\"}}"
+    },
+    {
+      "name": "authenticated route, malformed token",
+      "why": "deviation 5: upstream distinguishes an unreadable token from an unauthorized one; Astrate does not",
+      "method": "GET",
+      "path": "/housekeeping/v1/realms",
+      "auth": "Bearer not-a-jwt",
+      "status": 403,
+      "body": "{\"errors\":{\"detail\":\"Forbidden\"}}"
+    },
+    {
+      "name": "authenticated route, no token",
+      "why": "deviation 5: the baseline every other token row is compared against",
+      "method": "GET",
+      "path": "/housekeeping/v1/realms",
+      "auth": "none",
+      "status": 401,
+      "body": "{\"errors\":{\"detail\":\"Unauthorized\"}}"
+    },
+    {
+      "name": "authenticated route, valid token",
+      "why": "the acceptance that makes the rejections above mean something: a blanket refusal would pass every row without it",
+      "method": "GET",
+      "path": "/housekeeping/v1/realms",
+      "auth": "Bearer \u003cvalid a_ha token\u003e",
+      "status": 200,
+      "body": "{\"data\":[\"bench\",\"benchprobe\"]}"
+    },
+    {
+      "name": "authenticated route, well-formed token signed by an unknown key",
+      "why": "deviation 5: a readable token upstream cannot verify",
+      "method": "GET",
+      "path": "/housekeeping/v1/realms",
+      "auth": "Bearer \u003ca_ha token signed by a key upstream has never seen\u003e",
+      "status": 403,
+      "body": "{\"errors\":{\"detail\":\"Forbidden\"}}"
+    },
+    {
+      "name": "create an existing realm",
+      "why": "upstream reports 422 existing_realm where Astrate reports 409; found by bench provision failing on a re-run",
+      "method": "POST",
+      "path": "/housekeeping/v1/realms",
+      "auth": "Bearer \u003cvalid a_ha token\u003e",
+      "status": 422,
+      "body": "{\"errors\":{\"error_name\":[\"existing_realm\"],\"user_readable_message\":[\"realm already exists\"]}}"
+    },
+    {
+      "name": "housekeeping unmatched route",
+      "why": "Astrate deliberately leaves this as Go's plain-text 404; record what upstream actually does",
+      "method": "GET",
+      "path": "/housekeeping/v1/no-such-route",
+      "auth": "none",
+      "status": 404,
+      "body": "{\"errors\":{\"detail\":\"Page not found\"}}"
+    },
+    {
+      "name": "pairing unmatched route",
+      "why": "pairing was observed to differ in wording (Page not found); confirm it still does",
+      "method": "GET",
+      "path": "/pairing/v1/bench/no-such-route",
+      "auth": "none",
+      "status": 404,
+      "body": "{\"errors\":{\"detail\":\"Page not found\"}}"
+    },
+    {
+      "name": "realmmanagement unmatched route",
+      "why": "same inference as appengine; recorded to confirm the two really do agree",
+      "method": "GET",
+      "path": "/realmmanagement/v1/bench/no-such-route",
+      "auth": "none",
+      "status": 404,
+      "body": "{\"errors\":{\"detail\":\"Not found\"}}"
+    },
+    {
+      "name": "unknown service prefix",
+      "why": "bounds the envelope: a prefix belonging to no service should not get a service envelope",
+      "method": "GET",
+      "path": "/no-such-service/v1/thing",
+      "auth": "none",
+      "status": 404,
+      "body": "404 page not found"
+    }
+  ]
+}

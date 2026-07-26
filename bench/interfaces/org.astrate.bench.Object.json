@@ -1,0 +1,29 @@
+{
+    "interface_name": "org.astrate.bench.Object",
+    "version_major": 1,
+    "version_minor": 0,
+    "type": "datastream",
+    "ownership": "device",
+    "aggregation": "object",
+    "description": "Benchmark object-aggregated datastream: one three-field document per message, QoS 1, explicit timestamps.",
+    "mappings": [
+        {
+            "endpoint": "/data/temp",
+            "type": "double",
+            "reliability": "guaranteed",
+            "explicit_timestamp": true
+        },
+        {
+            "endpoint": "/data/hum",
+            "type": "double",
+            "reliability": "guaranteed",
+            "explicit_timestamp": true
+        },
+        {
+            "endpoint": "/data/status",
+            "type": "string",
+            "reliability": "guaranteed",
+            "explicit_timestamp": true
+        }
+    ]
+}

@@ -1,0 +1,16 @@
+# Overrides layered on top of upstream Astarte's own docker-compose.yml.
+#
+# Kept here rather than patched into the checkout because bench/.astarte is a
+# disposable clone: up-astarte.sh recreates it, and any edit made in there is
+# lost without warning. Everything in this file is an environment fix, never a
+# behaviour change — the point of the oracle is that it runs stock Astarte.
+services:
+  traefik:
+    # Astarte v1.2.0 pins traefik:v2.9, whose Docker client speaks API 1.24.
+    # Docker Engine 26+ refuses anything below 1.40, so on a current daemon
+    # v2.9 cannot read the container labels at all: it discovers no routers and
+    # every request to the gateway answers 404 while each service behind it is
+    # perfectly healthy — a failure that looks like Astarte is still booting.
+    # v2.11 is the last v2 release and negotiates a supported API version.
+    # Setting DOCKER_API_VERSION on v2.9 does not help; it was tried.
+    image: traefik:v2.11

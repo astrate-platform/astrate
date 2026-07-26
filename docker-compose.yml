@@ -1,0 +1,96 @@
+# Astrate local/dev stack (docs/ROADMAP.md §9 file 8.7, tuning per
+# docs/DESIGN.md §5.4): TimescaleDB plus the single Astrate binary.
+#
+# This file ships the *development* profile: the broker runs in
+# insecure_dev_mode, so devices connect over the plaintext :1883 listener and
+# Astrate mints a throwaway self-signed cert for the (unused) :8883 mTLS
+# listener. For production, terminate TLS properly — see docs/OPERATIONS.md:
+# provide ASTRATE_MQTT_TLS_CERT_FILE / _KEY_FILE (and HTTP TLS or a reverse
+# proxy), set a real ASTRATE_MASTER_KEY, and drop insecure_dev_mode.
+#
+# The astrate service sits behind the "full" compose profile, so plain
+# `docker compose up -d` (and `make up`) brings up only the database for fast
+# T2 iteration. Bring up the whole stack with the profile:
+#
+# Quick start (full stack):
+#   docker compose --profile full up -d --build
+#   curl localhost:8080/astrate/v1/readiness
+#
+# Fast T2 iteration against just the database (no astrate container):
+#   make up
+#   ASTRATE_TEST_DSN="postgres://astrate:astrate@127.0.0.1:5432/astrate?sslmode=disable" make test-integration
+#
+# Credentials and the master key below are throwaway local-dev values.
+services:
+  timescaledb:
+    image: timescale/timescaledb:latest-pg16
+    command:
+      - postgres
+      - -c
+      - shared_buffers=256MB
+      - -c
+      - max_connections=50
+    environment:
+      POSTGRES_DB: astrate
+      POSTGRES_USER: astrate
+      POSTGRES_PASSWORD: astrate
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U astrate -d astrate"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  astrate:
+    profiles: ["full"]
+    build:
+      context: .
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+    environment:
+      ASTRATE_DATABASE_DSN: "postgres://astrate:astrate@timescaledb:5432/astrate?sslmode=disable"
+      ASTRATE_MQTT_INSECURE_DEV_MODE: "true"
+      ASTRATE_MQTT_SESSION_STORE_PATH: "/var/lib/astrate/sessions.db"
+      # CHANGE for any non-throwaway use: 64 hex chars (32 bytes), kept secret.
+      ASTRATE_MASTER_KEY: "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff"
+      ASTRATE_LOG_FORMAT: "json"
+      ASTRATE_LOG_LEVEL: "info"
+      # Dashboard support: allow its origin cross-origin and auto-provision
+      # the "test" realm with the committed dev-only key (deploy/devrealm).
+      ASTRATE_HTTP_CORS_ALLOWED_ORIGINS: "http://localhost:4040"
+      ASTRATE_REALM_NAME: "test"
+      ASTRATE_REALM_JWT_PUBLIC_KEY_FILE: "/etc/astrate/realm_public.pem"
+    ports:
+      - "127.0.0.1:8080:8080" # REST API
+      - "127.0.0.1:1883:1883" # plaintext MQTT (dev only)
+      - "127.0.0.1:8883:8883" # mTLS MQTT
+    volumes:
+      - sessions:/var/lib/astrate
+      - ./deploy/devrealm/realm_public.pem:/etc/astrate/realm_public.pem:ro
+    read_only: true
+    tmpfs:
+      - /tmp
+
+  # The unmodified upstream Astarte Dashboard, pinned to the v1.2 series that
+  # matches Astrate's compatibility target (docs/COMPATIBILITY.md). Login with
+  # realm "test" and a token from:
+  #   astartectl utils gen-jwt all-realm-apis -k deploy/devrealm/realm_private.pem
+  # The Device Live Events card needs the Channels socket (M11); every other
+  # page works against M10.
+  dashboard:
+    profiles: ["full"]
+    image: astarte/astarte-dashboard:1.2.2
+    depends_on:
+      - astrate
+    ports:
+      - "127.0.0.1:4040:80"
+    volumes:
+      - ./deploy/dashboard/config.json:/usr/share/nginx/html/user-config/config.json:ro
+
+volumes:
+  pgdata:
+  sessions:
