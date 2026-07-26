@@ -205,6 +205,12 @@ func (s *session) handleJoin(f Frame) {
 		s.sendErr(f, "unauthorized")
 		return
 	}
+	// Upstream authorizes every join, including a rejoin, against the room
+	// name with the realm stripped off.
+	if !s.tok.AuthorizesChannel(auth.VerbJoin, name) {
+		s.sendErr(f, "unauthorized")
+		return
+	}
 
 	s.roomsMu.Lock()
 	if j, ok := s.rooms[f.Topic]; ok {
@@ -263,7 +269,7 @@ func (s *session) handleWatch(f Frame) {
 		s.sendErr(f, "invalid simple_trigger")
 		return
 	}
-	if !s.tok.Authorizes(auth.ClaimChannels, "WATCH", path) {
+	if !s.tok.AuthorizesChannel(auth.VerbWatch, path) {
 		s.sendErr(f, "unauthorized")
 		return
 	}

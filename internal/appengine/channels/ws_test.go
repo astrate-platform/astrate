@@ -68,7 +68,7 @@ func TestPreUpgrade_MissingToken(t *testing.T) {
 
 func TestPreUpgrade_MissingRealm(t *testing.T) {
 	api, key := setupTestAPI(t)
-	token := mintToken(t, key, jwt.MapClaims{"a_ch": []string{".*::.*"}})
+	token := mintToken(t, key, jwt.MapClaims{"a_ch": []string{"JOIN::.*", "WATCH::.*"}})
 	mux := http.NewServeMux()
 	api.Mount(mux)
 	rec := httptest.NewRecorder()
@@ -81,7 +81,7 @@ func TestPreUpgrade_MissingRealm(t *testing.T) {
 
 func TestPreUpgrade_UnknownRealm(t *testing.T) {
 	api, key := setupTestAPI(t)
-	token := mintToken(t, key, jwt.MapClaims{"a_ch": []string{".*::.*"}})
+	token := mintToken(t, key, jwt.MapClaims{"a_ch": []string{"JOIN::.*", "WATCH::.*"}})
 	mux := http.NewServeMux()
 	api.Mount(mux)
 	rec := httptest.NewRecorder()
@@ -106,7 +106,7 @@ func TestPreUpgrade_InvalidToken(t *testing.T) {
 
 func TestPreUpgrade_HappyPath(t *testing.T) {
 	api, key := setupTestAPI(t)
-	token := mintToken(t, key, jwt.MapClaims{"a_ch": []string{".*::.*"}})
+	token := mintToken(t, key, jwt.MapClaims{"a_ch": []string{"JOIN::.*", "WATCH::.*"}})
 	mux := http.NewServeMux()
 	api.Mount(mux)
 	rec := httptest.NewRecorder()
@@ -135,7 +135,7 @@ func dialSession(t *testing.T, mux *http.ServeMux, token string) (*websocket.Con
 
 func TestWireSession_Heartbeat(t *testing.T) {
 	api, key := setupTestAPI(t)
-	token := mintToken(t, key, jwt.MapClaims{"a_ch": []string{".*::.*"}})
+	token := mintToken(t, key, jwt.MapClaims{"a_ch": []string{"JOIN::.*", "WATCH::.*"}})
 	mux := http.NewServeMux()
 	api.Mount(mux)
 	conn, cancel := dialSession(t, mux, token)
@@ -188,7 +188,7 @@ func TestWireSession_Heartbeat(t *testing.T) {
 
 func TestWireSession_JoinOwnRealm(t *testing.T) {
 	api, key := setupTestAPI(t)
-	token := mintToken(t, key, jwt.MapClaims{"a_ch": []string{".*::.*"}})
+	token := mintToken(t, key, jwt.MapClaims{"a_ch": []string{"JOIN::.*", "WATCH::.*"}})
 	mux := http.NewServeMux()
 	api.Mount(mux)
 	conn, cancel := dialSession(t, mux, token)
@@ -228,7 +228,7 @@ func TestWireSession_JoinOwnRealm(t *testing.T) {
 
 func TestWireSession_JoinRejected(t *testing.T) {
 	api, key := setupTestAPI(t)
-	token := mintToken(t, key, jwt.MapClaims{"a_ch": []string{".*::.*"}})
+	token := mintToken(t, key, jwt.MapClaims{"a_ch": []string{"JOIN::.*", "WATCH::.*"}})
 	mux := http.NewServeMux()
 	api.Mount(mux)
 	conn, cancel := dialSession(t, mux, token)
@@ -284,7 +284,7 @@ func TestWireSession_JoinRejected(t *testing.T) {
 
 func TestWireSession_Leave(t *testing.T) {
 	api, key := setupTestAPI(t)
-	token := mintToken(t, key, jwt.MapClaims{"a_ch": []string{".*::.*"}})
+	token := mintToken(t, key, jwt.MapClaims{"a_ch": []string{"JOIN::.*", "WATCH::.*"}})
 	mux := http.NewServeMux()
 	api.Mount(mux)
 	conn, cancel := dialSession(t, mux, token)
@@ -333,7 +333,7 @@ func TestWireSession_Leave(t *testing.T) {
 
 func TestWireSession_LeaveWithoutJoin(t *testing.T) {
 	api, key := setupTestAPI(t)
-	token := mintToken(t, key, jwt.MapClaims{"a_ch": []string{".*::.*"}})
+	token := mintToken(t, key, jwt.MapClaims{"a_ch": []string{"JOIN::.*", "WATCH::.*"}})
 	mux := http.NewServeMux()
 	api.Mount(mux)
 	conn, cancel := dialSession(t, mux, token)
@@ -404,7 +404,7 @@ func readFramePayloadStatus(t *testing.T, conn *websocket.Conn) string {
 
 func TestWireSession_Watch_Accepted(t *testing.T) {
 	api, key, _ := setupTestAPIWithBus(t)
-	token := mintToken(t, key, jwt.MapClaims{"a_ch": []string{".*::.*"}})
+	token := mintToken(t, key, jwt.MapClaims{"a_ch": []string{"JOIN::.*", "WATCH::.*"}})
 	mux := http.NewServeMux()
 	api.Mount(mux)
 	conn, cancel := dialSession(t, mux, token)
@@ -437,8 +437,8 @@ func TestWireSession_Watch_Accepted(t *testing.T) {
 
 func TestWireSession_Watch_Rejected(t *testing.T) {
 	api, key, _ := setupTestAPIWithBus(t)
-	token := mintToken(t, key, jwt.MapClaims{"a_ch": []string{".*::.*"}})
-	restrictiveToken := mintToken(t, key, jwt.MapClaims{"a_ch": []string{"WATCH::" + validDeviceIDA}})
+	token := mintToken(t, key, jwt.MapClaims{"a_ch": []string{"JOIN::.*", "WATCH::.*"}})
+	restrictiveToken := mintToken(t, key, jwt.MapClaims{"a_ch": []string{"JOIN::.*", "WATCH::" + validDeviceIDA}})
 	mux := http.NewServeMux()
 	api.Mount(mux)
 
@@ -540,7 +540,7 @@ func TestWireSession_Watch_Rejected(t *testing.T) {
 
 func TestWireSession_NewEvent(t *testing.T) {
 	api, key, bus := setupTestAPIWithBus(t)
-	token := mintToken(t, key, jwt.MapClaims{"a_ch": []string{".*::.*"}})
+	token := mintToken(t, key, jwt.MapClaims{"a_ch": []string{"JOIN::.*", "WATCH::.*"}})
 	mux := http.NewServeMux()
 	api.Mount(mux)
 	conn, cancel := dialSession(t, mux, token)
@@ -632,7 +632,7 @@ func TestWireSession_NewEvent(t *testing.T) {
 // the race detector and not panicking; frame contents are covered elsewhere.
 func TestWireSession_PumpRacesLeave(t *testing.T) {
 	api, key, bus := setupTestAPIWithBus(t)
-	token := mintToken(t, key, jwt.MapClaims{"a_ch": []string{".*::.*"}})
+	token := mintToken(t, key, jwt.MapClaims{"a_ch": []string{"JOIN::.*", "WATCH::.*"}})
 	mux := http.NewServeMux()
 	api.Mount(mux)
 	conn, cancel := dialSession(t, mux, token)
@@ -689,4 +689,91 @@ func TestWireSession_PumpRacesLeave(t *testing.T) {
 		t.Fatalf("write leave: %v", err)
 	}
 	<-fed
+}
+
+// TestWireSession_JoinAuthorization drives the a_ch grammar over the real wire,
+// with the rows recorded from upstream in test/conformance/upstream/channels.json.
+// The unit table in internal/auth proves the matcher; this proves the socket
+// actually consults it on a join, which it did not before M12 phase 06.
+//
+// The refusals are paired with acceptances on the same room, so a socket that
+// refused every join could not pass.
+func TestWireSession_JoinAuthorization(t *testing.T) {
+	const room = "dashboard_1"
+
+	cases := []struct {
+		name    string
+		grants  []string
+		wantOK  bool
+		because string
+	}{
+		{"blanket .*::.*", []string{".*::.*"}, false,
+			`".*" is not the literal verb "JOIN"; upstream refuses this join`},
+		{"blanket .*", []string{".*"}, false,
+			"an entry without the three-field form is discarded"},
+		{"JOIN::.*", []string{"JOIN::.*"}, true,
+			"the paired acceptance for the two refusals above"},
+		{"JOIN::<this room>", []string{"JOIN::" + room}, true,
+			"an exact-room grant is honoured"},
+		{"JOIN::<other room>", []string{"JOIN::other"}, false,
+			"same verb, wrong room — the room name is really matched"},
+		{"WATCH only", []string{"WATCH::.*"}, false,
+			"a watch grant is a separate bucket and does not admit a join"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			api, key := setupTestAPI(t)
+			token := mintToken(t, key, jwt.MapClaims{"a_ch": tc.grants})
+			mux := http.NewServeMux()
+			api.Mount(mux)
+			conn, cancel := dialSession(t, mux, token)
+			defer cancel()
+			defer conn.CloseNow()
+
+			ctx := context.Background()
+			topic := "rooms:" + testRealmName + ":" + room
+			if err := conn.Write(ctx, websocket.MessageText,
+				[]byte(`["1","1","`+topic+`","phx_join",{}]`)); err != nil {
+				t.Fatalf("write: %v", err)
+			}
+
+			_, raw, err := conn.Read(ctx)
+			if err != nil {
+				t.Fatalf("read: %v", err)
+			}
+			var f Frame
+			if err := json.Unmarshal(raw, &f); err != nil {
+				t.Fatalf("decode: %v", err)
+			}
+			var payload struct {
+				Status   string `json:"status"`
+				Response struct {
+					Reason string `json:"reason"`
+				} `json:"response"`
+			}
+			if err := json.Unmarshal(f.Payload, &payload); err != nil {
+				t.Fatalf("decode payload: %v", err)
+			}
+
+			if tc.wantOK {
+				if payload.Status != "ok" {
+					t.Errorf("status = %s, want ok (a_ch=%v: %s)", payload.Status, tc.grants, tc.because)
+				}
+				if api.reg.Rooms() != 1 {
+					t.Errorf("Rooms() = %d, want 1 — an authorized join must create the room", api.reg.Rooms())
+				}
+				return
+			}
+			if payload.Status != "error" {
+				t.Errorf("status = %s, want error (a_ch=%v: %s)", payload.Status, tc.grants, tc.because)
+			}
+			if payload.Response.Reason != "unauthorized" {
+				t.Errorf("reason = %q, want %q", payload.Response.Reason, "unauthorized")
+			}
+			if api.reg.Rooms() != 0 {
+				t.Errorf("Rooms() = %d, want 0 — a refused join must not create the room", api.reg.Rooms())
+			}
+		})
+	}
 }
