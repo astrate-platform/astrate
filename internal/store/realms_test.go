@@ -221,6 +221,7 @@ func testRealms(t *testing.T, s *Store) {
 			{"groups", `SELECT count(*) FROM groups WHERE realm_id = $1`},
 			{"group_devices", `SELECT count(*) FROM group_devices WHERE realm_id = $1`},
 			{"triggers", `SELECT count(*) FROM triggers WHERE realm_id = $1`},
+			{"trigger_policies", `SELECT count(*) FROM trigger_policies WHERE realm_id = $1`},
 		} {
 			var n int
 			if err := s.pool.QueryRow(ctx, q.sql, realm.ID).Scan(&n); err != nil {
