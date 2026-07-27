@@ -270,6 +270,18 @@ cmd_preflight() {
       fail=1
     fi
   else ok "commit signing is off (correct for an unattended clone)"; fi
+  # Every function the runner calls must actually exist. This is not paranoia: an edit to
+  # cmd_refill once sliced beat() and check_pulse() out of the file and left their call sites
+  # behind, so the dead-man's switch — the thing whose whole job is noticing silent failure —
+  # failed silently for an afternoon. bash only complains at the call, which on the Pi means
+  # a line in the journal nobody reads.
+  local fn missing=0
+  for fn in beat check_pulse first_open code_id line_slug proof_gate gates issue_tasks \
+            issue_done refill_from_recipe cmd_next cmd_refill cmd_review sed_i is_transient \
+            run_with_timeout ensure_branch legion_up check_never log_row; do
+    declare -F "$fn" >/dev/null || { bad "internal: $fn() is called but not defined"; missing=1; }
+  done
+  [ "$missing" = 0 ] && ok "every function the runner calls is defined" || fail=1
   command -v gh >/dev/null && gh auth status >/dev/null 2>&1 \
     && ok "gh is authenticated (issue tasks will work)" \
     || note "gh not authenticated — the GitHub-issues recipe will not work"
@@ -610,6 +622,53 @@ cmd_refill() {
   # "nothing to propose" there would be a plain lie, and it was one.
   after="$(grep -c '^- \[ \] ' "$TODO" 2>/dev/null | head -1)"
   [ "${after:-0}" -gt "${before:-0}" ]
+}
+
+# The dead-man's switch. Everything in this script that goes wrong goes wrong quietly: a
+# failed fetch, a failed push and an empty queue are all `note`s, and the unit still exits 0.
+# That is deliberate — a timer that mails you about a sleeping handheld is a timer you mute —
+# but it means the mule was green for hours while doing nothing at all, and the way that was
+# discovered was Giulio noticing an empty branch. Once is enough.
+#
+# So: any tick that lands work touches the heartbeat. A tick that finds it stale says so
+# somewhere Giulio will actually see, exactly once per silence.
+beat() { date +%s > "$MULE/.heartbeat"; rm -f "$MULE/.alarmed"; }
+
+check_pulse() {
+  local max="${MULE_IDLE_ALARM_HOURS:-8}" now last age
+  [ "$max" = 0 ] && return 0
+  now="$(date +%s)"
+  if [ ! -f "$MULE/.heartbeat" ]; then beat; return 0; fi
+  last="$(cat "$MULE/.heartbeat" 2>/dev/null)"; [ -n "$last" ] || { beat; return 0; }
+  age=$(( (now - last) / 3600 ))
+  [ "$age" -lt "$max" ] && return 0
+  # One alarm per silence, not one per tick — the alarm is only useful if it is rare.
+  [ -f "$MULE/.alarmed" ] && return 0
+  : > "$MULE/.alarmed"
+  bad "no work has landed in ${age}h — raising the alarm"
+  local body="The mule has not landed any work in ${age} hours (threshold ${max}h).
+
+It is probably still ticking and exiting 0 — that is how this failure looks. Worth checking,
+on the Pi:
+
+    systemctl list-timers mule.timer
+    journalctl -u mule.service --since '-1 day' | tail -50
+    cd /root/astrate-mule && bash tools/mule.sh status
+
+Common causes, all of which have happened: the provider is refusing every run, the queue has
+nothing runnable in it, the working tree is dirty so every tick aborts, or push has been
+failing and the work is only on the Pi.
+
+Filed automatically. Close it — the mule reopens a new one if the silence continues."
+  if command -v gh >/dev/null && [ -n "${MULE_PUSH:-}" ]; then
+    gh issue create --title "mule: nothing has landed in ${age}h" --body "$body" \
+      --label "$MULE_ALARM_LABEL" >/dev/null 2>&1 \
+      && note "filed an idle alarm on GitHub" \
+      && return 0
+  fi
+  # No gh, or it failed: the escalation file is the fallback and it is committed anyway.
+  printf -- '- **The mule has been idle %sh.** %s\n' "$age" \
+    "Filed by the dead-man's switch; see journalctl on the Pi." >> "$MULE/for-giulio.md"
 }
 
 # What a reviewer needs in order to decide whether any of this should reach main. The mule
