@@ -26,13 +26,15 @@ queue/gate.
      coverage of each capability the reference names.
 4. For each gap, decide which bucket it falls in:
    - **Machine-checkable, no design choice needed** (a missing package, an unimplemented
-     wire message, a schema field): propose it as a task line that files the issue:
+     wire message, a schema field): **file the issue now**, directly:
      ```
-     - [ ] milestone-<tag>-issue-<slug>: gh issue create --title "<slug>: <one-line outcome>" \
-       --label mule,milestone-<tag> --body "<what/why, cite the reference and the file(s) that
-       would need to change, ending with 'Acceptance: <a concrete test or check that proves
-       this is done>'>"
+     gh issue create --title "<slug>: <one-line outcome>" --label mule,milestone-<tag> \
+       --body "<what/why, cite the reference and the file(s) that would need to change,
+       ending with 'Acceptance: <a concrete test or check that proves this is done>'>"
      ```
+     This is a `gh` call, not a git mutation, and filing it is the deliverable — do not
+     also write a `.mule/todo.md` task line proposing to create the same issue. One or the
+     other, never both, or the next run duplicates it.
      **Every issue body must end with an `Acceptance:` line naming a specific test or
      check** — "a table-driven test in internal/flow/router_test.go asserting in-order
      delivery within a stream key", not "add tests". If you cannot state one, the gap is
@@ -40,10 +42,10 @@ queue/gate.
      This is what turns the milestone recipe's issues into starting points for MULE.md's
      existing rule that no behaviour change lands without a test proving it — the recipe
      names *which* test, the executing task still has to write and prove it.
-     If the piece is big enough to need sub-issues, propose the parent issue task first and
-     a follow-up task line (same slug prefix, `-sub1`, `-sub2`, ...) that files each child
-     with `--body "part of #<parent>, ..."` — the parent number is only known after the
-     parent task runs, so **only propose one level per run** and let the next run see the
+     If the piece is big enough to need sub-issues, file the parent issue now, then a
+     follow-up task line — `- [ ] milestone-<tag>-issue-<slug>-sub1: gh issue create ...
+     --body "part of #<parent>, ..."` — for each child, since the parent's issue number is
+     only known after it's filed. **Only file one level per run**; let the next run see the
      new parent number in `gh issue list` before filing children.
    - **Needs a design decision** (an API shape, a protocol extension, a choice the reference
      itself doesn't pin down): write it to `.mule/for-giulio.md`, one line, exactly as
@@ -57,11 +59,13 @@ queue/gate.
 
 ## Rules
 
-- **Never run `gh issue create` yourself during this recipe.** Your job is to write the
-  task line; a later, separate mule session runs it as a task. Filing the issue yourself
-  now both breaks the proposal/execution split every other recipe follows and, if the same
-  task line is then approved and queued, duplicates the issue.
-- **Propose at most five issue-filing tasks per run**, same cap as the other recipes.
+- **File at most five issues per run**, same cap as the other recipes' proposals.
+- **Never file the same gap twice.** `gh issue list --label milestone-<tag> --state all` in
+  step 3 is what prevents this — trust it, and never both file an issue and queue a task
+  line to create that same issue (see step 4).
+- **Never run `gh issue edit/close/comment`** or anything else that changes an *existing*
+  issue or touches git — creation of new issues is the one exception to "recipes only
+  produce text", nothing else is.
 - Every filed issue must name the file(s) or package the gap lives in, if the investigation
   found one — that's what makes the follow-up task machine-startable instead of another
   investigation.

@@ -892,11 +892,15 @@ cmd_recipe() {
 
 That recipe is a *proposal* job: its output is new task lines appended to .mule/todo.md,
 plus any evidence file it tells you to write. Do not start implementing the tasks you
-propose. Do not touch git. Do not run gh issue create, gh issue edit, gh issue close, or
-any other command that mutates state outside this working tree — a recipe only ever
-produces text (task lines, evidence files, .mule/for-giulio.md entries). If a task line
-says 'gh issue create ...', that command is only ever run later, as that task, by a
-separate mule session — never by you, now, while proposing it."
+propose, and do not touch git (no commit, branch, checkout, stash).
+
+If the recipe tells you to run 'gh issue create' as the deliverable itself (some do —
+check the recipe), that is fine to actually run now: filing an issue is not a code change
+and does not need the todo.md approval step. But then that is the *whole* deliverable for
+that piece of work — do not also append a task line proposing to create the same issue
+again. One or the other, never both, or the next run duplicates it. Never run 'gh issue
+edit/close/comment' or anything else that changes existing GitHub state — only creation of
+new issues, and only when the recipe explicitly asks for it."
   local -a run=(opencode run --agent "$MULE_AGENT")
   [ -n "$MULE_MODEL" ] && run+=(--model "$MULE_MODEL")
   run+=("$prompt")
