@@ -1,5 +1,5 @@
 {
-  "recorded_at": "2026-07-26T20:53:09Z",
+  "recorded_at": "2026-07-26T22:34:04Z",
   "astarte_version": "v1.2.0",
   "realm": "bench",
   "recorder_command": "go run ./recordchannels",
@@ -105,6 +105,54 @@
       ],
       "operation": "watch",
       "payload": "{\"device_id\":\"KqYJ16Cs7lyeJ3PPzg7xQg\",\"name\":\"probe\",\"simple_trigger\":{\"device_id\":\"*\",\"on\":\"device_error\",\"type\":\"device_trigger\"}}",
+      "reply": "[\"1\",\"2\",\"rooms:bench:probe\",\"phx_reply\",{\"status\":\"error\",\"response\":{\"reason\":\"unauthorized\"}}]",
+      "accepted": false
+    },
+    {
+      "name": "watch data_trigger, claim WATCH::\u003cdevice\u003e/\u003cinterface\u003e (Astrate's shape)",
+      "why": "Astrate authorizes a data trigger against `\u003cdevice_id\u003e/\u003cinterface\u003e`, with no match path. If upstream built the same string this is accepted; if upstream appends the match path it is refused, because the anchored claim regex cannot match the longer string.",
+      "a_ch_claims": [
+        "JOIN::.*",
+        "WATCH::KqYJ16Cs7lyeJ3PPzg7xQg/org.astrate.bench.Individual"
+      ],
+      "operation": "watch",
+      "payload": "{\"device_id\":\"KqYJ16Cs7lyeJ3PPzg7xQg\",\"name\":\"probe\",\"simple_trigger\":{\"interface_major\":1,\"interface_name\":\"org.astrate.bench.Individual\",\"match_path\":\"/value\",\"on\":\"incoming_data\",\"type\":\"data_trigger\",\"value_match_operator\":\"*\"}}",
+      "reply": "[\"1\",\"2\",\"rooms:bench:probe\",\"phx_reply\",{\"status\":\"error\",\"response\":{\"reason\":\"unauthorized\"}}]",
+      "accepted": false
+    },
+    {
+      "name": "watch data_trigger, claim WATCH::\u003cdevice\u003e/\u003cinterface\u003e\u003cmatch_path\u003e",
+      "why": "The paired alternative, and upstream's shape according to its source (`\"#{device_id}/#{interface_name}#{path}\"`, with no separator because the path already starts with a slash). Exactly one of this row and the one above can be accepted, so together they identify the authorization path rather than merely confirming a guess.",
+      "a_ch_claims": [
+        "JOIN::.*",
+        "WATCH::KqYJ16Cs7lyeJ3PPzg7xQg/org.astrate.bench.Individual/value"
+      ],
+      "operation": "watch",
+      "payload": "{\"device_id\":\"KqYJ16Cs7lyeJ3PPzg7xQg\",\"name\":\"probe\",\"simple_trigger\":{\"interface_major\":1,\"interface_name\":\"org.astrate.bench.Individual\",\"match_path\":\"/value\",\"on\":\"incoming_data\",\"type\":\"data_trigger\",\"value_match_operator\":\"*\"}}",
+      "reply": "[\"1\",\"2\",\"rooms:bench:probe\",\"phx_reply\",{\"status\":\"ok\",\"response\":{}}]",
+      "accepted": true
+    },
+    {
+      "name": "watch device_trigger, claim WATCH::\u003cthis device\u003e",
+      "why": "A device trigger's authorization path is claimed to be the bare device id. A narrow, exact claim accepts it, which is what identifies the path.",
+      "a_ch_claims": [
+        "JOIN::.*",
+        "WATCH::KqYJ16Cs7lyeJ3PPzg7xQg"
+      ],
+      "operation": "watch",
+      "payload": "{\"device_id\":\"KqYJ16Cs7lyeJ3PPzg7xQg\",\"name\":\"probe\",\"simple_trigger\":{\"device_id\":\"KqYJ16Cs7lyeJ3PPzg7xQg\",\"on\":\"device_error\",\"type\":\"device_trigger\"}}",
+      "reply": "[\"1\",\"2\",\"rooms:bench:probe\",\"phx_reply\",{\"status\":\"ok\",\"response\":{}}]",
+      "accepted": true
+    },
+    {
+      "name": "watch device_trigger, claim WATCH::\u003canother device\u003e",
+      "why": "The paired refusal for the row above: a well-formed claim naming a different device. Together they show the device id is really the string being matched, rather than the acceptance coming from any claim at all.",
+      "a_ch_claims": [
+        "JOIN::.*",
+        "WATCH::aaaaaaaaaaaaaaaaaaaaaa"
+      ],
+      "operation": "watch",
+      "payload": "{\"device_id\":\"KqYJ16Cs7lyeJ3PPzg7xQg\",\"name\":\"probe\",\"simple_trigger\":{\"device_id\":\"KqYJ16Cs7lyeJ3PPzg7xQg\",\"on\":\"device_error\",\"type\":\"device_trigger\"}}",
       "reply": "[\"1\",\"2\",\"rooms:bench:probe\",\"phx_reply\",{\"status\":\"error\",\"response\":{\"reason\":\"unauthorized\"}}]",
       "accepted": false
     }

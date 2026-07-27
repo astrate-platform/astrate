@@ -639,6 +639,12 @@ Astarte's claim model is reproduced exactly so existing tokens/tooling (`astarte
   base* (e.g. `devices/h4-Dx_RYTU-RbpDOTabhRg/interfaces/...`).
 - Regexes are compiled once per token (LRU cache keyed by token hash) and are implicitly
   anchored as upstream does; `exp` honoured if present; `iat` not required (parity).
+- **`a_ch` is the exception and does not follow the rule above.** Upstream's Channels socket
+  matches the verb field *literally* against `JOIN` or `WATCH` and discards every entry that
+  is neither, so the catch-all `".*::.*"` authorizes nothing there. `Token.AuthorizesChannel`
+  implements that rule; `Token.Authorizes` keeps the verb-regex behaviour for the REST
+  surfaces. Measured, not inferred — see `test/conformance/upstream/channels.json` and
+  COMPATIBILITY.md deviation 1.
 - Multiple realm public keys allow zero-downtime key rotation (`PUT
   /realmmanagement/v1/<realm>/config/auth` parity endpoint).
 

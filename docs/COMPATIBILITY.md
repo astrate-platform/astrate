@@ -70,12 +70,37 @@ All additive or strictly-safer; none affect unmodified device SDKs.
      unverifiable token — is a uniform `401` with no existence oracle;
      authorization refusals are `error` reply frames after the upgrade, not
      HTTP status codes.
-   - **The WATCH authorization paths are reconstructed from upstream
-     documentation, not from upstream source**: `groups/<name>` for a group
-     trigger, `<device_id>/<interface>` for a data trigger, and `<device_id>`
-     otherwise, each checked as `Authorizes(a_ch, "WATCH", …)`. astartectl-style
-     `.*::.*` grants behave identically under any reading; narrowly-scoped
-     `a_ch` claims are where a divergence would show.
+   - **The `a_ch` grammar is measured, and it is not the REST grammar.**
+     Recorded against upstream v1.2.0 in
+     `test/conformance/upstream/channels.json`. Upstream partitions the `a_ch`
+     list by an **exact** match on the verb field, keeping only entries whose
+     first field is literally `JOIN` or `WATCH` and discarding every other
+     entry; the path regex is then matched within the chosen bucket. So the
+     astartectl-style blanket `.*::.*`, which authorizes every REST surface,
+     authorizes **nothing** on Channels — `.*` is not the string `JOIN`. A join
+     is checked against the room name with `rooms:<realm>:` stripped off, and
+     `Token.AuthorizesChannel` implements this separately from `Authorizes`,
+     which stays a verb-regex match because that is what upstream's REST plug
+     does. Astrate previously read `a_ch` with the REST rule and did not check
+     `JOIN` on a join at all; both were corrected in M12 phase 06.
+   - **The WATCH authorization paths are measured**, with narrow claims that
+     make exactly one of each pair acceptable
+     (`test/conformance/upstream/channels.json`). A data trigger is authorized
+     against `<device_id>/<interface_name><match_path>` — the match path is
+     appended, carrying its own leading slash — and a device trigger against
+     the bare `<device_id>`. Astrate built `<device_id>/<interface_name>` for
+     data triggers until M12 phase 06b, which was wrong in *both* directions:
+     it refused claims upstream accepts and accepted claims upstream refuses.
+     The group shapes (`groups/<name>/<interface><match_path>` and
+     `groups/<name>`) come from the same upstream function but are **not
+     measured**, the realm having no group; they are the one part of this
+     surface still resting on a source read.
+   - **A device trigger's `device_id` must sit inside `simple_trigger` and
+     equal the request's own.** Upstream refuses a watch whose `device_id` is
+     only at the payload's top level — where the AppEngine REST API puts it —
+     and refuses a wildcard `device_id: "*"`, both with the misleading reason
+     `unauthorized`. Astrate used to fall back to the top-level `device_id` and
+     accept both; since M12 phase 06b it refuses them with the same reason.
    - **Transient triggers are matcher-only.** A `watch` payload's
      `simple_trigger` is compiled to a matcher with no action, never stored and
      never handed to the trigger executor. A slow viewer drops frames rather
@@ -90,7 +115,13 @@ All additive or strictly-safer; none affect unmodified device SDKs.
    enum by `triggers.UpstreamErrorName` when an event body is built. The
    original label rides along under `metadata["astrate_reason"]`, so nothing
    diagnostic is lost, and any reason without a specific counterpart becomes
-   `interface_loading_failed` rather than an unaccepted name.
+   `interface_loading_failed` rather than an unaccepted name. The mapping table
+   is **measured**, not reconstructed: it was recorded against upstream Astarte
+   v1.2.0 in `test/conformance/upstream/channels.json`, and two rows were
+   corrected as a result. `write_on_server_owned_interface` and
+   `value_size_exceeded` remain unverified guesses — the recording realm had no
+   server-owned interface, and upstream accepted a 100 KB string without
+   bracketing a size limit.
 
 2. **JSON payload profile + `initial_payload_format`** — Astrate accepts a
    documented plain-JSON data encoding alongside BSON on the same topics, and an

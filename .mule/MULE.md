@@ -47,8 +47,9 @@ have something to show. Your report is the whole deliverable and is kept verbati
 - **Never touch git.** No commit, branch, checkout, stash, rebase. The script commits your
   work if the gates pass, and reverts it if they don't.
 - **Never touch** `docs/DESIGN.md`, `docs/ROADMAP.md`, `migrations/`, `.github/`, `go.mod`,
-  `go.sum`, `Dockerfile`, `docker-compose.yml`, or anything under `.trickle/`. These carry
-  decisions or Giulio's voice. If a task seems to need one, say so and stop.
+  `go.sum`, `Dockerfile`, `docker-compose.yml`, `.mule/milestones.md`, or anything under
+  `.trickle/`. These carry decisions or Giulio's voice. If a task seems to need one, say so
+  and stop.
 - Never invent an API, a config key, or a behaviour. Read the code or run it.
 - Never weaken or delete a test to make a gate pass. A failing gate is a real result — report it.
 - Never write to a path outside this repository.
@@ -98,6 +99,14 @@ because the line in the queue is only its title, and the body is where the actua
 is. If the issue asks for more than one tick's worth, do the first independently useful part
 and propose the rest as new lines, exactly as you would for any oversized task. Do not close
 the issue; the script comments the sha on it for you.
+
+## Tasks that file an issue instead of changing code
+
+A task slugged `milestone-<tag>-issue-...` (from `.mule/recipes/milestones.md`) is done when
+you have run the `gh issue create` command it names — that command *is* the deliverable,
+there is no code diff to produce. Run exactly the command proposed (title, labels, body);
+don't improvise the wording. This leaves the working tree clean, which is expected: it is
+logged the same way a `[readonly]` probe is, not committed as a code change.
 
 ## Adding tasks
 

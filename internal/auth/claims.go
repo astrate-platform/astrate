@@ -72,10 +72,13 @@ type astarteClaims struct {
 }
 
 // grant is one compiled authorization string: a verb regex and a path regex,
-// both implicitly anchored.
+// both implicitly anchored. verbLiteral is the verb field before compilation,
+// which the Channels surface matches by equality rather than as a regex — see
+// AuthorizesChannel.
 type grant struct {
-	verb *regexp.Regexp
-	path *regexp.Regexp
+	verb        *regexp.Regexp
+	verbLiteral string
+	path        *regexp.Regexp
 }
 
 // compileGrant compiles one authorization string with upstream parity
@@ -105,7 +108,7 @@ func compileGrant(s string) (grant, bool) {
 	if err != nil {
 		return grant{}, false
 	}
-	return grant{verb: verb, path: path}, true
+	return grant{verb: verb, verbLiteral: parts[0], path: path}, true
 }
 
 // Token is a verified JWT: its expiry and its compiled authorization grants.
@@ -156,6 +159,39 @@ func (t *Token) ExpiresAt() (time.Time, bool) {
 func (t *Token) Authorizes(claim Claim, verb, authPath string) bool {
 	for _, g := range t.grants[claim] {
 		if g.verb.MatchString(verb) && g.path.MatchString(authPath) {
+			return true
+		}
+	}
+	return false
+}
+
+// Channels authorization verbs. Upstream recognises exactly these two and
+// silently discards an a_ch entry carrying anything else.
+const (
+	VerbJoin  = "JOIN"
+	VerbWatch = "WATCH"
+)
+
+// AuthorizesChannel reports whether the a_ch claim grants verb (VerbJoin or
+// VerbWatch) on authPath — the room name for a join, the trigger's target for
+// a watch.
+//
+// It deliberately does not reuse Authorizes, because upstream reads a_ch by a
+// different rule than the REST claims and the difference is observable. The
+// REST plug compiles the verb field into a regex and matches it against the
+// HTTP method, so "GET|POST" works and ".*::.*" grants everything. The
+// Channels socket instead *partitions* the a_ch list by an exact match on the
+// verb field, keeping only entries whose first field is literally "JOIN" or
+// "WATCH" and discarding the rest, then matches the path regex within the
+// chosen bucket.
+//
+// So a blanket ".*::.*" — which authorizes every REST surface — authorizes
+// nothing here: ".*" is not the string "JOIN". This is measured, not inferred;
+// see test/conformance/upstream/channels.json, where upstream refuses a join
+// under ".*::.*" and accepts the same join under "JOIN::.*".
+func (t *Token) AuthorizesChannel(verb, authPath string) bool {
+	for _, g := range t.grants[ClaimChannels] {
+		if g.verbLiteral == verb && g.path.MatchString(authPath) {
 			return true
 		}
 	}

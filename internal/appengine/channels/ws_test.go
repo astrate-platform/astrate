@@ -7,6 +7,7 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"encoding/pem"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -68,7 +69,7 @@ func TestPreUpgrade_MissingToken(t *testing.T) {
 
 func TestPreUpgrade_MissingRealm(t *testing.T) {
 	api, key := setupTestAPI(t)
-	token := mintToken(t, key, jwt.MapClaims{"a_ch": []string{".*::.*"}})
+	token := mintToken(t, key, jwt.MapClaims{"a_ch": []string{"JOIN::.*", "WATCH::.*"}})
 	mux := http.NewServeMux()
 	api.Mount(mux)
 	rec := httptest.NewRecorder()
@@ -81,7 +82,7 @@ func TestPreUpgrade_MissingRealm(t *testing.T) {
 
 func TestPreUpgrade_UnknownRealm(t *testing.T) {
 	api, key := setupTestAPI(t)
-	token := mintToken(t, key, jwt.MapClaims{"a_ch": []string{".*::.*"}})
+	token := mintToken(t, key, jwt.MapClaims{"a_ch": []string{"JOIN::.*", "WATCH::.*"}})
 	mux := http.NewServeMux()
 	api.Mount(mux)
 	rec := httptest.NewRecorder()
@@ -106,7 +107,7 @@ func TestPreUpgrade_InvalidToken(t *testing.T) {
 
 func TestPreUpgrade_HappyPath(t *testing.T) {
 	api, key := setupTestAPI(t)
-	token := mintToken(t, key, jwt.MapClaims{"a_ch": []string{".*::.*"}})
+	token := mintToken(t, key, jwt.MapClaims{"a_ch": []string{"JOIN::.*", "WATCH::.*"}})
 	mux := http.NewServeMux()
 	api.Mount(mux)
 	rec := httptest.NewRecorder()
@@ -135,7 +136,7 @@ func dialSession(t *testing.T, mux *http.ServeMux, token string) (*websocket.Con
 
 func TestWireSession_Heartbeat(t *testing.T) {
 	api, key := setupTestAPI(t)
-	token := mintToken(t, key, jwt.MapClaims{"a_ch": []string{".*::.*"}})
+	token := mintToken(t, key, jwt.MapClaims{"a_ch": []string{"JOIN::.*", "WATCH::.*"}})
 	mux := http.NewServeMux()
 	api.Mount(mux)
 	conn, cancel := dialSession(t, mux, token)
@@ -188,7 +189,7 @@ func TestWireSession_Heartbeat(t *testing.T) {
 
 func TestWireSession_JoinOwnRealm(t *testing.T) {
 	api, key := setupTestAPI(t)
-	token := mintToken(t, key, jwt.MapClaims{"a_ch": []string{".*::.*"}})
+	token := mintToken(t, key, jwt.MapClaims{"a_ch": []string{"JOIN::.*", "WATCH::.*"}})
 	mux := http.NewServeMux()
 	api.Mount(mux)
 	conn, cancel := dialSession(t, mux, token)
@@ -228,7 +229,7 @@ func TestWireSession_JoinOwnRealm(t *testing.T) {
 
 func TestWireSession_JoinRejected(t *testing.T) {
 	api, key := setupTestAPI(t)
-	token := mintToken(t, key, jwt.MapClaims{"a_ch": []string{".*::.*"}})
+	token := mintToken(t, key, jwt.MapClaims{"a_ch": []string{"JOIN::.*", "WATCH::.*"}})
 	mux := http.NewServeMux()
 	api.Mount(mux)
 	conn, cancel := dialSession(t, mux, token)
@@ -284,7 +285,7 @@ func TestWireSession_JoinRejected(t *testing.T) {
 
 func TestWireSession_Leave(t *testing.T) {
 	api, key := setupTestAPI(t)
-	token := mintToken(t, key, jwt.MapClaims{"a_ch": []string{".*::.*"}})
+	token := mintToken(t, key, jwt.MapClaims{"a_ch": []string{"JOIN::.*", "WATCH::.*"}})
 	mux := http.NewServeMux()
 	api.Mount(mux)
 	conn, cancel := dialSession(t, mux, token)
@@ -333,7 +334,7 @@ func TestWireSession_Leave(t *testing.T) {
 
 func TestWireSession_LeaveWithoutJoin(t *testing.T) {
 	api, key := setupTestAPI(t)
-	token := mintToken(t, key, jwt.MapClaims{"a_ch": []string{".*::.*"}})
+	token := mintToken(t, key, jwt.MapClaims{"a_ch": []string{"JOIN::.*", "WATCH::.*"}})
 	mux := http.NewServeMux()
 	api.Mount(mux)
 	conn, cancel := dialSession(t, mux, token)
@@ -404,7 +405,7 @@ func readFramePayloadStatus(t *testing.T, conn *websocket.Conn) string {
 
 func TestWireSession_Watch_Accepted(t *testing.T) {
 	api, key, _ := setupTestAPIWithBus(t)
-	token := mintToken(t, key, jwt.MapClaims{"a_ch": []string{".*::.*"}})
+	token := mintToken(t, key, jwt.MapClaims{"a_ch": []string{"JOIN::.*", "WATCH::.*"}})
 	mux := http.NewServeMux()
 	api.Mount(mux)
 	conn, cancel := dialSession(t, mux, token)
@@ -437,8 +438,8 @@ func TestWireSession_Watch_Accepted(t *testing.T) {
 
 func TestWireSession_Watch_Rejected(t *testing.T) {
 	api, key, _ := setupTestAPIWithBus(t)
-	token := mintToken(t, key, jwt.MapClaims{"a_ch": []string{".*::.*"}})
-	restrictiveToken := mintToken(t, key, jwt.MapClaims{"a_ch": []string{"WATCH::" + validDeviceIDA}})
+	token := mintToken(t, key, jwt.MapClaims{"a_ch": []string{"JOIN::.*", "WATCH::.*"}})
+	restrictiveToken := mintToken(t, key, jwt.MapClaims{"a_ch": []string{"JOIN::.*", "WATCH::" + validDeviceIDA}})
 	mux := http.NewServeMux()
 	api.Mount(mux)
 
@@ -540,7 +541,7 @@ func TestWireSession_Watch_Rejected(t *testing.T) {
 
 func TestWireSession_NewEvent(t *testing.T) {
 	api, key, bus := setupTestAPIWithBus(t)
-	token := mintToken(t, key, jwt.MapClaims{"a_ch": []string{".*::.*"}})
+	token := mintToken(t, key, jwt.MapClaims{"a_ch": []string{"JOIN::.*", "WATCH::.*"}})
 	mux := http.NewServeMux()
 	api.Mount(mux)
 	conn, cancel := dialSession(t, mux, token)
@@ -632,7 +633,7 @@ func TestWireSession_NewEvent(t *testing.T) {
 // the race detector and not panicking; frame contents are covered elsewhere.
 func TestWireSession_PumpRacesLeave(t *testing.T) {
 	api, key, bus := setupTestAPIWithBus(t)
-	token := mintToken(t, key, jwt.MapClaims{"a_ch": []string{".*::.*"}})
+	token := mintToken(t, key, jwt.MapClaims{"a_ch": []string{"JOIN::.*", "WATCH::.*"}})
 	mux := http.NewServeMux()
 	api.Mount(mux)
 	conn, cancel := dialSession(t, mux, token)
@@ -689,4 +690,227 @@ func TestWireSession_PumpRacesLeave(t *testing.T) {
 		t.Fatalf("write leave: %v", err)
 	}
 	<-fed
+}
+
+// TestWireSession_JoinAuthorization drives the a_ch grammar over the real wire,
+// with the rows recorded from upstream in test/conformance/upstream/channels.json.
+// The unit table in internal/auth proves the matcher; this proves the socket
+// actually consults it on a join, which it did not before M12 phase 06.
+//
+// The refusals are paired with acceptances on the same room, so a socket that
+// refused every join could not pass.
+func TestWireSession_JoinAuthorization(t *testing.T) {
+	const room = "dashboard_1"
+
+	cases := []struct {
+		name    string
+		grants  []string
+		wantOK  bool
+		because string
+	}{
+		{"blanket .*::.*", []string{".*::.*"}, false,
+			`".*" is not the literal verb "JOIN"; upstream refuses this join`},
+		{"blanket .*", []string{".*"}, false,
+			"an entry without the three-field form is discarded"},
+		{"JOIN::.*", []string{"JOIN::.*"}, true,
+			"the paired acceptance for the two refusals above"},
+		{"JOIN::<this room>", []string{"JOIN::" + room}, true,
+			"an exact-room grant is honoured"},
+		{"JOIN::<other room>", []string{"JOIN::other"}, false,
+			"same verb, wrong room — the room name is really matched"},
+		{"WATCH only", []string{"WATCH::.*"}, false,
+			"a watch grant is a separate bucket and does not admit a join"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			api, key := setupTestAPI(t)
+			token := mintToken(t, key, jwt.MapClaims{"a_ch": tc.grants})
+			mux := http.NewServeMux()
+			api.Mount(mux)
+			conn, cancel := dialSession(t, mux, token)
+			defer cancel()
+			defer conn.CloseNow()
+
+			ctx := context.Background()
+			topic := "rooms:" + testRealmName + ":" + room
+			if err := conn.Write(ctx, websocket.MessageText,
+				[]byte(`["1","1","`+topic+`","phx_join",{}]`)); err != nil {
+				t.Fatalf("write: %v", err)
+			}
+
+			_, raw, err := conn.Read(ctx)
+			if err != nil {
+				t.Fatalf("read: %v", err)
+			}
+			var f Frame
+			if err := json.Unmarshal(raw, &f); err != nil {
+				t.Fatalf("decode: %v", err)
+			}
+			var payload struct {
+				Status   string `json:"status"`
+				Response struct {
+					Reason string `json:"reason"`
+				} `json:"response"`
+			}
+			if err := json.Unmarshal(f.Payload, &payload); err != nil {
+				t.Fatalf("decode payload: %v", err)
+			}
+
+			if tc.wantOK {
+				if payload.Status != "ok" {
+					t.Errorf("status = %s, want ok (a_ch=%v: %s)", payload.Status, tc.grants, tc.because)
+				}
+				if api.reg.Rooms() != 1 {
+					t.Errorf("Rooms() = %d, want 1 — an authorized join must create the room", api.reg.Rooms())
+				}
+				return
+			}
+			if payload.Status != "error" {
+				t.Errorf("status = %s, want error (a_ch=%v: %s)", payload.Status, tc.grants, tc.because)
+			}
+			if payload.Response.Reason != "unauthorized" {
+				t.Errorf("reason = %q, want %q", payload.Response.Reason, "unauthorized")
+			}
+			if api.reg.Rooms() != 0 {
+				t.Errorf("Rooms() = %d, want 0 — a refused join must not create the room", api.reg.Rooms())
+			}
+		})
+	}
+}
+
+// TestWatchAuthPath pins the authorization-path shapes upstream matches a_ch
+// WATCH claims against, recorded in test/conformance/upstream/channels.json.
+//
+// The data-trigger row is the one the recording settled: a claim written as
+// "<device>/<interface>" — the shape Astrate built before M12 phase 06b — is
+// refused by upstream for a trigger on /value, while
+// "<device>/<interface>/value" is accepted.
+func TestWatchAuthPath(t *testing.T) {
+	const dev = validDeviceIDA
+
+	cases := []struct {
+		name    string
+		req     string
+		want    string
+		wantErr bool
+	}{
+		{
+			name: "data trigger appends the match path",
+			req:  `{"device_id":"` + dev + `","simple_trigger":{"type":"data_trigger","interface_name":"org.example.V1","match_path":"/value"}}`,
+			want: dev + "/org.example.V1/value",
+		},
+		{
+			name: "data trigger with a nested match path",
+			req:  `{"device_id":"` + dev + `","simple_trigger":{"type":"data_trigger","interface_name":"org.example.V1","match_path":"/data/temp"}}`,
+			want: dev + "/org.example.V1/data/temp",
+		},
+		{
+			name: "device trigger is the bare device id",
+			req:  `{"device_id":"` + dev + `","simple_trigger":{"type":"device_trigger","on":"device_error","device_id":"` + dev + `"}}`,
+			want: dev,
+		},
+		{
+			name:    "device trigger without its own device_id is refused",
+			req:     `{"device_id":"` + dev + `","simple_trigger":{"type":"device_trigger","on":"device_error"}}`,
+			wantErr: true,
+		},
+		{
+			name:    "device trigger naming a different device is refused",
+			req:     `{"device_id":"` + dev + `","simple_trigger":{"type":"device_trigger","on":"device_error","device_id":"` + validDeviceIDB + `"}}`,
+			wantErr: true,
+		},
+		{
+			name:    `device trigger with the wildcard "*" is refused`,
+			req:     `{"device_id":"` + dev + `","simple_trigger":{"type":"device_trigger","on":"device_error","device_id":"*"}}`,
+			wantErr: true,
+		},
+		{
+			name: "group data trigger",
+			req:  `{"simple_trigger":{"type":"data_trigger","group_name":"g1","interface_name":"org.example.V1","match_path":"/value"}}`,
+			want: "groups/g1/org.example.V1/value",
+		},
+		{
+			name: "group device trigger",
+			req:  `{"simple_trigger":{"type":"device_trigger","group_name":"g1","on":"device_error"}}`,
+			want: "groups/g1",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var req WatchRequest
+			if err := json.Unmarshal([]byte(tc.req), &req); err != nil {
+				t.Fatalf("decoding request: %v", err)
+			}
+			got, err := watchAuthPath(req)
+			if tc.wantErr {
+				if !errors.Is(err, errUnauthorizedTrigger) {
+					t.Errorf("watchAuthPath() error = %v, want errUnauthorizedTrigger (got path %q)", err, got)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("watchAuthPath() unexpected error: %v", err)
+			}
+			if got != tc.want {
+				t.Errorf("watchAuthPath() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestWireSession_WatchPathIsMatchPathScoped drives the settled data-trigger
+// rows over the real wire. The refusal and the acceptance differ only in the
+// claim, on an identical payload, so neither can be explained by the payload
+// being rejected for some other reason — which is exactly how the first attempt
+// at recording these rows went wrong upstream (a missing interface_major made
+// both claims look refused).
+func TestWireSession_WatchPathIsMatchPathScoped(t *testing.T) {
+	const iface = "org.example.V1"
+
+	cases := []struct {
+		name   string
+		claim  string
+		wantOK bool
+	}{
+		{"claim without the match path is refused", "WATCH::" + validDeviceIDA + "/" + iface, false},
+		{"claim with the match path is accepted", "WATCH::" + validDeviceIDA + "/" + iface + "/value", true},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			api, key, _ := setupTestAPIWithBus(t)
+			token := mintToken(t, key, jwt.MapClaims{"a_ch": []string{"JOIN::.*", tc.claim}})
+			mux := http.NewServeMux()
+			api.Mount(mux)
+			conn, cancel := dialSession(t, mux, token)
+			defer cancel()
+			defer conn.CloseNow()
+
+			ctx := context.Background()
+			topic := "rooms:" + testRealmName + ":dashboard_1"
+			joinTopic(t, conn, topic, "1")
+			if _, _, err := conn.Read(ctx); err != nil {
+				t.Fatalf("read join reply: %v", err)
+			}
+
+			payload := `{"name":"t","device_id":"` + validDeviceIDA +
+				`","simple_trigger":{"type":"data_trigger","on":"incoming_data","interface_name":"` +
+				iface + `","interface_major":1,"match_path":"/value","value_match_operator":"*"}}`
+			if err := conn.Write(ctx, websocket.MessageText,
+				[]byte(`["1","2","`+topic+`","watch",`+payload+`]`)); err != nil {
+				t.Fatalf("write watch: %v", err)
+			}
+
+			status := readFramePayloadStatus(t, conn)
+			want := "error"
+			if tc.wantOK {
+				want = "ok"
+			}
+			if status != want {
+				t.Errorf("watch status = %s, want %s (a_ch claim %q)", status, want, tc.claim)
+			}
+		})
+	}
 }

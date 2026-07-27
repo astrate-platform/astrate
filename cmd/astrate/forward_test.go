@@ -3,6 +3,7 @@ package main
 import (
 	"io"
 	"log/slog"
+	"strings"
 	"testing"
 
 	"github.com/astrate-platform/astrate/internal/config"
@@ -56,5 +57,23 @@ func TestForwarderRejectsBadURL(t *testing.T) {
 	cfg.Triggers.Forward = config.ForwardConfig{Kind: "http", URL: "nope"}
 	if _, err := newForwarder(cfg, quietLogger()); err == nil {
 		t.Fatal("expected an error for a relative URL")
+	}
+}
+
+// TestForwarderNATSWithoutBuildTag: this file (and newnats_default.go) build
+// without -tags nats, so kind = "nats" must fail at boot with a message
+// naming the missing build tag, not silently forward nothing.
+func TestForwarderNATSWithoutBuildTag(t *testing.T) {
+	if natsBuildTagEnabled {
+		t.Skip("built with -tags nats; see forward_nats_test.go")
+	}
+	var cfg config.Config
+	cfg.Triggers.Forward = config.ForwardConfig{Kind: "nats", URL: "nats://bus.example:4222", Subject: "astrate.triggers"}
+	_, err := newForwarder(cfg, quietLogger())
+	if err == nil {
+		t.Fatal("expected an error building a NATS forwarder without -tags nats")
+	}
+	if !strings.Contains(err.Error(), "-tags nats") {
+		t.Errorf("error = %q, want it to name the missing build tag", err)
 	}
 }

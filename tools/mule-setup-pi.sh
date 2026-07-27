@@ -134,15 +134,146 @@ systemctl list-timers mule.timer --no-pager | head -3
 EOS
 ok "timer installed and enabled"
 
+# --- 5. the daily survey: its own clone, its own timer ----------------------
+# A second, separate clone (not /root/astrate-mule) because the survey works its own branch
+# (mule/research) and a `git checkout` there while a queued task has mule/queue checked out
+# in the same working tree would collide. Two small clones on an SD card is cheaper than that
+# coordination problem.
+SURVEY_REPO="/root/astrate-survey"
+[ "$MODE" = check ] || pish <<EOS
+set -e
+if [ ! -d $SURVEY_REPO/.git ]; then git clone -q $REPO_URL $SURVEY_REPO; fi
+cd $SURVEY_REPO
+git fetch -q origin
+if [ "\$(git rev-parse --abbrev-ref HEAD)" = main ]; then
+  git merge --ff-only -q origin/main 2>/dev/null || echo "WARN: main would not fast-forward"
+fi
+echo "survey clone at \$(git log -1 --format='%h %s') on \$(git rev-parse --abbrev-ref HEAD)"
+EOS
+ok "survey clone at $SURVEY_REPO"
+
+# systemd, not cron, same reasoning as the mule timer. OnCalendar picks an off-peak hour so
+# it never contends with a mule tick for the Pi's 4 cores / 3.7GB; RandomizedDelaySec spreads
+# load if this pattern is ever reused across more than one host. Persistent=true means a Pi
+# that was off at 03:00 still runs the survey once it's back, instead of skipping a whole day.
+[ "$MODE" = check ] || pish <<EOS
+set -e
+cat > /etc/systemd/system/mule-survey.service <<UNIT
+[Unit]
+Description=Astrate daily cross-project survey (astarte-platform, AtomVM)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=$SURVEY_REPO
+Environment=MULE_PUSH=1
+Environment=HOME=/root
+Environment=PATH=/root/.opencode/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=/bin/bash $SURVEY_REPO/tools/mule-survey.sh run
+TimeoutStartSec=4000
+Nice=15
+UNIT
+
+cat > /etc/systemd/system/mule-survey.timer <<'UNIT'
+[Unit]
+Description=Run the Astrate daily cross-project survey once a day
+
+[Timer]
+OnCalendar=*-*-* 03:00:00
+RandomizedDelaySec=600
+AccuracySec=5min
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+UNIT
+
+systemctl daemon-reload
+systemctl enable --now mule-survey.timer
+systemctl list-timers mule-survey.timer --no-pager | head -3
+EOS
+ok "daily survey timer installed and enabled (~03:00, +/- 10min)"
+
+# --- 6. Claude Code's skills, usable from opencode too ----------------------
+# opencode has its own skill loader (scans **/SKILL.md under configured directories) that
+# reads the exact same file format as Claude Code — same required `name`/`description`
+# frontmatter, same "one folder per skill" layout. So the skills written for Claude Code
+# (~/.claude/skills on the Mac: astrate-workflow, mule-triage) are usable from an interactive
+# `opencode` session on the Pi too, without copying prose into a second, divergent file.
+#
+# NEVER commit these into the repo: astrate-workflow's body names the Pi's and Legion's LAN
+# addresses and root/atsetilam usernames, the exact information .mule/hosts is kept out of
+# git for. They travel by scp, like .mule/hosts, into a location outside any git working tree.
+LOCAL_SKILLS="$HOME/.claude/skills"
+SKILL_NAMES="astrate-workflow mule-triage"
+
+# jq merge helper: add path to config.skills.paths if not already present, preserving
+# everything else in the file (the Pi's opencode.jsonc already carries its provider config).
+jq_add_skill_path() {
+  local file="$1" path="$2" tmp="${1}.tmp.$$"
+  jq --arg p "$path" '.skills.paths = ((.skills.paths // []) + [$p] | unique)' "$file" > "$tmp" \
+    && mv "$tmp" "$file"
+}
+
+if [ -d "$LOCAL_SKILLS/astrate-workflow" ]; then
+  [ "$MODE" = check ] || {
+    # 6a. the Mac's own opencode: point straight at ~/.claude/skills, no copy, one source of truth.
+    MAC_OC_CONFIG="$HOME/.config/opencode/opencode.jsonc"
+    if [ -f "$MAC_OC_CONFIG" ] && command -v jq >/dev/null; then
+      jq_add_skill_path "$MAC_OC_CONFIG" "$LOCAL_SKILLS"
+      ok "Mac's opencode config points at $LOCAL_SKILLS"
+    else
+      bad "no $MAC_OC_CONFIG or no local jq — skipped the Mac side, do it by hand"
+    fi
+
+    # 6b. the Pi: scp the skill folders (root has no ~/.claude), merge its own config.
+    pish <<'EOS'
+mkdir -p ~/.claude-skills
+EOS
+    for name in $SKILL_NAMES; do
+      [ -d "$LOCAL_SKILLS/$name" ] || continue
+      # shellcheck disable=SC2086
+      scp $SSH_OPTS -qr "$LOCAL_SKILLS/$name" "$PI:~/.claude-skills/$name.tmp" \
+        && ssh $SSH_OPTS "$PI" "rm -rf ~/.claude-skills/$name && mv ~/.claude-skills/$name.tmp ~/.claude-skills/$name"
+    done
+    ok "copied $SKILL_NAMES to the Pi's ~/.claude-skills (not committed — see the note above)"
+
+    pish <<'EOS'
+set -e
+CFG=/root/.config/opencode/opencode.jsonc
+command -v jq >/dev/null || { echo "no jq on the Pi — cannot merge $CFG"; exit 1; }
+[ -f "$CFG" ] || echo '{"$schema":"https://opencode.ai/config.json"}' > "$CFG"
+jq '.skills.paths = ((.skills.paths // []) + ["/root/.claude-skills"] | unique)' "$CFG" > "$CFG.tmp.$$" \
+  && mv "$CFG.tmp.$$" "$CFG"
+echo "Pi's opencode config now has skills.paths: $(jq -c .skills.paths "$CFG")"
+EOS
+    ok "Pi's opencode config points at ~/.claude-skills"
+  }
+else
+  bad "no $LOCAL_SKILLS/astrate-workflow here — skipping the skills step (run this from the Mac that has them)"
+fi
+
 cat <<EOF
 
   Installed. From here on:
 
-    ssh $PI 'systemctl list-timers mule.timer'      # when it next fires
-    ssh $PI 'journalctl -u mule.service -n 50'      # what it did
-    ssh $PI 'systemctl stop mule.timer'             # make it stop
+    ssh $PI 'systemctl list-timers mule.timer'              # when it next fires
+    ssh $PI 'journalctl -u mule.service -n 50'              # what it did
+    ssh $PI 'systemctl stop mule.timer'                     # make it stop
     ssh $PI 'cd $PI_REPO && ./tools/mule.sh status'
 
-  It will do nothing at all until there are approved tasks in .mule/todo.md on the
-  branch it tracks. That is deliberate: an idle mule is the correct mule.
+    ssh $PI 'systemctl list-timers mule-survey.timer'       # when the daily survey next fires
+    ssh $PI 'journalctl -u mule-survey.service -n 80'       # what it found
+    ssh $PI 'systemctl stop mule-survey.timer'              # make it stop
+    git fetch origin mule/research && git log origin/mule/research  # read what it wrote
+
+    ssh $PI                                                  # then just: opencode
+                                                               # /astrate-workflow, /mule-triage work there too now
+
+  The 30-min mule does nothing at all until there are approved tasks in .mule/todo.md or
+  issues labelled 'mule' — an idle mule is the correct mule. The daily survey runs
+  regardless, but is itself incremental: most days it should report "no material change" and
+  commit nothing you need to read. Its output on branch mule/research is a report for you or
+  a strong model to triage into issues — it never files one itself.
 EOF

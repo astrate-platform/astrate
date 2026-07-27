@@ -25,14 +25,6 @@ type Config struct {
 	Client *http.Client
 }
 
-// body is the envelope posted to the bus for every forwarded event.
-type body struct {
-	Realm   string          `json:"realm"`
-	Trigger string          `json:"trigger"`
-	Action  json.RawMessage `json:"action"`
-	Event   json.RawMessage `json:"event"`
-}
-
 // HTTP posts every custom trigger action to a single bus endpoint.
 type HTTP struct {
 	url    string
@@ -104,24 +96,7 @@ func validMethod(s string) bool {
 
 // Forward implements the triggers.Forwarder contract.
 func (h *HTTP) Forward(ctx context.Context, realm, trigger string, action json.RawMessage, event []byte) error {
-	// A nil json.RawMessage marshals to null on its own, but a non-nil empty
-	// one marshals to nothing at all and fails the whole envelope — so both
-	// empty forms are normalised to nil here.
-	var a json.RawMessage
-	if len(action) > 0 {
-		a = action
-	}
-	var e json.RawMessage
-	if len(event) > 0 {
-		e = event
-	}
-	b := body{
-		Realm:   realm,
-		Trigger: trigger,
-		Action:  a,
-		Event:   e,
-	}
-	raw, err := json.Marshal(b)
+	raw, err := marshalEnvelope(realm, trigger, action, event)
 	if err != nil {
 		return fmt.Errorf("forward: marshal: %w", err)
 	}

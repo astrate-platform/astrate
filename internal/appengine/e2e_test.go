@@ -237,7 +237,7 @@ func TestChannelsLiveEvents(t *testing.T) {
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
 
-	claims := jwt.MapClaims{"a_ch": []string{".*::.*"}, "exp": time.Now().Add(time.Hour).Unix()}
+	claims := jwt.MapClaims{"a_ch": []string{"JOIN::.*", "WATCH::.*"}, "exp": time.Now().Add(time.Hour).Unix()}
 	token, err := jwt.NewWithClaims(jwt.SigningMethodRS256, claims).SignedString(env.jwtKey)
 	if err != nil {
 		t.Fatalf("sign token: %v", err)

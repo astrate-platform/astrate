@@ -17,7 +17,14 @@ import (
 const (
 	// TimescaleImage is the production-parity database image (docs/DESIGN.md §5.4):
 	// tests run against the exact image the docker-compose deployment ships.
-	TimescaleImage = "timescale/timescaledb:latest-pg16"
+	//
+	// The -ha variant, and that is load-bearing rather than incidental: it is
+	// the only published image carrying timescaledb_toolkit, so on the plain
+	// image Store.hasToolkit is false and every lttb() test silently skips.
+	// A downsampling path that no test run can reach is the "green gate that
+	// means nothing" this pin exists to prevent — keep it in lockstep with
+	// docker-compose.yml.
+	TimescaleImage = "timescale/timescaledb-ha:pg16"
 
 	// EnvTestDSN names the env var that, when set, short-circuits container
 	// startup and connects to an already-running database instead (e.g.
