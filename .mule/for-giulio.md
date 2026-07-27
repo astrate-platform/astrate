@@ -10,31 +10,25 @@ line once you have dealt with it — this file is a queue, not a log.
 
 ---
 
-- **`device_deletion_started`/`device_deletion_finished` trigger events are not emitted.**
-  Astrate performs synchronous device deletion (`COMPATIBILITY.md` deviation 9); upstream
-  fires both events around an async deletion (`060-triggers.md:109-110`). Decision needed:
-  emit both back-to-back for compatibility, emit only `_finished`, or document the divergence
-  as deliberate and do nothing. (Cross-project survey, 2026-07-27,
+- ~~`device_deletion_started`/`device_deletion_finished` trigger events are not emitted~~ —
+  **decided 2026-07-27: emit both, back-to-back, around the synchronous delete.** Filed as
+  issue #21 (`mule`). (Cross-project survey, 2026-07-27,
   `.mule/research/survey-2026-07-27.md` source 4.)
-- **Mustache trigger-action templates are accepted but not rendered.** Upstream
-  (`060-triggers.md:516-543`) renders HTTP action bodies from a `template_type: "mustache"`
-  template with access to realm/device/trigger/event fields; Astrate always sends the default
-  JSON envelope instead (`internal/engine/triggers/actions.go:46,69`, already noted as
-  "unsupported"). Implementing it means picking and pinning a Go Mustache library — a
-  dependency decision `docs/ROADMAP.md` §0.1 freezes deliberately. Decision needed: add the
-  dependency and implement it, or keep documenting the divergence. (Same survey, source 4.)
+- ~~Mustache trigger-action templates are accepted but not rendered~~ — **decided
+  2026-07-27: implement it.** Guiding principle clarified: Astarte compatibility means
+  SDK/wire compatibility, not minimum dependency count — Astrate is allowed to be a
+  compatible *superset*. Library picked: `github.com/cbroglie/mustache`. Filed as issue #22
+  (`mule`). (Same survey, source 4.)
 - **`value_change`/`value_change_applied`/`path_created`/`path_removed`/`value_stored` trigger
-  types compile but never fire** (`internal/engine/triggers/match.go:30-42`, already documented
-  as a deliberate v1 scope boundary). Upstream evaluates all of them. Implementing any of them
-  needs the engine to read previous state before matching (a DB read per candidate message,
-  or a cache) — a real design and performance decision, not a mechanical gap-fill. Decision
-  needed: implement some/all in a future milestone, or keep as documented v1 scope. (Same
-  survey, source 4.)
+  types compile but never fire** (`internal/engine/triggers/match.go:30-42`). Decision
+  deferred pending data: issue #20 (`mule`, `readonly`) asks Big Pickle to benchmark the
+  ingest-path cost of a previous-value lookup on the Legion Go before this gets decided one
+  way or the other. (Same survey, source 4.)
 - **Group-scoped triggers (`group_name` on device/data triggers) compile but never match**
-  (`internal/engine/triggers/match.go:11-12`). Implementing this needs device group-membership
-  lookups at trigger-evaluation time — related to the group-WATCH-paths gap (issue #17), since
-  both need groups to actually exist in a test realm to verify against. Decision needed: scope
-  this in, or keep documenting the divergence. (Same survey, source 4.)
+  (`internal/engine/triggers/match.go:11-12`). Decision deferred, tied to issue #17
+  (group-WATCH-path reconciliation, trickle work, not mule): whatever group-membership
+  mechanism comes out of that phase should also report the perf cost for this decision —
+  noted in a comment on #17 so it isn't benchmarked twice. (Same survey, source 4.)
 
 ---
 
