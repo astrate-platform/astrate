@@ -21,19 +21,25 @@ the network, and the queue moves on to the next runnable task. So:
 - If you are proposing work and `tools/mule.sh legion check` fails, that is not a blocker —
   propose the tagged tasks anyway. They will run whenever it comes back.
 
-## The Go problem, already solved
+## It is the only machine that can run the race detector
 
-**The Legion Go has no Go toolchain, and you must not install one** — that is a change to a
-machine nobody asked you to change. The bench harness imports nothing from Astrate and needs
-no cgo, so it cross-compiles:
+Go 1.26.5 is installed there as a **userland toolchain** at `~/.local/go` (no root; removable
+with `rm -rf ~/.local/go`), and is on the PATH for non-interactive ssh via `config.fish`.
+
+This matters more than anything else in this file. **The Pi cannot run `-race` at all** — its
+kernel has a 39-bit VMA and ThreadSanitizer needs 48 — so the Legion Go is the *only* place
+race coverage exists. It takes about 40 seconds there on 16 cores:
 
 ```sh
-tools/mule.sh legion bench-push     # builds linux/amd64 here, copies the binary over
-ssh legion '~/astrate/bench/bench ingest -state ... '
+ssh legion 'cd ~/astrate && git fetch -q && git merge --ff-only -q origin/main && go test -race ./...'
 ```
 
-Run `bench-push` at the start of any benchmarking task — it is cheap and it guarantees the
-binary matches the current source rather than whatever was left there last time.
+Run it after any batch of merged work, and report failures to `.mule/for-giulio.md`. A data
+race that the Pi's gate cannot see is exactly the defect this machine exists to catch.
+
+The bench binary can now be built there directly, but `tools/mule.sh legion bench-push` still
+cross-compiles and copies one in — cheap, and it guarantees the binary matches the source you
+think it does rather than whatever that checkout happens to be on.
 
 ## Before a benchmark run — check this, every time
 

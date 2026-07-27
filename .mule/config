@@ -10,10 +10,10 @@
 # **The race detector cannot run on the Pi.** ThreadSanitizer needs a 48-bit VMA and this
 # kernel is built with 39 ("FATAL: ThreadSanitizer: unsupported VMA range / Found 39 -
 # Supported 48"). That is a kernel config, not a flake, and no amount of retrying changes it.
-# So the unattended gate is weaker than the Mac's by construction: concurrency bugs are not
-# caught by the Pi. That is the single most important thing to know about this setup — it is
-# why concurrency work should not be queued for the mule, and why there is a periodic
-# [legion] race-check task instead.
+# So the unattended gate is weaker than the Mac's by construction: a data race passes on the
+# Pi. Race coverage lives on the Legion Go instead (Go 1.26.5 at ~/.local/go, full suite
+# green in ~40s on 16 cores) via the standing [legion] race-check task — which is therefore
+# not optional housekeeping but the concurrency gate itself.
 
 _gcl="$(command -v golangci-lint || echo "$HOME/go/bin/golangci-lint")"
 
