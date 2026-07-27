@@ -98,6 +98,11 @@ const (
 	ifaceIndividual = "org.astrate.bench.Individual" // /value, double
 	ifaceObject     = "org.astrate.bench.Object"     // /data/{temp,hum,status}
 	introspection   = ifaceIndividual + ":1:0;" + ifaceObject + ":1:0"
+
+	// otherDeviceID is a well-formed device id that is deliberately NOT the
+	// device this recorder drives. It exists to pair a narrow WATCH claim's
+	// acceptance with a refusal that differs only in which device is named.
+	otherDeviceID = "aaaaaaaaaaaaaaaaaaaaaa"
 )
 
 // --------------------------------------------------------------- the fixture
@@ -210,8 +215,21 @@ func run() error {
 		SocketPath:      "/appengine/v1/socket/websocket?vsn=2.0.0&realm=<realm>&token=<a_ch JWT>",
 	}
 
-	fx.Authorization = recordAuthorization(dev.ID)
-	fx.DeviceErrors = recordDeviceErrors(dev)
+	// ASTARTE_UPSTREAM_SECTION re-records one section and carries the other over
+	// from the committed fixture. Delivery of device_error to the room is
+	// unreliable on this stack (see the README), so a full re-run to settle an
+	// authorization question would churn attempts/delivered counts that were
+	// measured carefully and are not what is being asked about.
+	section := env("ASTARTE_UPSTREAM_SECTION", "all")
+	if section != "all" && section != "auth" && section != "errors" {
+		return fmt.Errorf("ASTARTE_UPSTREAM_SECTION must be all, auth or errors (got %q)", section)
+	}
+	if section != "errors" {
+		fx.Authorization = recordAuthorization(dev.ID)
+	}
+	if section != "auth" {
+		fx.DeviceErrors = recordDeviceErrors(dev)
+	}
 
 	// Resolve the output directory rather than guessing from the working
 	// directory: `go run ./upstream/recordchannels` and `go run .` from inside
@@ -231,6 +249,30 @@ func run() error {
 	}
 	jsonPath := filepath.Join(dir, "channels.json")
 	txtPath := filepath.Join(dir, "channels.transcript.txt")
+
+	// Carry the un-recorded section over from the committed fixture, and refuse
+	// to write a fixture with a section missing — a half-empty channels.json
+	// would look like "upstream does nothing here" to every later reader.
+	if section != "all" {
+		var prev fixture
+		b, err := os.ReadFile(jsonPath)
+		if err != nil {
+			return fmt.Errorf("reading %s to carry over the other section: %w", jsonPath, err)
+		}
+		if err := json.Unmarshal(b, &prev); err != nil {
+			return fmt.Errorf("parsing %s: %w", jsonPath, err)
+		}
+		if section == "auth" {
+			fx.DeviceErrors = prev.DeviceErrors
+		} else {
+			fx.Authorization = prev.Authorization
+		}
+		logf("\n# section=%s — the other section was carried over unchanged from %s", section, jsonPath)
+	}
+	if len(fx.Authorization) == 0 || len(fx.DeviceErrors) == 0 {
+		return fmt.Errorf("refusing to write a fixture with an empty section "+
+			"(authorization=%d, device_errors=%d)", len(fx.Authorization), len(fx.DeviceErrors))
+	}
 
 	out, err := json.MarshalIndent(fx, "", "  ")
 	if err != nil {
@@ -283,6 +325,21 @@ func recordAuthorization(deviceID string) []authObservation {
 	dataTrigger := map[string]any{"name": "probe", "device_id": deviceID,
 		"simple_trigger": map[string]any{"type": "data_trigger", "on": "incoming_data",
 			"interface_name": "*", "match_path": "/*", "value_match_operator": "*"}}
+	// pathTrigger names a concrete interface and match path, because the narrow
+	// claims below have to be written as regexes: the wildcards in dataTrigger
+	// would make the claim match by accident and prove nothing.
+	//
+	// interface_major is required as soon as interface_name is not "*", and
+	// omitting it is not an authorization failure but a *validation* one —
+	// `{"errors":{"simple_trigger":{"interface_major":["can't be blank"]}}}`.
+	// That reply is a refusal like any other to a recorder that only checks for
+	// "status":"ok", so both narrow rows would have been recorded as refused and
+	// read as evidence about the authorization path. They are not: a validation
+	// error is returned before authorization is consulted at all.
+	pathTrigger := map[string]any{"name": "probe", "device_id": deviceID,
+		"simple_trigger": map[string]any{"type": "data_trigger", "on": "incoming_data",
+			"interface_name": ifaceIndividual, "interface_major": 1,
+			"match_path": "/value", "value_match_operator": "*"}}
 
 	rows := []authObservation{
 		join("join with blanket .*::.*",
@@ -314,6 +371,29 @@ func recordAuthorization(deviceID string) []authObservation {
 		watch("watch device_trigger for device_id \"*\"",
 			"A wildcard device is refused even under WATCH::.*, so device triggers cannot be watched realm-wide from a room.",
 			[]string{"JOIN::.*", "WATCH::.*"}, devTrigger("device_error", "*")),
+
+		// The rows above all used WATCH::.*, which accepts whatever string
+		// upstream builds and therefore cannot say what that string IS. These
+		// use narrow claims, so an acceptance identifies the authorization path
+		// and a refusal excludes a candidate. Astrate builds
+		// "<device>/<interface>"; upstream's source appends the trigger's match
+		// path. Only one of the next two rows can be accepted.
+		watch("watch data_trigger, claim WATCH::<device>/<interface> (Astrate's shape)",
+			"Astrate authorizes a data trigger against `<device_id>/<interface>`, with no match path. If upstream built the same string this is accepted; if upstream appends the match path it is refused, because the anchored claim regex cannot match the longer string.",
+			[]string{"JOIN::.*", "WATCH::" + deviceID + "/" + ifaceIndividual},
+			pathTrigger),
+		watch("watch data_trigger, claim WATCH::<device>/<interface><match_path>",
+			"The paired alternative, and upstream's shape according to its source (`\"#{device_id}/#{interface_name}#{path}\"`, with no separator because the path already starts with a slash). Exactly one of this row and the one above can be accepted, so together they identify the authorization path rather than merely confirming a guess.",
+			[]string{"JOIN::.*", "WATCH::" + deviceID + "/" + ifaceIndividual + "/value"},
+			pathTrigger),
+		watch("watch device_trigger, claim WATCH::<this device>",
+			"A device trigger's authorization path is claimed to be the bare device id. A narrow, exact claim accepts it, which is what identifies the path.",
+			[]string{"JOIN::.*", "WATCH::" + deviceID},
+			devTrigger("device_error", deviceID)),
+		watch("watch device_trigger, claim WATCH::<another device>",
+			"The paired refusal for the row above: a well-formed claim naming a different device. Together they show the device id is really the string being matched, rather than the acceptance coming from any claim at all.",
+			[]string{"JOIN::.*", "WATCH::" + otherDeviceID},
+			devTrigger("device_error", deviceID)),
 	}
 
 	for _, r := range rows {
@@ -323,8 +403,24 @@ func recordAuthorization(deviceID string) []authObservation {
 		}
 		logf("  <- %s", r.Reply)
 		logf("  accepted: %v", r.Accepted)
+		if validationRefusal(r.Reply) {
+			// Loud on purpose. Upstream validates the payload before it consults
+			// the token, so this row was refused for a reason that has nothing to
+			// do with its claim — but it is a refusal like any other to a reader
+			// scanning for "accepted: false", and reading it as evidence about
+			// authorization is exactly how a recorder invents a finding.
+			logf("  !! VALIDATION ERROR, NOT AN AUTHORIZATION REFUSAL — this row says")
+			logf("  !! nothing about the a_ch grammar. Fix the payload and re-record.")
+		}
 	}
 	return rows
+}
+
+// validationRefusal reports whether a refusal came from upstream's changeset
+// validation rather than from authorization. An authorization refusal carries
+// {"reason":"unauthorized"}; a validation refusal carries {"errors":{…}}.
+func validationRefusal(reply string) bool {
+	return strings.Contains(reply, `"status":"error"`) && strings.Contains(reply, `"errors":`)
 }
 
 // attempt opens a socket with the given claims, joins, optionally watches, and
