@@ -88,8 +88,12 @@ ensure_branch() {
 
 legion_sh() {
   [ -n "${MULE_LEGION_SSH:-}" ] || return 1
+  # -n is load-bearing, not tidiness. ssh reads stdin, and legion_up is called from inside
+  # first_open's `while read` loop, which is fed by a pipe: without it the probe swallowed
+  # every queue line after the first [legion] one, so the queue read as empty while tasks
+  # were plainly sitting in it. No caller pipes anything in, so -n costs nothing.
   # shellcheck disable=SC2086
-  ssh $MULE_SSH_OPTS "$MULE_LEGION_SSH" "$@"
+  ssh -n $MULE_SSH_OPTS "$MULE_LEGION_SSH" "$@"
 }
 
 legion_up() {
