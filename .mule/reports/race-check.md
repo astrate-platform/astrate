@@ -1,6 +1,6 @@
-code: 1f4b64306fc19834a1fa913b655299e71dae02bd
-at:  16cc008
-ran: 2026-07-27T14:03:26Z on DietPi in 108s
+code: 06dd2cf21ab5e334b31791a28fb762596126bc82
+at:  344d013
+ran: 2026-07-27T15:08:25Z on DietPi in 48s
 toolchain: go version go1.26.5 linux/amd64
 
 
@@ -8,19 +8,16 @@ toolchain: go version go1.26.5 linux/amd64
 
 → Read .mule/MULE.md
 → Read .mule/task.md
-This task is tagged `[legion]` and `[readonly]`. I need to check if I can reach Legion Go, and also read the recipe.
-
-$ ssh -o ConnectTimeout=5 -o BatchMode=yes legion "echo reachable" 2>&1
-reachable
-
+This is a `[legion]` [readonly] task: SSH into the Legion Go, fetch/merge main, run `go test -race ./...`, and report failures. Let me read the Legion recipe first.
 → Read .mule/recipes/legion-go.md
-Legion is reachable. Running the race check now.
+→ Read .mule/for-giulio.md
+This is a `[legion]` `[readonly]` task: SSH into the Legion Go, run the race-detector test suite, and report failures to `for-giulio.md`. Executing now.
 
-$ ssh legion 'cd ~/astrate && git fetch -q && git merge --ff-only -q origin/main && go test -race ./...' 2>&1
+$ ssh legion 'cd ~/astrate && git fetch -q && git merge --ff-only -q origin/main && go test -race ./...'
 ok  	github.com/astrate-platform/astrate/cmd/astrate	(cached)
 ?   	github.com/astrate-platform/astrate/docs	[no test files]
 ok  	github.com/astrate-platform/astrate/internal/appengine	(cached)
-ok  	github.com/astrate-platform/astrate/internal/appengine/channels	2.848s
+ok  	github.com/astrate-platform/astrate/internal/appengine/channels	(cached)
 ok  	github.com/astrate-platform/astrate/internal/appengine/stream	(cached)
 ok  	github.com/astrate-platform/astrate/internal/auth	(cached)
 ok  	github.com/astrate-platform/astrate/internal/broker	(cached)
@@ -37,17 +34,17 @@ ok  	github.com/astrate-platform/astrate/internal/pairing/ca	(cached)
 ok  	github.com/astrate-platform/astrate/internal/realm	(cached)
 ok  	github.com/astrate-platform/astrate/internal/store	(cached)
 ?   	github.com/astrate-platform/astrate/internal/swagger	[no test files]
-ok  	github.com/astrate-platform/astrate/internal/testutil	1.056s
+ok  	github.com/astrate-platform/astrate/internal/testutil	(cached)
 ?   	github.com/astrate-platform/astrate/migrations	[no test files]
 ok  	github.com/astrate-platform/astrate/pkg/astarteapi	(cached)
 ok  	github.com/astrate-platform/astrate/pkg/deviceid	(cached)
 ok  	github.com/astrate-platform/astrate/pkg/interfaceschema	(cached)
 ok  	github.com/astrate-platform/astrate/pkg/payload	(cached)
 
-All packages passed `go test -race ./...` with no failures. No data races detected. Since this is `[readonly]` and the gate passed, I change nothing.
+All tests passed with `-race`, no failures, no races detected. Nothing to report to `for-giulio.md`.
 
-Done: Race check on Legion Go — all tests pass cleanly
-Files: none (readonly)
-Verified: `ssh legion 'cd ~/astrate && go test -race ./...'` -> pass
+Done: Race-check on Legion Go — all packages pass with -race, no data races found.
+Files: none changed (readonly task)
+Verified: `ssh legion 'cd ~/astrate && git fetch -q && git merge --ff-only -q origin/main && go test -race ./...'` -> pass (26 packages, all ok or cached)
 Unsure: nothing
 Follow-ups: none
