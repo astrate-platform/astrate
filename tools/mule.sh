@@ -399,10 +399,27 @@ format MULE.md gives.'
   local sentinel="$MULE/.timeout"; rm -f "$sentinel"
   local started; started="$(date +%s)"
   local outlog="$MULE/.last-output"
-  ( cd "$REPO" && run_with_timeout "$MULE_TIMEOUT" "$sentinel" "${run[@]}" 2>&1 ) \
-    | sed $'s/\033\\[[0-9;]*[A-Za-z]//g' | cat -s | tee "$outlog"
-  local rc=${PIPESTATUS[0]} elapsed=$(( $(date +%s) - started ))
-  local timed_out=0; [ -f "$sentinel" ] && timed_out=1
+  local rc timed_out=0 attempt=1
+  # The free provider refuses a large share of requests — measured across one afternoon,
+  # roughly half. Waiting a full timer period to retry that turns a 50% refusal rate into a
+  # mule that looks stuck for hours, which is how it looked. One retry after a short backoff
+  # recovers most of it. Only one: the queue is not going anywhere, and hammering a provider
+  # that just said no is exactly what the daily budget exists to prevent.
+  while :; do
+    ( cd "$REPO" && run_with_timeout "$MULE_TIMEOUT" "$sentinel" "${run[@]}" 2>&1 ) \
+      | sed $'s/\033\\[[0-9;]*[A-Za-z]//g' | cat -s | tee "$outlog"
+    rc=${PIPESTATUS[0]}
+    [ -f "$sentinel" ] && timed_out=1
+    [ "$rc" = 0 ] && break
+    [ "$timed_out" = 1 ] && break
+    [ "$attempt" -ge "${MULE_RETRIES:-2}" ] && break
+    is_transient "$outlog" || break
+    [ -z "$(git -C "$REPO" status --porcelain -- . ':!.mule')" ] || break
+    attempt=$((attempt+1))
+    note "provider refused; retrying once in ${MULE_RETRY_WAIT:-30}s"
+    sleep "${MULE_RETRY_WAIT:-30}"
+  done
+  local elapsed=$(( $(date +%s) - started ))
   rm -f "$sentinel" "$taskfile"
 
   local verdict="" reason=""
