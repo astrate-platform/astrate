@@ -61,3 +61,4 @@ one. `MULE_NO_REFILL=1` turns the whole thing off and makes the mule purely obed
 - [~] bench-big-astarte [legion]: run `bench/scripts/run-tier.sh big astarte` against Legion Go Astarte, commit results (two runs minimum)
 - [~] bench-giant-astarte [legion]: run `bench/scripts/run-tier.sh giant astarte` against Legion Go Astarte, commit results (two runs minimum)
 - [ ] race-check: on the Legion Go, `cd ~/astrate && git fetch -q && git merge --ff-only -q origin/main && go test -race ./...` (~40s). Report any failure to .mule/for-giulio.md with the full race report. This is the only race coverage that exists — the Pi cannot run -race. [legion] [readonly]
+- [ ] issue-6: mule-smoke: record the Go toolchain version in the race-check report (gh issue view 6) [auto]
