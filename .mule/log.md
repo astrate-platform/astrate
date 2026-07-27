@@ -7,3 +7,4 @@ layer can actually do — read it before deciding whether a kind of task is wort
 
 | date | task | outcome | secs | note |
 | --- | --- | --- | --- | --- |
+| 2026-07-27 | race-check | done | 42s | c8bec10 |
