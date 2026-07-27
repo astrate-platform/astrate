@@ -38,3 +38,4 @@ layer can actually do — read it before deciding whether a kind of task is wort
 | 2026-07-27 | issue-20 | checked | 211s | 446b806 |
 | 2026-07-27 | issue-22 | blocked | 340s | touched a never-touch path |
 | 2026-07-27 | issue-21 | done | 297s | 9d85191 |
+| 2026-07-27 | issue-15 | done | 209s | 5ea4c1b |
