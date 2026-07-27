@@ -49,7 +49,11 @@ line once you have dealt with it — this file is a queue, not a log.
   there — `gofmt` still runs, the linter does not. `go install
   github.com/golangci/golangci-lint/cmd/golangci-lint@<the pinned version>` on the Pi would
   close it; I did not pick a version for you, since the pin is a decision.
-- **`/root/astrate` on the Pi has uncommitted work** (`cmd/astrate/main.go`, `docs/embed.go`,
-  `docs/handoff/phase-2-*.md`, `docs/api/astrate_native_api.yaml`) from an earlier session on
-  that machine. The mule does not touch it — it uses its own clone at `/root/astrate-mule` —
-  but you may want to rescue or discard it.
+- ~~`/root/astrate` on the Pi has uncommitted work~~ — **resolved 2026-07-27** with the new
+  `tools/reconcile.sh`: rescued onto `origin/wip/DietPi-20260727T171543Z` (pushed, not
+  reviewed — read the diff before merging anything from it) and `/root/astrate` is now clean
+  on `main`. Also had to set `commit.gpgsign false` locally on that clone first — it had
+  signing on with no working gpg-agent for a non-interactive session, same class of problem
+  `/root/astrate-mule` already solved the same way (your call, confirmed 2026-07-27: align it
+  with the existing unattended-Pi-clone convention rather than fix gpg-agent or bypass signing
+  silently inside the script).
