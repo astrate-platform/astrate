@@ -9,3 +9,4 @@ layer can actually do — read it before deciding whether a kind of task is wort
 | --- | --- | --- | --- | --- |
 | 2026-07-27 | race-check | done | 42s | c8bec10 |
 | 2026-07-27 | race-check | done | 42s | ran before the sed fix; marked by hand |
+| 2026-07-27 | race-check | blocked | 18s | opencode exited 1 |
