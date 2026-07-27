@@ -3,106 +3,100 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Astrate — API Documentation</title>
-  <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5/swagger-ui.css">
+  <title>Astrate API Documentation</title>
+  <link rel="icon" type="image/png" href="https://unpkg.com/swagger-ui-dist@5.32.11/favicon-32x32.png">
+  <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5.32.11/swagger-ui.css">
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      background: #fafafa;
-    }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #fafafa; }
     #header {
-      background: #1b1b1b;
-      color: #fff;
-      padding: 16px 24px;
-      display: flex;
-      align-items: center;
-      gap: 20px;
+      background: #1b1b1b; color: #fff; padding: 16px 24px;
+      display: flex; align-items: center; gap: 24px; flex-wrap: wrap;
     }
-    #header h1 { font-size: 18px; font-weight: 600; }
-    #header select {
-      padding: 6px 12px;
-      border-radius: 4px;
-      border: 1px solid #555;
-      background: #2d2d2d;
-      color: #fff;
-      font-size: 14px;
+    #header h1 { font-size: 18px; font-weight: 600; white-space: nowrap; }
+    #header .subtitle { font-size: 13px; color: #a0a0a0; }
+    #nav {
+      background: #fff; border-bottom: 1px solid #e0e0e0; padding: 12px 24px;
+      display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
     }
-    #header select option { background: #2d2d2d; color: #fff; }
-    #api-badge {
-      font-size: 12px;
-      padding: 3px 10px;
-      border-radius: 12px;
-      background: #4a90d9;
-      color: #fff;
-      font-weight: 500;
+    #nav label { font-size: 13px; font-weight: 600; color: #555; }
+    #nav select {
+      padding: 6px 12px; border: 1px solid #ccc; border-radius: 4px;
+      font-size: 13px; background: #fff; min-width: 280px;
     }
-    #swagger-container {
-      max-width: 1200px;
-      margin: 0 auto;
-      padding: 0 20px;
+    #nav .server-label { font-size: 13px; color: #555; margin-left: 16px; }
+    #nav input[type="text"] {
+      padding: 6px 12px; border: 1px solid #ccc; border-radius: 4px;
+      font-size: 13px; width: 320px;
     }
-    .loading {
-      text-align: center;
-      padding: 60px 20px;
-      color: #666;
-      font-size: 15px;
-    }
+    #swagger-ui { max-width: 100%; }
+    .topbar { display: none; }
   </style>
 </head>
 <body>
   <div id="header">
-    <h1>Astrate API Docs</h1>
-    <select id="spec-selector" aria-label="Select API spec">
-      <option value="../api/astarte_appengine_api.yaml">Astrate AppEngine API (15 ops)</option>
-      <option value="../api/astarte_realm_management_api.yaml">Astrate Realm Management API (19 ops)</option>
-      <option value="../api/astarte_pairing_api.yaml">Astrate Pairing API (5 ops)</option>
-      <option value="../api/astarte_housekeeping_api.yaml">Astrate Housekeeping API (4 ops)</option>
-      <option value="../api/astrate_native_api.yaml">Astrate Native API (8 ops)</option>
+    <h1>Astrate API</h1>
+    <span class="subtitle">OpenAPI 3.0 Reference</span>
+  </div>
+  <div id="nav">
+    <label for="spec-select">Specification:</label>
+    <select id="spec-select">
+      <option value="../api/astarte_housekeeping_api.yaml">Housekeeping API — Realm management, a_ha auth</option>
+      <option value="../api/astarte_pairing_api.yaml">Pairing API — Device pairing flows A/B/C, a_pa auth</option>
+      <option value="../api/astarte_realm_management_api.yaml">Realm Management API — Interfaces, triggers, policies, a_rma auth</option>
+      <option value="../api/astarte_appengine_api.yaml">AppEngine API — Devices, data, groups, a_aea auth</option>
+      <option value="../api/astrate_native_api.yaml">Astrate Native API — Health, readiness, metrics, WebSocket</option>
     </select>
-    <span id="api-badge">OpenAPI 3.0</span>
+    <span class="server-label">Server:</span>
+    <input type="text" id="server-url" value="http://localhost:8080" placeholder="e.g. http://localhost:8080">
   </div>
+  <div id="swagger-ui"></div>
 
-  <div id="swagger-container">
-    <div id="swagger-ui" class="loading">Loading API spec…</div>
-  </div>
-
-  <script src="https://unpkg.com/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
-  <script src="https://unpkg.com/swagger-ui-dist@5/swagger-ui-standalone-preset.js"></script>
+  <script src="https://unpkg.com/swagger-ui-dist@5.32.11/swagger-ui-bundle.js"></script>
+  <script src="https://unpkg.com/swagger-ui-dist@5.32.11/swagger-ui-standalone-preset.js"></script>
   <script>
-    (function () {
-      const specUrl = new URLSearchParams(window.location.search).get('spec');
-      const selector = document.getElementById('spec-selector');
+    const specSelect = document.getElementById('spec-select');
+    const serverUrl = document.getElementById('server-url');
+    const uiContainer = document.getElementById('swagger-ui');
 
-      if (specUrl) {
-        selector.value = specUrl;
-      }
-
-      function renderSwagger(url) {
-        const container = document.getElementById('swagger-ui');
-        container.innerHTML = '';
-        container.classList.remove('loading');
-
-        SwaggerUIBundle({
-          url: new URL(url, window.location.href).href,
-          dom_id: '#swagger-ui',
-          presets: [SwaggerUIBundle.presets.apis, SwaggerUIStandalonePreset],
-          layout: 'BaseLayout',
-          deepLinking: true,
-          tryItOutEnabled: false,
-          docExpansion: 'list',
-          defaultModelsExpandDepth: -1,
-          validatorUrl: null,
-        });
-      }
-
-      selector.addEventListener('change', function () {
-        window.history.replaceState(null, '', '?spec=' + encodeURIComponent(this.value));
-        renderSwagger(this.value);
+    function initSwagger(specUrl) {
+      uiContainer.innerHTML = '';
+      SwaggerUIBundle({
+        url: specUrl,
+        dom_id: '#swagger-ui',
+        deepLinking: true,
+        presets: [SwaggerUIBundle.presets.apis, SwaggerUIStandalonePreset],
+        layout: 'StandaloneLayout',
+        validatorUrl: null,
+        tryItOutEnabled: true,
+        defaultModelsExpandDepth: 0,
+        docExpansion: 'list',
+        operationsSorter: 'alpha',
+        configUrl: null,
+        onComplete: function() {
+          updateServer();
+        }
       });
+    }
 
-      renderSwagger(selector.value);
-    })();
+    function updateServer() {
+      const url = serverUrl.value.replace(/\/+$/, '');
+      const inputs = document.querySelectorAll('.servers input[type="text"]');
+      inputs.forEach(function(input) {
+        const nativeSetter = Object.getOwnPropertyDescriptor(
+          window.HTMLInputElement.prototype, 'value'
+        ).set;
+        nativeSetter.call(input, url);
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+      });
+    }
+
+    specSelect.addEventListener('change', function() {
+      initSwagger(this.value);
+    });
+    serverUrl.addEventListener('change', updateServer);
+
+    initSwagger(specSelect.value);
   </script>
 </body>
 </html>

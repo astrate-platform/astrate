@@ -40,6 +40,7 @@ import (
 	"github.com/astrate-platform/astrate/internal/pairing"
 	"github.com/astrate-platform/astrate/internal/realm"
 	"github.com/astrate-platform/astrate/internal/store"
+	"github.com/astrate-platform/astrate/internal/swagger"
 )
 
 // version is the reported build version (override with
@@ -327,6 +328,9 @@ func mountAPIs(cfg config.Config, st *store.Store, e *engine.Engine, b *broker.B
 	health.AddReadiness("database", st.Health)
 	health.AddReadiness("broker", brokerReadiness(b))
 	health.Mount(mux)
+
+	// Swagger UI + OpenAPI YAML specs embedded in the binary.
+	swagger.Mount(mux)
 
 	// Unmatched routes under a service prefix answer that service's JSON error
 	// envelope rather than Go's plain-text "404 page not found", which any
