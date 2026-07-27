@@ -459,7 +459,10 @@ cmd_tick() {
   # 8 is "the provider was down" — the task is untouched and still queued, so this tick did
   # nothing wrong. Exiting non-zero here would just paint the timer red for someone else's
   # outage.
-  [ "$rc" = 8 ] && exit 0
+  # ...and it should not cost a tick either. The budget exists to be polite to a free
+  # provider; spending it on runs that provider refused would let one bad spell burn the
+  # whole day and leave the queue untouched. Give the tick back.
+  [ "$rc" = 8 ] && { echo "$today $count" > "$stamp"; exit 0; }
   return "$rc"
 }
 
