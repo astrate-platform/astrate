@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -112,6 +113,130 @@ func TestExampleParses(t *testing.T) {
 	}
 	if cfg.Database.DSN == "" {
 		t.Error("example should set a database dsn")
+	}
+}
+
+func TestTriggersZeroValue(t *testing.T) {
+	body := `
+[database]
+dsn = "x"
+[mqtt]
+insecure_dev_mode = true
+`
+	cfg, err := Load(writeTOML(t, body))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Triggers.Forward.Kind != "" {
+		t.Errorf("Triggers.Forward.Kind = %q, want empty", cfg.Triggers.Forward.Kind)
+	}
+}
+
+func TestTriggersForwardDisabled(t *testing.T) {
+	body := `
+[database]
+dsn = "x"
+[mqtt]
+insecure_dev_mode = true
+[triggers.forward]
+url = "nope"
+`
+	cfg, err := Load(writeTOML(t, body))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Triggers.Forward.Kind != "" {
+		t.Errorf("Kind = %q, want empty", cfg.Triggers.Forward.Kind)
+	}
+}
+
+func TestTriggersForwardHTTPRoundTrip(t *testing.T) {
+	body := `
+[database]
+dsn = "x"
+[mqtt]
+insecure_dev_mode = true
+[triggers.forward]
+kind = "http"
+url = "https://bus.example/trigger"
+method = "POST"
+static_headers = { Authorization = "Bearer tok", X-Forward = "yes" }
+`
+	cfg, err := Load(writeTOML(t, body))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	f := cfg.Triggers.Forward
+	if f.Kind != "http" {
+		t.Errorf("Kind = %q, want http", f.Kind)
+	}
+	if f.URL != "https://bus.example/trigger" {
+		t.Errorf("URL = %q", f.URL)
+	}
+	if f.Method != "POST" {
+		t.Errorf("Method = %q, want POST", f.Method)
+	}
+	if f.StaticHeaders["Authorization"] != "Bearer tok" || f.StaticHeaders["X-Forward"] != "yes" {
+		t.Errorf("StaticHeaders = %v", f.StaticHeaders)
+	}
+}
+
+func TestTriggersForwardValidation(t *testing.T) {
+	cases := map[string]struct {
+		body    string
+		wantErr string
+	}{
+		"kind nats": {
+			`[database]` + "\ndsn=\"x\"\n[mqtt]\ninsecure_dev_mode=true\n[triggers.forward]\nkind=\"nats\"",
+			"kind",
+		},
+		// An absent url is refused by the absolute-URL rule as well, so
+		// asserting only that the message mentions "url" leaves the dedicated
+		// required-url check unbound — deleting it keeps this row green. The
+		// wording is the rule: "is required" is the message an operator who
+		// set no url at all should get, not "is not an absolute http or
+		// https URL".
+		"http missing url": {
+			`[database]` + "\ndsn=\"x\"\n[mqtt]\ninsecure_dev_mode=true\n[triggers.forward]\nkind=\"http\"",
+			"url is required",
+		},
+		"http relative url": {
+			`[database]` + "\ndsn=\"x\"\n[mqtt]\ninsecure_dev_mode=true\n[triggers.forward]\nkind=\"http\"\nurl=\"nope\"",
+			"url",
+		},
+		"http ftp scheme": {
+			`[database]` + "\ndsn=\"x\"\n[mqtt]\ninsecure_dev_mode=true\n[triggers.forward]\nkind=\"http\"\nurl=\"ftp://bus.example/x\"",
+			"url",
+		},
+		"http no host": {
+			`[database]` + "\ndsn=\"x\"\n[mqtt]\ninsecure_dev_mode=true\n[triggers.forward]\nkind=\"http\"\nurl=\"http://\"",
+			"url",
+		},
+		"http bad method": {
+			`[database]` + "\ndsn=\"x\"\n[mqtt]\ninsecure_dev_mode=true\n[triggers.forward]\nkind=\"http\"\nurl=\"https://bus.example/x\"\nmethod=\"FETCH\"",
+			"method",
+		},
+		"http method post lowercase": {
+			`[database]` + "\ndsn=\"x\"\n[mqtt]\ninsecure_dev_mode=true\n[triggers.forward]\nkind=\"http\"\nurl=\"https://bus.example/x\"\nmethod=\"post\"",
+			"",
+		},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			_, err := Load(writeTOML(t, tc.body))
+			if tc.wantErr == "" {
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatalf("expected error containing %q, got nil", tc.wantErr)
+			}
+			if !strings.Contains(err.Error(), tc.wantErr) {
+				t.Fatalf("error %q does not contain %q", err.Error(), tc.wantErr)
+			}
+		})
 	}
 }
 

@@ -61,6 +61,7 @@ func New(st Store, bp BrokerPort, cfg Config) (*Engine, error) {
 	}
 	e.broker = bp
 	e.exec = triggers.NewExecutor(triggers.ExecutorConfig{
+		Forwarder:  cfg.Forwarder,
 		Registerer: cfg.Registerer,
 		Logger:     cfg.Logger,
 	})

@@ -51,6 +51,7 @@ type Config struct {
 	Security     SecurityConfig     `toml:"security"`
 	Realm        RealmConfig        `toml:"realm"`
 	Log          LogConfig          `toml:"log"`
+	Triggers     TriggersConfig     `toml:"triggers"`
 }
 
 // HTTPConfig is the single REST listener (§3.7). TLS is optional: leave the
@@ -139,6 +140,21 @@ type RealmConfig struct {
 type LogConfig struct {
 	Level  string `toml:"level"`
 	Format string `toml:"format"`
+}
+
+// TriggersConfig groups the trigger engine's knobs.
+type TriggersConfig struct {
+	Forward ForwardConfig `toml:"forward"`
+}
+
+// ForwardConfig selects the Forwarder that receives trigger actions which
+// are not HTTP webhooks (docs/DESIGN.md §1.1). Kind "" disables forwarding
+// entirely; "http" selects the HTTP bus forwarder.
+type ForwardConfig struct {
+	Kind          string            `toml:"kind"`
+	URL           string            `toml:"url"`
+	Method        string            `toml:"method"`
+	StaticHeaders map[string]string `toml:"static_headers"`
 }
 
 // Default returns the zero-config defaults (single-VPS, dev-friendly).
@@ -256,6 +272,30 @@ func (c *Config) validate() error {
 	}
 	if c.Engine.Shards <= 0 {
 		return fmt.Errorf("config: engine.shards must be positive")
+	}
+	switch c.Triggers.Forward.Kind {
+	case "", "http":
+	default:
+		return fmt.Errorf("config: triggers.forward.kind %q is not one of \"\"|\"http\"", c.Triggers.Forward.Kind)
+	}
+	// When kind is "" forwarding is disabled; do not validate url, method, or
+	// static_headers — a stale url left behind after disabling forwarding must
+	// not prevent the config from loading.
+	if c.Triggers.Forward.Kind == "http" {
+		if c.Triggers.Forward.URL == "" {
+			return fmt.Errorf("config: triggers.forward.url is required when kind is \"http\"")
+		}
+		u, err := url.Parse(c.Triggers.Forward.URL)
+		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+			return fmt.Errorf("config: triggers.forward.url %q is not an absolute http or https URL", c.Triggers.Forward.URL)
+		}
+		if c.Triggers.Forward.Method != "" {
+			switch strings.ToUpper(c.Triggers.Forward.Method) {
+			case "DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT":
+			default:
+				return fmt.Errorf("config: triggers.forward.method %q is not a recognised HTTP method", c.Triggers.Forward.Method)
+			}
+		}
 	}
 	if c.Realm.Name != "" && c.Realm.JWTPublicKey == "" && c.Realm.JWTPublicKeyFile == "" {
 		return fmt.Errorf("config: realm.jwt_public_key (or _file) is required when realm.name is set")

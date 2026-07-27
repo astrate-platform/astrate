@@ -50,6 +50,15 @@ batch_max_rows = 64
 batch_max_wait = "50ms"
 max_payload_bytes = 65536
 
+# [triggers.forward]
+# Optional. Selects the Forwarder that receives custom trigger actions which are
+# not HTTP webhooks (§1.1). kind = "" (the default) disables forwarding entirely
+# — custom trigger actions are logged and counted as skipped.
+# kind = ""          # "" | "http"
+# url = "https://bus.example/trigger"  # required when kind = "http"
+# method = "POST"   # optional override; accepted: DELETE GET HEAD OPTIONS PATCH POST PUT
+# static_headers = { Authorization = "Bearer ..." }
+
 [pairing]
 # Issued client-certificate validity and credential rate limits (§4.3, §4.5).
 cert_ttl = "720h"

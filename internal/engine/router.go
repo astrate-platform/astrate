@@ -47,6 +47,11 @@ type Config struct {
 	// MaxPayloadBytes caps accepted data payload size for both formats
 	// (default payload.DefaultMaxSize).
 	MaxPayloadBytes int
+	// Forwarder receives trigger actions that are not HTTP webhooks
+	// (upstream's AMQP actions, docs/DESIGN.md §1.1). nil is the default and
+	// means those actions are logged and counted "skipped", which is the
+	// designed behaviour rather than a gap.
+	Forwarder triggers.Forwarder
 	// Registerer receives the engine's Prometheus collectors; nil leaves
 	// them unregistered (the collectors still work, which tests rely on).
 	Registerer prometheus.Registerer

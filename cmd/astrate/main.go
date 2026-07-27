@@ -32,6 +32,8 @@ import (
 	"github.com/astrate-platform/astrate/internal/broker"
 	"github.com/astrate-platform/astrate/internal/config"
 	"github.com/astrate-platform/astrate/internal/engine"
+	"github.com/astrate-platform/astrate/internal/engine/forward"
+	"github.com/astrate-platform/astrate/internal/engine/triggers"
 	"github.com/astrate-platform/astrate/internal/housekeeping"
 	"github.com/astrate-platform/astrate/internal/httpx"
 	"github.com/astrate-platform/astrate/internal/observability"
@@ -102,7 +104,13 @@ func run(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 
 	metrics := observability.NewMetrics()
 
+	fwd, err := newForwarder(cfg, log)
+	if err != nil {
+		return fmt.Errorf("triggers.forward: %w", err)
+	}
+
 	e, err := engine.New(st, nil, engine.Config{
+		Forwarder:       fwd,
 		Shards:          cfg.Engine.Shards,
 		ShardQueue:      cfg.Engine.ShardQueue,
 		BatchMaxRows:    cfg.Engine.BatchMaxRows,
@@ -164,6 +172,37 @@ func run(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	shutdown(srv, b, e, log)
 	<-serveErr // ListenAndServe returns http.ErrServerClosed after Shutdown
 	return nil
+}
+
+// newForwarder builds the Forwarder that receives trigger actions which are
+// not HTTP webhooks (docs/DESIGN.md §1.1). The empty kind is the default and
+// disables forwarding: those actions are logged and counted "skipped", which
+// is the designed behaviour rather than a gap.
+//
+// The nil return is deliberately a nil *interface*, not a typed nil pointer —
+// the executor tests its Forwarder against nil, and a typed nil would satisfy
+// that test while panicking on the first custom action.
+func newForwarder(cfg config.Config, log *slog.Logger) (triggers.Forwarder, error) {
+	f := cfg.Triggers.Forward
+	switch f.Kind {
+	case "":
+		return nil, nil
+	case "http":
+		h, err := forward.New(forward.Config{
+			URL:           f.URL,
+			Method:        f.Method,
+			StaticHeaders: f.StaticHeaders,
+		})
+		if err != nil {
+			return nil, err
+		}
+		log.Info("trigger forwarding enabled", "kind", f.Kind, "url", f.URL)
+		return h, nil
+	default:
+		// config.validate rejects every other kind, so this is unreachable
+		// unless the two lists drift apart.
+		return nil, fmt.Errorf("unsupported kind %q", f.Kind)
+	}
 }
 
 // newBroker builds the broker, loading the server TLS identity from config
