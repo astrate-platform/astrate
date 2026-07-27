@@ -199,6 +199,13 @@ func newForwarder(cfg config.Config, log *slog.Logger) (triggers.Forwarder, erro
 		}
 		log.Info("trigger forwarding enabled", "kind", f.Kind, "url", f.URL)
 		return h, nil
+	case "nats":
+		h, err := newNATSForwarder(f)
+		if err != nil {
+			return nil, err
+		}
+		log.Info("trigger forwarding enabled", "kind", f.Kind, "url", f.URL, "subject", f.Subject)
+		return h, nil
 	default:
 		// config.validate rejects every other kind, so this is unreachable
 		// unless the two lists drift apart.

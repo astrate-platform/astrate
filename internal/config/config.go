@@ -149,12 +149,17 @@ type TriggersConfig struct {
 
 // ForwardConfig selects the Forwarder that receives trigger actions which
 // are not HTTP webhooks (docs/DESIGN.md §1.1). Kind "" disables forwarding
-// entirely; "http" selects the HTTP bus forwarder.
+// entirely; "http" selects the HTTP bus forwarder; "nats" selects the NATS
+// bus forwarder (only usable in a binary built with -tags nats — see
+// cmd/astrate/newnats_*.go).
 type ForwardConfig struct {
 	Kind          string            `toml:"kind"`
 	URL           string            `toml:"url"`
 	Method        string            `toml:"method"`
 	StaticHeaders map[string]string `toml:"static_headers"`
+	// Subject is the NATS subject every custom action is published to.
+	// Required when Kind is "nats"; unused otherwise.
+	Subject string `toml:"subject"`
 }
 
 // Default returns the zero-config defaults (single-VPS, dev-friendly).
@@ -274,9 +279,9 @@ func (c *Config) validate() error {
 		return fmt.Errorf("config: engine.shards must be positive")
 	}
 	switch c.Triggers.Forward.Kind {
-	case "", "http":
+	case "", "http", "nats":
 	default:
-		return fmt.Errorf("config: triggers.forward.kind %q is not one of \"\"|\"http\"", c.Triggers.Forward.Kind)
+		return fmt.Errorf("config: triggers.forward.kind %q is not one of \"\"|\"http\"|\"nats\"", c.Triggers.Forward.Kind)
 	}
 	// When kind is "" forwarding is disabled; do not validate url, method, or
 	// static_headers — a stale url left behind after disabling forwarding must
@@ -295,6 +300,19 @@ func (c *Config) validate() error {
 			default:
 				return fmt.Errorf("config: triggers.forward.method %q is not a recognised HTTP method", c.Triggers.Forward.Method)
 			}
+		}
+	}
+	// Deeper validation (whether the URL actually names a reachable NATS
+	// server) happens at construction time in forward.NewNATS, the same way
+	// decision 15 has it dial at boot rather than on the first delivery —
+	// duplicating a URL-shape check here would only drift from what the
+	// nats.go client actually accepts.
+	if c.Triggers.Forward.Kind == "nats" {
+		if c.Triggers.Forward.URL == "" {
+			return fmt.Errorf("config: triggers.forward.url is required when kind is \"nats\"")
+		}
+		if c.Triggers.Forward.Subject == "" {
+			return fmt.Errorf("config: triggers.forward.subject is required when kind is \"nats\"")
 		}
 	}
 	if c.Realm.Name != "" && c.Realm.JWTPublicKey == "" && c.Realm.JWTPublicKeyFile == "" {
