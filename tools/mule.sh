@@ -16,6 +16,7 @@
 #   mule.sh add "<title>"    append a task to the queue
 #   mule.sh menu             print the "what next?" options for the user
 #   mule.sh recipe <name>    run a recipe: proposes new tasks, executes none
+#   mule.sh review           show what is waiting to be reviewed before merge
 #   mule.sh revert           undo the last mule commit
 #
 set -uo pipefail
@@ -333,7 +334,10 @@ first_open() {
         ;;
     esac
     printf '%s\n' "$l"; return 0
-  done < <(grep -n '^- \[ \] ' "$TODO")
+  # Two sources, standing lines first: they are free to evaluate, whereas issue_tasks costs
+  # a network round-trip. `[ ]` must stay escaped — unescaped it is a bracket expression
+  # matching one space, and the pattern then matches nothing that exists.
+  done < <(grep -n '^- \[ \] ' "$TODO"; issue_tasks)
   return 1
 }
 
@@ -438,8 +442,9 @@ format MULE.md gives.'
   if [ "$verdict" = done ]; then
     git -C "$REPO" add -A
     git -C "$REPO" commit -q -m "mule: $text" || { bad "commit failed"; return 1; }
-    # mark the line done, in the commit that follows
-    sed_i "${lineno}s/^- \[ \]/- [x]/" "$TODO"
+    # lineno 0 means the task came from an issue and has no line to tick off — its state
+    # lives on the issue, which is the single copy of it.
+    [ "$lineno" != 0 ] && sed_i "${lineno}s/^- \[ \]/- [x]/" "$TODO"
     log_row "$slug" done "$elapsed" "$(git -C "$REPO" rev-parse --short HEAD)"
     git -C "$REPO" add "$TODO" "$LOG" && git -C "$REPO" commit -q -m "mule: log $slug"
     if [ -n "${MULE_PUSH:-}" ]; then
@@ -450,13 +455,14 @@ format MULE.md gives.'
     # close: whether the issue is actually resolved is a judgement about intent, and the mule
     # is the last thing that should be making it.
     case "$slug" in
-      issue-*)
-        if [ -n "${MULE_PUSH:-}" ] && command -v gh >/dev/null; then
-          gh issue comment "${slug#issue-}" --body \
-            "The mule pushed \`$(git -C "$REPO" rev-parse --short HEAD)\` to \`$MULE_BRANCH\` for this. Unreviewed — the gates passed, nothing more." \
-            >/dev/null 2>&1 && note "commented on ${slug#issue-}"
-        fi
-        ;;
+      issue-*) issue_done "${slug#issue-}" "mule-review" \
+        "The mule pushed \`$(git -C "$REPO" rev-parse --short HEAD)\` to \`$MULE_BRANCH\` for this.
+
+Unreviewed: the gates passed — it compiles, the tests pass, a new test was shown to fail without the change, and no frozen file was touched. That is not the same as the change being worth having. Nothing merges to \`main\` until someone reads it:
+
+    bash tools/mule.sh review
+
+Left open on purpose. Whether this actually resolves the issue is your call, not mine.";;
     esac
     beat
     ok "landed: $text (${elapsed}s)"
@@ -467,8 +473,17 @@ format MULE.md gives.'
   mkdir -p "$MULE/failed"
   git -C "$REPO" diff > "$MULE/failed/$slug.diff" 2>/dev/null
   git -C "$REPO" checkout -- . 2>/dev/null; git -C "$REPO" clean -fdq -e .mule 2>/dev/null
-  sed_i "${lineno}s/^- \[ \]/- [!]/" "$TODO"
-  sed_i "${lineno}s|\$| — BLOCKED: $reason|" "$TODO"
+  if [ "$lineno" != 0 ]; then
+    sed_i "${lineno}s/^- \[ \]/- [!]/" "$TODO"
+    sed_i "${lineno}s|\$| — BLOCKED: $reason|" "$TODO"
+  else
+    case "$slug" in
+      issue-*) issue_done "${slug#issue-}" "mule-blocked" \
+        "The mule could not do this: **$reason**
+
+Taken out of its queue so it does not retry the same failure every half hour. Re-label \`$MULE_ISSUE_LABEL\` to queue it again, ideally after making the task smaller or the requirement clearer.";;
+    esac
+  fi
   log_row "$slug" "blocked" "$elapsed" "$reason"
   git -C "$REPO" add "$TODO" "$LOG" >/dev/null 2>&1 && git -C "$REPO" commit -q -m "mule: blocked $slug"
   bad "blocked: $reason (fragment kept at .mule/failed/$slug.diff)"
@@ -529,27 +544,32 @@ cmd_tick() {
   return "$rc"
 }
 
-# Pull open GitHub issues labelled `mule` into the queue, one task line each. This is the
-# front door: a stronger model, or Giulio, files an issue and the mule picks it up on its own
-# without anyone logging into the Pi. GitHub is the approval surface — an issue exists because
-# a human or a model deliberately wrote it, which is a far better filter than anything the
-# mule could apply to its own proposals.
+# The queue is the set of open issues labelled `mule`, plus the standing lines in todo.md.
+# Issue-derived tasks deliberately do NOT get copied into todo.md: that file lives in git on
+# a branch the mule commits to and Giulio edits on main, and every copy of the queue into it
+# produced a merge conflict — three in one afternoon. State for an issue task lives on the
+# issue, as labels, where there is exactly one copy of it.
 #
-# Prints the number of lines added.
-refill_from_issues() {
-  command -v gh >/dev/null || return 1
-  local repo added=0 n title
-  repo="$(gh repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null)" || return 1
-  while IFS=$'\t' read -r n title; do
-    [ -n "$n" ] || continue
-    # Already queued, running, done or blocked — the slug is the issue number, so one grep
-    # over every state is enough and a closed-then-reopened issue is not duplicated.
-    grep -q "^- \[.\] issue-$n:" "$TODO" && continue
-    printf -- '- [ ] issue-%s: %s (gh issue view %s) [auto]\n' "$n" "$title" "$n" >> "$TODO"
-    added=$((added+1))
-  done < <(gh issue list --repo "$repo" --state open --label "$MULE_ISSUE_LABEL" \
-             --limit 20 --json number,title -q '.[] | "\(.number)\t\(.title)"' 2>/dev/null)
-  echo "$added"
+# Emits `0:- [ ] issue-<N>: <title>` — lineno 0 meaning "not a line in any file".
+issue_tasks() {
+  command -v gh >/dev/null || return 0
+  local repo; repo="$(gh repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null)" || return 0
+  gh issue list --repo "$repo" --state open --label "$MULE_ISSUE_LABEL" \
+     --limit 20 --json number,title,labels \
+     -q '.[] | "0:- [ ] issue-\(.number): \(.title)" + ([.labels[].name] | map(select(. == "legion" or . == "readonly")) | map(" [" + . + "]") | join(""))' \
+     2>/dev/null
+}
+
+# Move an issue out of the queue by relabelling it. Never closes: whether the issue is
+# actually resolved is a judgement about intent, and that is the reviewer's call, not the
+# mule's. The issue stays open, out of the queue, waiting to be looked at.
+issue_done() {
+  local n="$1" state="$2" msg="$3"
+  command -v gh >/dev/null || return 0
+  [ -n "${MULE_PUSH:-}" ] || return 0
+  gh issue edit "$n" --remove-label "$MULE_ISSUE_LABEL" --add-label "$state" >/dev/null 2>&1
+  gh issue comment "$n" --body "$msg" >/dev/null 2>&1
+  note "issue $n -> $state"
 }
 
 # Ask the mule to propose its own work, one recipe per call, rotating. Rotation matters: left
@@ -572,14 +592,15 @@ refill_from_recipe() {
 # What the timer does when there is nothing queued. Autonomy lives here.
 cmd_refill() {
   ensure_branch
-  local before after added
-  before="$(grep -c '^- \[ \] ' "$TODO" 2>/dev/null | head -1)"
-  added="$(refill_from_issues)"
-  if [ -n "$added" ] && [ "$added" -gt 0 ] 2>/dev/null; then
-    ok "pulled $added issue(s) from GitHub into the queue"
-  else
-    refill_from_recipe
+  # Issues are read live by first_open, so a refill is only ever about *proposing* work that
+  # nobody has asked for yet. If there are already issues queued there is nothing to do here.
+  if [ -n "$(issue_tasks)" ]; then
+    ok "the issue queue is not empty — nothing to propose"
+    return 0
   fi
+  local before after
+  before="$(grep -c '^- \[ \] ' "$TODO" 2>/dev/null | head -1)"
+  refill_from_recipe
   # Proposals are worth nothing if they only exist on the Pi.
   git -C "$REPO" add -A "$MULE" >/dev/null 2>&1
   git -C "$REPO" diff --cached --quiet || git -C "$REPO" commit -q -m "mule: refill the queue"
@@ -591,51 +612,56 @@ cmd_refill() {
   [ "${after:-0}" -gt "${before:-0}" ]
 }
 
-# The dead-man's switch. Everything in this script that goes wrong goes wrong quietly: a
-# failed fetch, a failed push and an empty queue are all `note`s, and the unit still exits 0.
-# That is deliberate — a timer that mails you about a sleeping handheld is a timer you mute —
-# but it means the mule was green for hours while doing nothing at all, and the way that was
-# discovered was Giulio noticing an empty branch. Once is enough.
+# What a reviewer needs in order to decide whether any of this should reach main. The mule
+# never merges: the gates prove a change compiles, passes tests and does not touch the frozen
+# files, which is emphatically not the same as the change being worth having. Only a model or
+# a human that has read the diff can say that.
 #
-# So: any tick that lands work touches the heartbeat. A tick that finds it stale says so
-# somewhere Giulio will actually see, exactly once per silence.
-beat() { date +%s > "$MULE/.heartbeat"; rm -f "$MULE/.alarmed"; }
+# Prints the code separately from the bookkeeping, because the ratio is the first thing worth
+# knowing and it is usually lopsided.
+cmd_review() {
+  local base="${1:-origin/main}" head="origin/$MULE_BRANCH"
+  git -C "$REPO" fetch -q origin 2>/dev/null || note "offline — reviewing the local branch"
+  git -C "$REPO" rev-parse -q --verify "$head" >/dev/null 2>&1 || head="$MULE_BRANCH"
 
-check_pulse() {
-  local max="${MULE_IDLE_ALARM_HOURS:-8}" now last age
-  [ "$max" = 0 ] && return 0
-  now="$(date +%s)"
-  if [ ! -f "$MULE/.heartbeat" ]; then beat; return 0; fi
-  last="$(cat "$MULE/.heartbeat" 2>/dev/null)"; [ -n "$last" ] || { beat; return 0; }
-  age=$(( (now - last) / 3600 ))
-  [ "$age" -lt "$max" ] && return 0
-  # One alarm per silence, not one per tick — the alarm is only useful if it is rare.
-  [ -f "$MULE/.alarmed" ] && return 0
-  : > "$MULE/.alarmed"
-  bad "no work has landed in ${age}h — raising the alarm"
-  local body="The mule has not landed any work in ${age} hours (threshold ${max}h).
+  local all code
+  all="$(git -C "$REPO" rev-list --count "$base..$head" 2>/dev/null || echo 0)"
+  code="$(git -C "$REPO" rev-list --count "$base..$head" -- . ':!.mule' 2>/dev/null || echo 0)"
+  echo "reviewing $head against $base"
+  echo "  $all commit(s), $code of which touch anything outside .mule/"
+  echo
 
-It is probably still ticking and exiting 0 — that is how this failure looks. Worth checking,
-on the Pi:
-
-    systemctl list-timers mule.timer
-    journalctl -u mule.service --since '-1 day' | tail -50
-    cd /root/astrate-mule && bash tools/mule.sh status
-
-Common causes, all of which have happened: the provider is refusing every run, the queue has
-nothing runnable in it, the working tree is dirty so every tick aborts, or push has been
-failing and the work is only on the Pi.
-
-Filed automatically. Close it — the mule reopens a new one if the silence continues."
-  if command -v gh >/dev/null && [ -n "${MULE_PUSH:-}" ]; then
-    gh issue create --title "mule: nothing has landed in ${age}h" --body "$body" \
-      --label "$MULE_ALARM_LABEL" >/dev/null 2>&1 \
-      && note "filed an idle alarm on GitHub" \
-      && return 0
+  if [ "$code" = 0 ]; then
+    note "no code to review — everything on this branch is the mule administering itself"
+    return 0
   fi
-  # No gh, or it failed: the escalation file is the fallback and it is committed anyway.
-  printf -- '- **The mule has been idle %sh.** %s\n' "$age" \
-    "Filed by the dead-man's switch; see journalctl on the Pi." >> "$MULE/for-giulio.md"
+
+  echo "-- commits --"
+  git -C "$REPO" log --oneline "$base..$head" -- . ':!.mule'
+  echo; echo "-- files --"
+  git -C "$REPO" diff --stat "$base...$head" -- . ':!.mule'
+  echo; echo "-- tasks that nobody approved --"
+  git -C "$REPO" show "$head:$TODO" 2>/dev/null | grep -F '[auto]' || echo "  (none)"
+  echo; echo "-- standing check results --"
+  local r
+  for r in $(git -C "$REPO" ls-tree --name-only "$head" .mule/reports/ 2>/dev/null); do
+    printf '  %s: %s\n' "$(basename "$r" .md)" \
+      "$(git -C "$REPO" show "$head:$r" 2>/dev/null | sed -n '3s/^ran: //p')"
+  done
+  echo
+  cat <<EOF
+-- to actually review it --
+
+    git diff $base...$head -- . ':!.mule'
+
+Read it before it reaches main. The gates prove it compiles, passes the tests, and leaves
+the frozen files alone — not that it is worth having, and not that the tests are worth
+anything beyond the proof gate's floor. Then:
+
+    git checkout main && git merge --no-ff $head
+
+Nothing merges on its own, by design.
+EOF
 }
 
 cmd_loop() {
@@ -747,6 +773,7 @@ case "${1:-}" in
   menu)      shift; cmd_menu "$@";;
   recipe)    shift; cmd_recipe "$@";;
   refill)    shift; cmd_refill "$@";;
+  review)    shift; cmd_review "$@";;
   legion)    shift; cmd_legion "$@";;
   tick)      shift; cmd_tick "$@";;
   revert)    shift; cmd_revert "$@";;
