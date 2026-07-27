@@ -168,6 +168,18 @@ cmd_preflight() {
       && ok "lint baseline is clean" \
       || bad "lint baseline is not clean (clear the linter cache before believing this)"
   fi
+  # Signing is fatal for an unattended mule and fails in the least helpful way: the gates
+  # pass, the commit dies on a pinentry that has no tty, the work stays uncommitted, and the
+  # dirty tree it leaves behind makes every future tick abort. Cost one run to learn.
+  if [ "$(git -C "$REPO" config --get commit.gpgsign)" = "true" ]; then
+    if git -C "$REPO" commit --dry-run --allow-empty -q -m probe >/dev/null 2>&1; then
+      ok "commit signing is on and works unattended"
+    else
+      bad "commit.gpgsign is ON and cannot sign without a tty — every task would fail at"
+      bad "  the commit and leave a dirty tree. Fix: git -C $REPO config commit.gpgsign false"
+      fail=1
+    fi
+  else ok "commit signing is off (correct for an unattended clone)"; fi
   command -v gh >/dev/null && gh auth status >/dev/null 2>&1 \
     && ok "gh is authenticated (issue tasks will work)" \
     || note "gh not authenticated — the GitHub-issues recipe will not work"
