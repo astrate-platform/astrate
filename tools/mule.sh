@@ -48,11 +48,17 @@ MULE_MODEL="${MULE_MODEL:-}"
 # inherits our stdout otherwise and holds the pipe open for the full budget), and a sentinel
 # file, because opencode exits 0 on SIGTERM and a killed run is otherwise indistinguishable
 # from a clean one.
+#
+# Both background jobs close fd 9 (`9>&-`). fd 9 is tick's flock, and a child that inherits
+# it holds the lock as long as it lives — the watchdog is a `sleep $secs`, so an orphaned one
+# kept the lock for a full 20 minutes after its tick had finished, and every tick in that
+# window was skipped with "previous run is still going" while nothing was running. The timer
+# looks alive and does nothing, which is the worst way for this to fail.
 run_with_timeout() {
   local secs="$1" sentinel="$2"; shift 2
-  "$@" & local pid=$!
+  "$@" 9>&- & local pid=$!
   ( sleep "$secs"; kill -0 "$pid" 2>/dev/null && { : > "$sentinel"; kill -TERM "$pid" 2>/dev/null; } ) \
-    >/dev/null 2>&1 & local watchdog=$!
+    9>&- >/dev/null 2>&1 & local watchdog=$!
   wait "$pid"; local rc=$?
   kill -TERM "$watchdog" 2>/dev/null
   return "$rc"
