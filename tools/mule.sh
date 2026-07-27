@@ -443,7 +443,7 @@ cmd_tick() {
     if [ -n "${MULE_NO_REFILL:-}" ]; then note "queue empty — nothing to do"; exit 0; fi
     echo "$today $((count + 1))" > "$stamp"
     note "tick $((count + 1))/${MULE_DAILY_MAX:-16} for $today — refilling"
-    cmd_refill || { note "nothing to propose right now — idling until the next tick"; exit 0; }
+    cmd_refill || note "the refill added nothing — idling until the next tick"
     # Whatever it just proposed waits for the next tick. That is deliberate: the proposals
     # are visible on GitHub for half an hour before anything acts on them, which is the only
     # chance a human gets to cut a bad one.
@@ -502,17 +502,23 @@ refill_from_recipe() {
 # What the timer does when there is nothing queued. Autonomy lives here.
 cmd_refill() {
   ensure_branch
-  local added; added="$(refill_from_issues)"
+  local before after added
+  before="$(grep -c '^- \[ \] ' "$TODO" 2>/dev/null | head -1)"
+  added="$(refill_from_issues)"
   if [ -n "$added" ] && [ "$added" -gt 0 ] 2>/dev/null; then
     ok "pulled $added issue(s) from GitHub into the queue"
   else
-    refill_from_recipe || return 1
+    refill_from_recipe
   fi
   # Proposals are worth nothing if they only exist on the Pi.
   git -C "$REPO" add -A "$MULE" >/dev/null 2>&1
   git -C "$REPO" diff --cached --quiet || git -C "$REPO" commit -q -m "mule: refill the queue"
-  [ -n "${MULE_PUSH:-}" ] && git -C "$REPO" push -q origin "$MULE_BRANCH" 2>/dev/null
-  first_open >/dev/null 2>&1
+  if [ -n "${MULE_PUSH:-}" ]; then git -C "$REPO" push -q origin "$MULE_BRANCH" 2>/dev/null || true; fi
+  # Count the lines, rather than asking first_open whether anything is runnable *now*. A
+  # refill that queued three [legion] tasks while the handheld is asleep did its job; saying
+  # "nothing to propose" there would be a plain lie, and it was one.
+  after="$(grep -c '^- \[ \] ' "$TODO" 2>/dev/null | head -1)"
+  [ "${after:-0}" -gt "${before:-0}" ]
 }
 
 cmd_loop() {
