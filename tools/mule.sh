@@ -219,6 +219,14 @@ cmd_preflight() {
 
 # The slug for a `<lineno>:- [ ] <slug>: <title>` line from grep -n. Shared by the runner and
 # by first_open so a task's report file is found under the same name that wrote it.
+# An identity for the *code*, ignoring everything under .mule/. A standing check records this
+# and is skipped while it is unchanged. It cannot be HEAD: writing the check's own report is
+# itself a commit, so HEAD always differs from the sha the report just recorded and the check
+# would re-run forever — which is exactly what it did on 2026-07-27.
+code_id() {
+  git -C "$REPO" ls-tree HEAD | grep -v $'\t''\.mule$' | git hash-object --stdin
+}
+
 line_slug() {
   local t="${1#*:}"
   # Quote the pattern: unquoted, `[ ]` is a glob character class, so the prefix survives
@@ -254,8 +262,8 @@ first_open() {
         # the same sha it already passed buys nothing and spends a call on a free provider.
         local rslug sha
         rslug="$(line_slug "$l")"
-        sha="$(sed -n '1s/^sha: //p' "$MULE/reports/$rslug.md" 2>/dev/null)"
-        if [ -n "$sha" ] && [ "$sha" = "$(git -C "$REPO" rev-parse HEAD)" ]; then continue; fi
+        sha="$(sed -n '1s/^code: //p' "$MULE/reports/$rslug.md" 2>/dev/null)"
+        if [ -n "$sha" ] && [ "$sha" = "$(code_id)" ]; then continue; fi
         ;;
     esac
     printf '%s\n' "$l"; return 0
@@ -339,7 +347,8 @@ format MULE.md gives.'
         # the deliverable, and the sha in it is what stops the task re-running on unchanged
         # code. The line stays `- [ ]`: a gate is never done.
         mkdir -p "$MULE/reports"
-        { echo "sha: $(git -C "$REPO" rev-parse HEAD)"
+        { echo "code: $(code_id)"
+          echo "at:  $(git -C "$REPO" rev-parse --short HEAD)"
           echo "ran: $(date -u '+%Y-%m-%dT%H:%M:%SZ') on $(uname -n) in ${elapsed}s"
           echo; cat "$outlog"
         } > "$MULE/reports/$slug.md"
