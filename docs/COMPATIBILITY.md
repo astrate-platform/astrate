@@ -83,21 +83,24 @@ All additive or strictly-safer; none affect unmodified device SDKs.
      which stays a verb-regex match because that is what upstream's REST plug
      does. Astrate previously read `a_ch` with the REST rule and did not check
      `JOIN` on a join at all; both were corrected in M12 phase 06.
-   - **The WATCH authorization paths are still a reading, and one is known to
-     be narrower than upstream's**: Astrate builds `groups/<name>` for a group
-     trigger, `<device_id>/<interface>` for a data trigger, and `<device_id>`
-     otherwise. Upstream's source builds `<device_id>/<interface><path>` and
-     `groups/<name>/<interface><path>` — it appends the trigger's match path,
-     which Astrate omits. The recording could not discriminate this, because
-     every recorded watch used `WATCH::.*`; it is therefore **not yet
-     measured**, and deliberately left alone rather than changed on a reading,
-     which is the mistake this milestone exists to undo.
-   - **A device trigger's `device_id` must sit inside `simple_trigger`.**
-     Upstream refuses a watch whose `device_id` is only at the payload's top
-     level — where the AppEngine REST API puts it — and refuses a wildcard
-     `device_id: "*"`, both with the misleading reason `unauthorized`. Astrate
-     falls back to the top-level `device_id` and accepts both. Recorded, not
-     yet reconciled.
+   - **The WATCH authorization paths are measured**, with narrow claims that
+     make exactly one of each pair acceptable
+     (`test/conformance/upstream/channels.json`). A data trigger is authorized
+     against `<device_id>/<interface_name><match_path>` — the match path is
+     appended, carrying its own leading slash — and a device trigger against
+     the bare `<device_id>`. Astrate built `<device_id>/<interface_name>` for
+     data triggers until M12 phase 06b, which was wrong in *both* directions:
+     it refused claims upstream accepts and accepted claims upstream refuses.
+     The group shapes (`groups/<name>/<interface><match_path>` and
+     `groups/<name>`) come from the same upstream function but are **not
+     measured**, the realm having no group; they are the one part of this
+     surface still resting on a source read.
+   - **A device trigger's `device_id` must sit inside `simple_trigger` and
+     equal the request's own.** Upstream refuses a watch whose `device_id` is
+     only at the payload's top level — where the AppEngine REST API puts it —
+     and refuses a wildcard `device_id: "*"`, both with the misleading reason
+     `unauthorized`. Astrate used to fall back to the top-level `device_id` and
+     accept both; since M12 phase 06b it refuses them with the same reason.
    - **Transient triggers are matcher-only.** A `watch` payload's
      `simple_trigger` is compiled to a matcher with no action, never stored and
      never handed to the trigger executor. A slow viewer drops frames rather

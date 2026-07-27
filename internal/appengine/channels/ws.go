@@ -113,27 +113,55 @@ type joined struct {
 type triggerShape struct {
 	Type          string `json:"type"`
 	InterfaceName string `json:"interface_name"`
+	MatchPath     string `json:"match_path"`
 	GroupName     string `json:"group_name"`
 	DeviceID      string `json:"device_id"`
 }
 
-// watchAuthPath derives the authorization path from a WatchRequest.
+// errUnauthorizedTrigger is a device trigger that names no device, or names a
+// different one than the request. Upstream refuses these — see watchAuthPath.
+var errUnauthorizedTrigger = errors.New("device trigger does not name the request's device")
+
+// watchAuthPath derives the authorization path from a WatchRequest, in the
+// shape upstream matches a_ch WATCH claims against. The shapes are recorded in
+// test/conformance/upstream/channels.json:
+//
+//	data trigger        <device_id>/<interface_name><match_path>
+//	device trigger      <device_id>
+//	group data trigger  groups/<name>/<interface_name><match_path>
+//	group device trigger groups/<name>
+//
+// The match path carries its own leading slash, so it is concatenated without a
+// separator. That detail is measured, not inferred: a claim written as
+// "<device>/<interface>" — the shape Astrate used to build — is refused by
+// upstream for a trigger on /value, while "<device>/<interface>/value" is
+// accepted. Only the group shapes are unmeasured, the realm having no group;
+// they come from the same upstream function whose device shapes the recording
+// just confirmed.
+//
+// A device trigger must name its device inside simple_trigger, and it must be
+// the request's device: upstream refuses a device_id present only at the
+// payload's top level (where the AppEngine REST API puts it) and refuses the
+// wildcard "*", both with the reason "unauthorized". Astrate used to fall back
+// to the top-level device_id and accept both.
 func watchAuthPath(req WatchRequest) (string, error) {
 	var ts triggerShape
 	if err := json.Unmarshal(req.SimpleTrigger, &ts); err != nil {
 		return "", err
 	}
+	if ts.Type == "data_trigger" {
+		if ts.GroupName != "" {
+			return "groups/" + ts.GroupName + "/" + ts.InterfaceName + ts.MatchPath, nil
+		}
+		return req.DeviceID + "/" + ts.InterfaceName + ts.MatchPath, nil
+	}
 	if ts.GroupName != "" {
 		return "groups/" + ts.GroupName, nil
 	}
-	device := ts.DeviceID
-	if device == "" {
-		device = req.DeviceID
+	if ts.DeviceID == "" || ts.DeviceID != req.DeviceID {
+		return "", errUnauthorizedTrigger
 	}
-	if ts.Type == "data_trigger" {
-		return device + "/" + ts.InterfaceName, nil
-	}
-	return device, nil
+	return ts.DeviceID, nil
 }
 
 // loop reads frames from the connection and dispatches them.
@@ -265,6 +293,12 @@ func (s *session) handleWatch(f Frame) {
 	}
 
 	path, err := watchAuthPath(req)
+	if errors.Is(err, errUnauthorizedTrigger) {
+		// Upstream's reason for this is "unauthorized", not a payload error,
+		// even though the cause is the payload's shape.
+		s.sendErr(f, "unauthorized")
+		return
+	}
 	if err != nil {
 		s.sendErr(f, "invalid simple_trigger")
 		return
