@@ -30,8 +30,16 @@ queue/gate.
      ```
      - [ ] milestone-<tag>-issue-<slug>: gh issue create --title "<slug>: <one-line outcome>" \
        --label mule,milestone-<tag> --body "<what/why, cite the reference and the file(s) that
-       would need to change>"
+       would need to change, ending with 'Acceptance: <a concrete test or check that proves
+       this is done>'>"
      ```
+     **Every issue body must end with an `Acceptance:` line naming a specific test or
+     check** — "a table-driven test in internal/flow/router_test.go asserting in-order
+     delivery within a stream key", not "add tests". If you cannot state one, the gap is
+     too vague to be issue-shaped yet — investigate further or escalate it, don't file it.
+     This is what turns the milestone recipe's issues into starting points for MULE.md's
+     existing rule that no behaviour change lands without a test proving it — the recipe
+     names *which* test, the executing task still has to write and prove it.
      If the piece is big enough to need sub-issues, propose the parent issue task first and
      a follow-up task line (same slug prefix, `-sub1`, `-sub2`, ...) that files each child
      with `--body "part of #<parent>, ..."` — the parent number is only known after the
@@ -49,6 +57,10 @@ queue/gate.
 
 ## Rules
 
+- **Never run `gh issue create` yourself during this recipe.** Your job is to write the
+  task line; a later, separate mule session runs it as a task. Filing the issue yourself
+  now both breaks the proposal/execution split every other recipe follows and, if the same
+  task line is then approved and queued, duplicates the issue.
 - **Propose at most five issue-filing tasks per run**, same cap as the other recipes.
 - Every filed issue must name the file(s) or package the gap lives in, if the investigation
   found one — that's what makes the follow-up task machine-startable instead of another

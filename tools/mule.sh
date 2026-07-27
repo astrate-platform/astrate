@@ -887,7 +887,11 @@ cmd_recipe() {
 
 That recipe is a *proposal* job: its output is new task lines appended to .mule/todo.md,
 plus any evidence file it tells you to write. Do not start implementing the tasks you
-propose. Do not touch git."
+propose. Do not touch git. Do not run gh issue create, gh issue edit, gh issue close, or
+any other command that mutates state outside this working tree — a recipe only ever
+produces text (task lines, evidence files, .mule/for-giulio.md entries). If a task line
+says 'gh issue create ...', that command is only ever run later, as that task, by a
+separate mule session — never by you, now, while proposing it."
   local -a run=(opencode run --agent "$MULE_AGENT")
   [ -n "$MULE_MODEL" ] && run+=(--model "$MULE_MODEL")
   run+=("$prompt")
