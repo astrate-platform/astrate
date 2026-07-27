@@ -606,7 +606,7 @@ issue_done() {
 # Ask the mule to propose its own work, one recipe per call, rotating. Rotation matters: left
 # to a fixed order it would re-run `code-review` forever and never look upstream.
 refill_from_recipe() {
-  local order="github-issues astarte-upstream code-review docs-sync hygiene"
+  local order="github-issues astarte-upstream code-review docs-sync hygiene milestones"
   local last next=""; last="$(cat "$MULE/.rotation" 2>/dev/null)"
   local first="" seen=""
   for r in $order; do
@@ -801,6 +801,8 @@ cmd_menu() {
    4  bench      run the tiered benchmarks (small/medium/big/giant)
    5  docs       re-sync the docs site with what the code now does
    6  hygiene    dependency, CI and lint upkeep
+   7  milestones work toward the current release-tag milestone
+                 (.mule/milestones.md) — may file GitHub issues directly
    other         tell me what you want instead
 
    Each option is a recipe in .mule/recipes/. Running one PROPOSES
@@ -840,6 +842,7 @@ cmd_recipe() {
     4|bench)    name=benchmarks;;
     5|docs)     name=docs-sync;;
     6)          name=hygiene;;
+    7|milestones) name=milestones;;
   esac
   local f="$MULE/recipes/$name.md"; [ -f "$f" ] || die "no such recipe: $f"
   ensure_branch
