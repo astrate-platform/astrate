@@ -217,6 +217,17 @@ cmd_preflight() {
 
 # --- the queue --------------------------------------------------------------
 
+# The slug for a `<lineno>:- [ ] <slug>: <title>` line from grep -n. Shared by the runner and
+# by first_open so a task's report file is found under the same name that wrote it.
+line_slug() {
+  local t="${1#*:}"
+  # Quote the pattern: unquoted, `[ ]` is a glob character class, so the prefix survives
+  # and ends up in the slug, the commit message and the task file.
+  t="${t#"- [ ] "}"
+  local s="${t%%:*}"; [ "$s" = "$t" ] && s="$(echo "$t" | tr -cs '[:alnum:]' '-' | cut -c1-24)"
+  echo "$s" | tr -cd '[:alnum:]-_'
+}
+
 # A task is one `- [ ] slug: title` line in .mule/todo.md. If .mule/tasks/<slug>.md exists
 # it is the spec; otherwise the line itself is the whole spec. Both are legitimate — a
 # one-liner is enough for most of what the mule should be doing.
@@ -234,6 +245,17 @@ first_open() {
           else legion_ok=no; note "Legion Go unreachable — skipping [legion] tasks this run"; fi
         fi
         [ "$legion_ok" = yes ] || continue
+        ;;
+    esac
+    case "$l" in
+      *"[readonly]"*)
+        # A readonly check never closes, so without this it would be the whole queue forever.
+        # It only has something to say when the code moved: re-running a race check against
+        # the same sha it already passed buys nothing and spends a call on a free provider.
+        local rslug sha
+        rslug="$(line_slug "$l")"
+        sha="$(sed -n '1s/^sha: //p' "$MULE/reports/$rslug.md" 2>/dev/null)"
+        if [ -n "$sha" ] && [ "$sha" = "$(git -C "$REPO" rev-parse HEAD)" ]; then continue; fi
         ;;
     esac
     printf '%s\n' "$l"; return 0
@@ -263,8 +285,7 @@ cmd_next() {
   # Quote the pattern: unquoted, `[ ]` is a glob character class, so the prefix survives
   # and ends up in the slug, the commit message and the task file.
   text="${text#"- [ ] "}"
-  local slug="${text%%:*}"; [ "$slug" = "$text" ] && slug="$(echo "$text" | tr -cs '[:alnum:]' '-' | cut -c1-24)"
-  slug="$(echo "$slug" | tr -cd '[:alnum:]-_')"
+  local slug; slug="$(line_slug "$line")"
 
   local spec="$MULE/tasks/$slug.md"
   local taskfile="$MULE/task.md"
@@ -311,6 +332,26 @@ format MULE.md gives.'
   elif ! check_never; then
     verdict=blocked; reason="touched a never-touch path"
   elif [ -z "$(git -C "$REPO" status --porcelain)" ]; then
+    case "$text" in
+      *"[readonly]"*)
+        # A verification task that finds nothing wrong writes nothing, and that is the good
+        # outcome — blocking it would retire the gate the first time it passed. Its report is
+        # the deliverable, and the sha in it is what stops the task re-running on unchanged
+        # code. The line stays `- [ ]`: a gate is never done.
+        mkdir -p "$MULE/reports"
+        { echo "sha: $(git -C "$REPO" rev-parse HEAD)"
+          echo "ran: $(date -u '+%Y-%m-%dT%H:%M:%SZ') on $(uname -n) in ${elapsed}s"
+          echo; cat "$outlog"
+        } > "$MULE/reports/$slug.md"
+        log_row "$slug" "checked" "$elapsed" "$(git -C "$REPO" rev-parse --short HEAD)"
+        git -C "$REPO" add "$MULE/reports/$slug.md" "$LOG" >/dev/null 2>&1
+        git -C "$REPO" commit -q -m "mule: $slug passed on $(git -C "$REPO" rev-parse --short HEAD)"
+        [ -n "${MULE_PUSH:-}" ] && { git -C "$REPO" push -q origin "$MULE_BRANCH" 2>/dev/null \
+          && ok "pushed $MULE_BRANCH" || note "push failed — the work is safe locally"; }
+        ok "checked: $slug clean (${elapsed}s) — stays queued for the next change"
+        return 0
+        ;;
+    esac
     verdict=blocked; reason="wrote nothing"
   elif ! gates; then
     verdict=blocked; reason="gates failed"

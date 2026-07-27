@@ -11,6 +11,13 @@ If a line needs more detail than fits, write `.mule/tasks/<slug>.md` and keep th
 A line tagged `[legion]` needs the Legion Go and is skipped automatically while it is asleep;
 the queue moves on to the next runnable line rather than stalling behind it.
 
+A line tagged `[readonly]` is a **standing check**, not a piece of work. It verifies something
+and is expected to produce no diff at all — so an empty diff is success, not the `wrote
+nothing` failure it would be for any other line. It never gets ticked off, because a gate is
+never done. Its output lands in `.mule/reports/<slug>.md` with the sha it ran against, and it
+is skipped while that sha is still HEAD: re-checking code that has not moved buys nothing and
+spends a call on a free provider.
+
 **`mule/queue` is authoritative for this file.** The mule ticks on the Pi and writes its
 progress there, so editing the queue on `main` resurrects completed tasks the moment the two
 are merged — which has happened once. Add and reorder tasks on `mule/queue`; let them reach
@@ -34,4 +41,4 @@ alone -- past the per-task budget -- and because they want someone watching. Run
 - [~] bench-giant-astrate [legion]: run `bench/scripts/run-tier.sh giant astrate` against Legion Go Astrate, commit results (two runs minimum)
 - [~] bench-big-astarte [legion]: run `bench/scripts/run-tier.sh big astarte` against Legion Go Astarte, commit results (two runs minimum)
 - [~] bench-giant-astarte [legion]: run `bench/scripts/run-tier.sh giant astarte` against Legion Go Astarte, commit results (two runs minimum)
-- [ ] race-check: on the Legion Go, `cd ~/astrate && git fetch -q && git merge --ff-only -q origin/main && go test -race ./...` (~40s). Report any failure to .mule/for-giulio.md with the full race report. This is the only race coverage that exists — the Pi cannot run -race. [legion]
+- [ ] race-check: on the Legion Go, `cd ~/astrate && git fetch -q && git merge --ff-only -q origin/main && go test -race ./...` (~40s). Report any failure to .mule/for-giulio.md with the full race report. This is the only race coverage that exists — the Pi cannot run -race. [legion] [readonly]

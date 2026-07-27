@@ -37,6 +37,10 @@ automatically when it is asleep. It is the **only** machine here that can run `g
 (~40s), so that is where race coverage comes from. Details in `.mule/recipes/legion-go.md` —
 read that before any `[legion]` task.
 
+A task line tagged `[readonly]` is a standing check: run it, report what you found, and
+**change nothing**. Finding nothing wrong is the good outcome — do not invent a change to
+have something to show. Your report is the whole deliverable and is kept verbatim.
+
 ## What you may and may not do
 
 - Change code, tests, and files under `bench/` and `tools/` as the task requires.
