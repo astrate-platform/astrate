@@ -47,10 +47,21 @@ source "$TIER_ENV"
 echo "tier=$TIER target=$TARGET devices=$DEVICES rate=$RATE duration=$INGEST_DURATION"
 
 # ── build bench once ────────────────────────────────────────────────────────
-echo "building bench…"
+# Use a prebuilt binary when there is one: the Legion Go, which runs the heavy
+# tiers, has no Go toolchain -- the binary is cross-compiled elsewhere and
+# copied in by `mule.sh legion bench-push`. Only build when we actually can.
 BENCH_BIN="$BENCH_DIR/bench"
-go build -o "$BENCH_BIN" "$BENCH_DIR"
-trap 'rm -f "$BENCH_BIN"' EXIT
+if [[ -x "$BENCH_BIN" ]]; then
+    echo "using prebuilt bench binary: $BENCH_BIN"
+elif command -v go >/dev/null; then
+    echo "building bench..."
+    go build -o "$BENCH_BIN" "$BENCH_DIR"
+    trap 'rm -f "$BENCH_BIN"' EXIT
+else
+    echo "run-tier.sh: no bench binary and no Go toolchain here." >&2
+    echo "  Cross-compile and copy one in:  tools/mule.sh legion bench-push" >&2
+    exit 1
+fi
 
 # ── results directory ───────────────────────────────────────────────────────
 TS="$(date -u +%Y%m%d-%H%M%S)"
