@@ -195,6 +195,65 @@ systemctl list-timers mule-survey.timer --no-pager | head -3
 EOS
 ok "daily survey timer installed and enabled (~03:00, +/- 10min)"
 
+# --- 6. Claude Code's skills, usable from opencode too ----------------------
+# opencode has its own skill loader (scans **/SKILL.md under configured directories) that
+# reads the exact same file format as Claude Code — same required `name`/`description`
+# frontmatter, same "one folder per skill" layout. So the skills written for Claude Code
+# (~/.claude/skills on the Mac: astrate-workflow, mule-triage) are usable from an interactive
+# `opencode` session on the Pi too, without copying prose into a second, divergent file.
+#
+# NEVER commit these into the repo: astrate-workflow's body names the Pi's and Legion's LAN
+# addresses and root/atsetilam usernames, the exact information .mule/hosts is kept out of
+# git for. They travel by scp, like .mule/hosts, into a location outside any git working tree.
+LOCAL_SKILLS="$HOME/.claude/skills"
+SKILL_NAMES="astrate-workflow mule-triage"
+
+# jq merge helper: add path to config.skills.paths if not already present, preserving
+# everything else in the file (the Pi's opencode.jsonc already carries its provider config).
+jq_add_skill_path() {
+  local file="$1" path="$2" tmp="${1}.tmp.$$"
+  jq --arg p "$path" '.skills.paths = ((.skills.paths // []) + [$p] | unique)' "$file" > "$tmp" \
+    && mv "$tmp" "$file"
+}
+
+if [ -d "$LOCAL_SKILLS/astrate-workflow" ]; then
+  [ "$MODE" = check ] || {
+    # 6a. the Mac's own opencode: point straight at ~/.claude/skills, no copy, one source of truth.
+    MAC_OC_CONFIG="$HOME/.config/opencode/opencode.jsonc"
+    if [ -f "$MAC_OC_CONFIG" ] && command -v jq >/dev/null; then
+      jq_add_skill_path "$MAC_OC_CONFIG" "$LOCAL_SKILLS"
+      ok "Mac's opencode config points at $LOCAL_SKILLS"
+    else
+      bad "no $MAC_OC_CONFIG or no local jq — skipped the Mac side, do it by hand"
+    fi
+
+    # 6b. the Pi: scp the skill folders (root has no ~/.claude), merge its own config.
+    pish <<'EOS'
+mkdir -p ~/.claude-skills
+EOS
+    for name in $SKILL_NAMES; do
+      [ -d "$LOCAL_SKILLS/$name" ] || continue
+      # shellcheck disable=SC2086
+      scp $SSH_OPTS -qr "$LOCAL_SKILLS/$name" "$PI:~/.claude-skills/$name.tmp" \
+        && ssh $SSH_OPTS "$PI" "rm -rf ~/.claude-skills/$name && mv ~/.claude-skills/$name.tmp ~/.claude-skills/$name"
+    done
+    ok "copied $SKILL_NAMES to the Pi's ~/.claude-skills (not committed — see the note above)"
+
+    pish <<'EOS'
+set -e
+CFG=/root/.config/opencode/opencode.jsonc
+command -v jq >/dev/null || { echo "no jq on the Pi — cannot merge $CFG"; exit 1; }
+[ -f "$CFG" ] || echo '{"$schema":"https://opencode.ai/config.json"}' > "$CFG"
+jq '.skills.paths = ((.skills.paths // []) + ["/root/.claude-skills"] | unique)' "$CFG" > "$CFG.tmp.$$" \
+  && mv "$CFG.tmp.$$" "$CFG"
+echo "Pi's opencode config now has skills.paths: $(jq -c .skills.paths "$CFG")"
+EOS
+    ok "Pi's opencode config points at ~/.claude-skills"
+  }
+else
+  bad "no $LOCAL_SKILLS/astrate-workflow here — skipping the skills step (run this from the Mac that has them)"
+fi
+
 cat <<EOF
 
   Installed. From here on:
@@ -208,6 +267,9 @@ cat <<EOF
     ssh $PI 'journalctl -u mule-survey.service -n 80'       # what it found
     ssh $PI 'systemctl stop mule-survey.timer'              # make it stop
     git fetch origin mule/research && git log origin/mule/research  # read what it wrote
+
+    ssh $PI                                                  # then just: opencode
+                                                               # /astrate-workflow, /mule-triage work there too now
 
   The 30-min mule does nothing at all until there are approved tasks in .mule/todo.md or
   issues labelled 'mule' — an idle mule is the correct mule. The daily survey runs
