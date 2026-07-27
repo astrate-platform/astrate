@@ -32,22 +32,44 @@ alone -- past the per-task budget -- and because they want someone watching. Run
 
 ## Where tasks come from
 
-You do not have to feed this file by hand. When a tick finds the queue empty it refills it:
+**This file is not the whole queue, and for real work it is not even the main part of it.**
 
-1. **Open GitHub issues labelled `mule`** become task lines, one each, slugged `issue-<N>`.
-   This is the front door — anyone, including a stronger model with access to the repo, files
-   an issue and the mule picks it up on the next tick without touching the Pi. GitHub is the
-   approval surface: an issue exists because someone deliberately wrote it. When a task from
-   an issue lands, the mule comments the sha on that issue. It never closes it — whether the
-   issue is actually resolved is a judgement about intent, and that is not the mule's call.
-2. **Otherwise a proposal recipe runs**, rotating through `github-issues`, `astarte-upstream`,
-   `code-review`, `docs-sync`, `hygiene`, so it cannot get stuck re-reviewing the same code
-   forever. Lines it invents itself are tagged `[auto]` — nobody approved those, and the tag
-   is there so you can tell them apart at a glance and cut them.
+The queue is: the standing lines below, plus **every open GitHub issue labelled `mule`**.
+Issues are read live on each tick and are never copied into this file — a copy would be a
+second place the same fact lives, on a branch the mule commits to and you edit on `main`,
+and that produced three merge conflicts in one afternoon.
 
-A refill costs a tick from the daily budget and never runs the work it just proposed: the
-proposals sit for one tick, visible on the branch, which is the window you get to cut a bad
-one. `MULE_NO_REFILL=1` turns the whole thing off and makes the mule purely obedient again.
+**To give the mule work, file an issue and label it `mule`.** From anywhere, by anyone,
+including another model with repo access. No SSH, no editing this file:
+
+    gh issue create --label mule --title "<slug>: <outcome>" --body "<the detail>"
+
+Labels on the issue are the tags: `legion` and `readonly` mean what `[legion]` and
+`[readonly]` mean here. State lives on the issue, as labels, because there is exactly one
+copy of it there:
+
+| label          | meaning                                                          |
+|----------------|------------------------------------------------------------------|
+| `mule`         | queued                                                            |
+| `mule-review`  | the mule pushed something; **it is not merged and not reviewed**  |
+| `mule-blocked` | it tried and could not; re-label `mule` to try again              |
+
+The mule never closes an issue. Whether the work actually resolves it is a judgement about
+intent, which is the reviewer's call.
+
+When both sources are empty a tick runs a **proposal recipe** instead, rotating through
+`github-issues`, `astarte-upstream`, `code-review`, `docs-sync`, `hygiene` so it cannot get
+stuck re-reviewing the same code. Lines it invents are tagged `[auto]`: nobody approved those.
+A refill costs a tick from the daily budget and never runs what it just proposed — the lines
+sit for one tick, which is your window to cut a bad one. `MULE_NO_REFILL=1` turns it off.
+
+## Nothing merges on its own
+
+Everything lands on `mule/queue`. The gates prove a change compiles, passes the tests, ships
+a test that fails without it, and touches no frozen file — none of which means the change is
+worth having. Before any of it reaches `main`:
+
+    bash tools/mule.sh review
 
 ## Queue
 

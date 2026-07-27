@@ -62,6 +62,10 @@ have something to show. Your report is the whole deliverable and is kept verbati
    receiver names, wrapped errors (`fmt.Errorf("...: %w", err)`), and table-driven tests.
 4. **If you changed behaviour, a test must prove it.** Write one that fails without your
    change. If you cannot write such a test, say so explicitly in the report.
+   This is checked, not trusted: the runner takes your implementation back out, keeps your
+   tests, and requires them to break. A test that passes without your change is rejected and
+   the whole task is thrown away. So do not write a test that asserts something already true
+   in order to have something to show — it will not work, and you will have wasted the run.
 5. Run the gate yourself before finishing: `go test -race ./...` and `gofmt -l .`
    (`go test ./...` without `-race` if the race build is slow, but say which you ran).
 6. Report.
