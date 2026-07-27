@@ -10,14 +10,13 @@ line once you have dealt with it — this file is a queue, not a log.
 
 ---
 
-- **The Pi cannot run the race detector**, so the unattended gate is weaker than yours.
-  ThreadSanitizer needs a 48-bit VMA; the DietPi kernel is built with 39 (`FATAL:
-  ThreadSanitizer: unsupported VMA range / Found 39 - Supported 48`). Measured 2026-07-27.
-  The gate there is `go vet ./... && go test ./...`, green in ~3m over 20 packages.
-  Consequence: **do not queue concurrency work for the mule** — nothing on that machine can
-  catch a data race. Two ways out if you want them, both your call: rebuild the Pi kernel
-  with 48-bit VA, or install Go on the Legion Go (`pacman -S go`, x86_64, no VMA problem)
-  and make the periodic `[legion]` race-check the real concurrency gate.
+- ~~The Pi cannot run the race detector~~ — **resolved 2026-07-27** by installing Go 1.26.5
+  as a userland toolchain on the Legion Go (`~/.local/go`, no root, `rm -rf` to undo). The
+  Pi still cannot run `-race` (39-bit VMA kernel vs the 48 ThreadSanitizer needs), so its
+  gate remains `go vet ./... && go test ./...` — but race coverage now exists on the Legion
+  Go, where the full suite runs clean in ~40s on 16 cores. The standing `race-check` task is
+  the concurrency gate. Concurrency work is queueable again, provided the race-check runs
+  after it.
 - **golangci-lint is not installed on the Pi**, so the mule's second gate is silently absent
   there — `gofmt` still runs, the linter does not. `go install
   github.com/golangci/golangci-lint/cmd/golangci-lint@<the pinned version>` on the Pi would

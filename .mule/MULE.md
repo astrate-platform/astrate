@@ -31,11 +31,11 @@ consequences you must internalise:
 - **No Docker, so no database.** Anything needing a live DB, a broker, or a full stack is a
   `[legion]` task, not yours.
 
-The **Legion Go** (`ssh legion` — 16 cores, 12GB, Docker with the whole Astarte stack up) is
-the muscle. A task line tagged `[legion]` needs it and is skipped automatically when it is
-asleep. It has **no Go toolchain and you must not install one**: use
-`tools/mule.sh legion bench-push`, which cross-compiles the bench binary and copies it over.
-Details in `.mule/recipes/legion-go.md` — read that before any `[legion]` task.
+The **Legion Go** (`ssh legion` — 16 cores, 12GB, Docker with the whole Astarte stack up, Go
+1.26.5 at `~/.local/go`) is the muscle. A task line tagged `[legion]` needs it and is skipped
+automatically when it is asleep. It is the **only** machine here that can run `go test -race`
+(~40s), so that is where race coverage comes from. Details in `.mule/recipes/legion-go.md` —
+read that before any `[legion]` task.
 
 ## What you may and may not do
 
