@@ -44,6 +44,9 @@ MULE_MODEL="${MULE_MODEL:-}"
 # The label that means "a human or a model decided the mule should do this". Only issues
 # carrying it are ever pulled into the queue, so filing an ordinary issue never conscripts it.
 MULE_ISSUE_LABEL="${MULE_ISSUE_LABEL:-mule}"
+# Deliberately NOT the queue label: an alarm about the mule being idle must never become a
+# task the mule then assigns to itself.
+MULE_ALARM_LABEL="${MULE_ALARM_LABEL:-mule-alarm}"
 
 # --- helpers ----------------------------------------------------------------
 
@@ -420,7 +423,8 @@ format MULE.md gives.'
         git -C "$REPO" commit -q -m "mule: $slug passed on $(git -C "$REPO" rev-parse --short HEAD)"
         [ -n "${MULE_PUSH:-}" ] && { git -C "$REPO" push -q origin "$MULE_BRANCH" 2>/dev/null \
           && ok "pushed $MULE_BRANCH" || note "push failed — the work is safe locally"; }
-        ok "checked: $slug clean (${elapsed}s) — stays queued for the next change"
+            beat
+    ok "checked: $slug clean (${elapsed}s) — stays queued for the next change"
         return 0
         ;;
     esac
@@ -454,6 +458,7 @@ format MULE.md gives.'
         fi
         ;;
     esac
+    beat
     ok "landed: $text (${elapsed}s)"
     return 0
   fi
@@ -495,6 +500,8 @@ cmd_tick() {
   # Start from what is actually on origin, so a task is never written against a stale tree
   # and Giulio's own pushes are picked up without anyone logging into the Pi.
   git -C "$REPO" fetch -q origin 2>/dev/null || note "fetch failed — working offline"
+
+  check_pulse
 
   # An empty queue is not a reason to stop — it is the cue to go find work. Charge the refill
   # to the daily budget first, so a recipe that proposes nothing still costs a tick and a
@@ -582,6 +589,53 @@ cmd_refill() {
   # "nothing to propose" there would be a plain lie, and it was one.
   after="$(grep -c '^- \[ \] ' "$TODO" 2>/dev/null | head -1)"
   [ "${after:-0}" -gt "${before:-0}" ]
+}
+
+# The dead-man's switch. Everything in this script that goes wrong goes wrong quietly: a
+# failed fetch, a failed push and an empty queue are all `note`s, and the unit still exits 0.
+# That is deliberate — a timer that mails you about a sleeping handheld is a timer you mute —
+# but it means the mule was green for hours while doing nothing at all, and the way that was
+# discovered was Giulio noticing an empty branch. Once is enough.
+#
+# So: any tick that lands work touches the heartbeat. A tick that finds it stale says so
+# somewhere Giulio will actually see, exactly once per silence.
+beat() { date +%s > "$MULE/.heartbeat"; rm -f "$MULE/.alarmed"; }
+
+check_pulse() {
+  local max="${MULE_IDLE_ALARM_HOURS:-8}" now last age
+  [ "$max" = 0 ] && return 0
+  now="$(date +%s)"
+  if [ ! -f "$MULE/.heartbeat" ]; then beat; return 0; fi
+  last="$(cat "$MULE/.heartbeat" 2>/dev/null)"; [ -n "$last" ] || { beat; return 0; }
+  age=$(( (now - last) / 3600 ))
+  [ "$age" -lt "$max" ] && return 0
+  # One alarm per silence, not one per tick — the alarm is only useful if it is rare.
+  [ -f "$MULE/.alarmed" ] && return 0
+  : > "$MULE/.alarmed"
+  bad "no work has landed in ${age}h — raising the alarm"
+  local body="The mule has not landed any work in ${age} hours (threshold ${max}h).
+
+It is probably still ticking and exiting 0 — that is how this failure looks. Worth checking,
+on the Pi:
+
+    systemctl list-timers mule.timer
+    journalctl -u mule.service --since '-1 day' | tail -50
+    cd /root/astrate-mule && bash tools/mule.sh status
+
+Common causes, all of which have happened: the provider is refusing every run, the queue has
+nothing runnable in it, the working tree is dirty so every tick aborts, or push has been
+failing and the work is only on the Pi.
+
+Filed automatically. Close it — the mule reopens a new one if the silence continues."
+  if command -v gh >/dev/null && [ -n "${MULE_PUSH:-}" ]; then
+    gh issue create --title "mule: nothing has landed in ${age}h" --body "$body" \
+      --label "$MULE_ALARM_LABEL" >/dev/null 2>&1 \
+      && note "filed an idle alarm on GitHub" \
+      && return 0
+  fi
+  # No gh, or it failed: the escalation file is the fallback and it is committed anyway.
+  printf -- '- **The mule has been idle %sh.** %s\n' "$age" \
+    "Filed by the dead-man's switch; see journalctl on the Pi." >> "$MULE/for-giulio.md"
 }
 
 cmd_loop() {

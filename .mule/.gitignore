@@ -9,4 +9,7 @@ task.md
 .bench-linux-amd64
 .last-output
 .rotation
+.heartbeat
+.alarmed
+.impl.patch
 hosts
