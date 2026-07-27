@@ -27,3 +27,4 @@ layer can actually do — read it before deciding whether a kind of task is wort
 | 2026-07-27 | race-check | checked | 65s | 5ac1fdb |
 | 2026-07-27 | issue-6 | done | 401s | 997cdef |
 | 2026-07-27 | race-check | checked | 88s | 70bc4be |
+| 2026-07-27 | store-realm-cascade-policies | done | 122s | 0480501 |
