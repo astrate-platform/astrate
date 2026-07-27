@@ -1,16 +1,23 @@
-code: 47e92a1b3edcec4b615cdd8f0d9274f007b98037
-at:  ccb4450
-ran: 2026-07-27T09:08:58Z on DietPi in 56s
+code: 513ad24fbf2087640a9c4fa085ec0bc2b1d7667c
+at:  a0ae9f4
+ran: 2026-07-27T09:13:05Z on DietPi in 74s
 
 
 > build · big-pickle
 
 → Read .mule/MULE.md
 → Read .mule/task.md
+Let me read the Legion recipe first, as required by MULE.md for `[legion]` tasks.
 → Read .mule/recipes/legion-go.md
-This is a `[legion]` `[readonly]` task: run `go test -race` on the Legion Go and report failures. Let me try to reach it.
+Task: run race detection on the Legion Go, report failures. This is `[legion]` `[readonly]` — no local changes, just SSH + report.
 
-$ ssh legion 'cd ~/astrate && git fetch -q && git merge --ff-only -q origin/main && go test -race ./...' 2>&1
+First, let me check if Legion Go is reachable.
+
+$ ssh legion 'echo reachable' 2>&1
+reachable
+
+Legion Go is up. Running the race detector now.
+$ ssh legion 'cd ~/astrate && git fetch -q && git merge --ff-only -q origin/main && go test -race ./...'
 ok  	github.com/astrate-platform/astrate/cmd/astrate	(cached)
 ?   	github.com/astrate-platform/astrate/docs	[no test files]
 ok  	github.com/astrate-platform/astrate/internal/appengine	(cached)
@@ -38,11 +45,11 @@ ok  	github.com/astrate-platform/astrate/pkg/deviceid	(cached)
 ok  	github.com/astrate-platform/astrate/pkg/interfaceschema	(cached)
 ok  	github.com/astrate-platform/astrate/pkg/payload	(cached)
 
-All tests passed with `-race`. No failures, no races detected. Nothing to report to `for-giulio.md`.
+All tests passed, no races detected. No failures to report.
 
 ```
-Done: race-check — ran go test -race ./... on Legion Go, all packages pass
-Files: none changed
+Done: race-check on Legion Go — all packages pass `go test -race ./...`, no data races found
+Files: none changed (readonly task)
 Verified: ssh legion 'cd ~/astrate && git fetch -q && git merge --ff-only -q origin/main && go test -race ./...' -> pass
 Unsure: nothing
 Follow-ups: none
