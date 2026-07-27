@@ -3,6 +3,7 @@
 package store
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"net/netip"
@@ -263,6 +264,40 @@ func testDevices(t *testing.T, s *Store) {
 		}
 		if d, _ = s.GetDevice(ctx, realm.ID, id); d.Attributes["firmware"] != "1.2.3" {
 			t.Errorf("attributes: %v", d.Attributes)
+		}
+	})
+
+	t.Run("AliasLowestID", func(t *testing.T) {
+		realm := mustCreateRealm(t, s)
+		id1 := mustRegisterDevice(t, s, realm.ID)
+		id2 := mustRegisterDevice(t, s, realm.ID)
+
+		if err := s.PatchDeviceAliases(ctx, realm.ID, id1, map[string]*string{
+			"serial": strPtr("dup-alias"),
+		}); err != nil {
+			t.Fatalf("PatchDeviceAliases id1: %v", err)
+		}
+		if err := s.PatchDeviceAliases(ctx, realm.ID, id2, map[string]*string{
+			"serial": strPtr("dup-alias"),
+		}); err != nil {
+			t.Fatalf("PatchDeviceAliases id2: %v", err)
+		}
+
+		got, err := s.GetDeviceByAlias(ctx, realm.ID, "dup-alias")
+		if err != nil {
+			t.Fatalf("GetDeviceByAlias: %v", err)
+		}
+
+		// Postgres orders UUIDs lexicographically by byte representation.
+		// GetDeviceByAlias uses ORDER BY id LIMIT 1, so the lower ID wins.
+		if bytes.Compare(id1[:], id2[:]) <= 0 {
+			if got.ID != id1 {
+				t.Errorf("expected lower ID %s, got %s", id1, got.ID)
+			}
+		} else {
+			if got.ID != id2 {
+				t.Errorf("expected lower ID %s, got %s", id2, got.ID)
+			}
 		}
 	})
 
