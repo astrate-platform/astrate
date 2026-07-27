@@ -16,6 +16,7 @@ repo for the shape of that trap: recording against a live upstream needs an arch
 unsupervised agent with no diff review).
 
 The worked example this recipe was distilled from — read before triaging a new day's
-output — is `survey-2026-07-27.md` / `issues-2026-07-27.md` on `main`'s history (commit
-`7ebdd6f`), from the one-off run that produced GitHub issues #12-#19 and four entries in
-`.mule/for-giulio.md`.
+output — is `survey-2026-07-27.md` / `issues-2026-07-27.md`, right here on this branch, from
+the one-off run that produced GitHub issues #12-#19 and four entries in `.mule/for-giulio.md`
+on `main`. Triage is done with the `mule-triage` skill; `triaged.md` in this directory tracks
+which dates have already been handled.
