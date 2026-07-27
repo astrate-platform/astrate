@@ -1,36 +1,37 @@
-code: 7d4cac3aed5d71d3ab53b964fc354642428d191d
-at:  5ac1fdb
-ran: 2026-07-27T11:09:36Z on DietPi in 65s
+code: 866c7903a1db82fca70811556d866e64803dbb88
+at:  70bc4be
+ran: 2026-07-27T12:18:52Z on DietPi in 88s
+toolchain: go version go1.26.5 linux/amd64
 
 
 > build · big-pickle
 
 → Read .mule/MULE.md
 → Read .mule/task.md
-This is a `[legion]` `[readonly]` task — run race detection on Legion Go. Let me check if Legion is reachable.
-
-$ ssh -o ConnectTimeout=5 -o BatchMode=yes legion "echo ok" 2>&1
-ok
-
-Legion is up. Let me read the Legion Go recipe first.
 → Read .mule/recipes/legion-go.md
-Now running the race detection on Legion Go:
+Let me check if Legion is reachable, then run the race check.
 
+$ ssh legion 'echo "legion reachable"; uname -a; go version' 2>&1
+legion reachable
+Linux atsetilam-legion 7.1.4-1-cachyos-deckify #1 SMP PREEMPT_DYNAMIC Sun, 19 Jul 2026 20:19:37 +0000 x86_64 GNU/Linux
+go version go1.26.5 linux/amd64
+
+Legion is up with Go 1.26.5. Running the race check now.
 $ ssh legion 'cd ~/astrate && git fetch -q && git merge --ff-only -q origin/main && go test -race ./...' 2>&1
 ok  	github.com/astrate-platform/astrate/cmd/astrate	(cached)
 ?   	github.com/astrate-platform/astrate/docs	[no test files]
 ok  	github.com/astrate-platform/astrate/internal/appengine	(cached)
-ok  	github.com/astrate-platform/astrate/internal/appengine/channels	(cached)
-ok  	github.com/astrate-platform/astrate/internal/appengine/stream	(cached)
-ok  	github.com/astrate-platform/astrate/internal/auth	(cached)
+ok  	github.com/astrate-platform/astrate/internal/appengine/channels	2.605s
+ok  	github.com/astrate-platform/astrate/internal/appengine/stream	1.053s
+ok  	github.com/astrate-platform/astrate/internal/auth	1.160s
 ok  	github.com/astrate-platform/astrate/internal/broker	(cached)
 ok  	github.com/astrate-platform/astrate/internal/config	(cached)
-ok  	github.com/astrate-platform/astrate/internal/engine	(cached)
+ok  	github.com/astrate-platform/astrate/internal/engine	2.127s
 ok  	github.com/astrate-platform/astrate/internal/engine/forward	(cached)
 ok  	github.com/astrate-platform/astrate/internal/engine/stream	(cached)
-ok  	github.com/astrate-platform/astrate/internal/engine/triggers	(cached)
+ok  	github.com/astrate-platform/astrate/internal/engine/triggers	2.345s
 ?   	github.com/astrate-platform/astrate/internal/housekeeping	[no test files]
-ok  	github.com/astrate-platform/astrate/internal/httpx	(cached)
+ok  	github.com/astrate-platform/astrate/internal/httpx	1.009s
 ok  	github.com/astrate-platform/astrate/internal/observability	(cached)
 ok  	github.com/astrate-platform/astrate/internal/pairing	(cached)
 ok  	github.com/astrate-platform/astrate/internal/pairing/ca	(cached)
@@ -44,10 +45,10 @@ ok  	github.com/astrate-platform/astrate/pkg/deviceid	(cached)
 ok  	github.com/astrate-platform/astrate/pkg/interfaceschema	(cached)
 ok  	github.com/astrate-platform/astrate/pkg/payload	(cached)
 
-All 26 test packages passed with `-race`, no data races detected. This is a `[readonly]` task — nothing to change, nothing to report to `for-giulio.md`.
+All tests pass, no races detected. This is a `[readonly]` task — nothing to write, no report to `for-giulio.md`.
 
-Done: race-check passed — all tests pass under -race on Legion Go
-Files: none changed (readonly task)
-Verified: `ssh legion 'cd ~/astrate && git fetch -q && git merge --ff-only -q origin/main && go test -race ./...'` -> pass (26 packages, 0 races)
+Done: Race check passed — no data races detected on Legion Go
+Files: none (readonly)
+Verified: `ssh legion 'cd ~/astrate && git fetch -q && git merge --ff-only -q origin/main && go test -race ./...'` -> pass
 Unsure: nothing
 Follow-ups: none
