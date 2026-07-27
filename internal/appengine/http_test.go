@@ -301,6 +301,20 @@ func TestAppEngine(t *testing.T) {
 			}
 		}
 
+		// downsample_to=2 is legal (the parser only rejects < 2), but toolkit
+		// lttb() refuses a resolution below 3 outright — "resolution must be
+		// greater than 2". On a toolkit-bearing server the service must fall
+		// back to the time_bucket path for it rather than surface a 500.
+		var two []Sample
+		rec := r.req(t, http.MethodGet, path+"?downsample_to=2&sort=ascending", "", r.token)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("downsample_to=2: got %d, want 200 (body %s)", rec.Code, rec.Body.String())
+		}
+		decodeData(t, rec, &two)
+		if len(two) == 0 {
+			t.Error("downsample_to=2 returned no points")
+		}
+
 		// store.Downsample reads the individual-datastream table only, so an
 		// object-aggregated interface cannot be downsampled. Saying so is the
 		// point: without the check it would silently return an empty array.

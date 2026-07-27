@@ -69,7 +69,10 @@ jobs:
     timeout-minutes: 45
     services:
       timescaledb:
-        image: timescale/timescaledb:latest-pg16
+        # -ha, not the plain image: it is the only one carrying
+        # timescaledb_toolkit, and CI must exercise the lttb() downsampling
+        # path on the same image developers run locally (docker-compose.yml).
+        image: timescale/timescaledb-ha:pg16
         env:
           POSTGRES_DB: astrate
           POSTGRES_USER: astrate
@@ -103,7 +106,10 @@ jobs:
     timeout-minutes: 90
     services:
       timescaledb:
-        image: timescale/timescaledb:latest-pg16
+        # -ha, not the plain image: it is the only one carrying
+        # timescaledb_toolkit, and CI must exercise the lttb() downsampling
+        # path on the same image developers run locally (docker-compose.yml).
+        image: timescale/timescaledb-ha:pg16
         env:
           POSTGRES_DB: astrate
           POSTGRES_USER: astrate

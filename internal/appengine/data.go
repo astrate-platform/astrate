@@ -140,6 +140,18 @@ func (s *Service) datastreamData(ctx context.Context, r *resolved, path string, 
 		if !ok {
 			return []Sample{}, nil
 		}
+		// lttb rejects resolution < 3, but downsample_to permits 2 — fall back to bucket path.
+		if s.st.HasToolkitLTTB() && opts.DownsamplePoints >= 3 {
+			points, err := s.st.DownsampleLTTB(ctx, q, opts.DownsamplePoints)
+			if err != nil {
+				return nil, err
+			}
+			out := make([]Sample, len(points))
+			for i := range points {
+				out[i] = Sample{Value: points[i].Value, Timestamp: points[i].Bucket}
+			}
+			return out, nil
+		}
 		bucket := bucketFor(last.Sub(first), opts.DownsamplePoints)
 		if bucket <= 0 {
 			// A zero-span series (one sample or simultaneous samples) produces
