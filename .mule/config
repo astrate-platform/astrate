@@ -1,0 +1,51 @@
+# mule config for this repo. Sourced as bash; env vars override it.
+#
+# This file is read on the Mac AND on the Pi, which do not have the same toolchain, so it
+# detects rather than hardcodes. Measured facts behind the detection:
+#
+#   Mac (arm64 darwin) : go test -race ./...  green, golangci-lint pinned in ~/go/bin
+#   Pi  (arm64 linux)  : go test ./...        green in ~3m over 20 packages
+#                        go test -race        IMPOSSIBLE — see below
+#
+# **The race detector cannot run on the Pi.** ThreadSanitizer needs a 48-bit VMA and this
+# kernel is built with 39 ("FATAL: ThreadSanitizer: unsupported VMA range / Found 39 -
+# Supported 48"). That is a kernel config, not a flake, and no amount of retrying changes it.
+# So the unattended gate is weaker than the Mac's by construction: concurrency bugs are not
+# caught by the Pi. That is the single most important thing to know about this setup — it is
+# why concurrency work should not be queued for the mule, and why there is a periodic
+# [legion] race-check task instead.
+
+_gcl="$(command -v golangci-lint || echo "$HOME/go/bin/golangci-lint")"
+
+if go test -race -run XXX_nonexistent ./pkg/payload >/dev/null 2>&1; then
+  MULE_TEST_CMD="go test -race ./..."
+else
+  # No race detector here. `go vet` is not a replacement, but it is free and it catches a
+  # different class of real defect, so it is not nothing.
+  MULE_TEST_CMD="go vet ./... && go test ./..."
+fi
+
+if [ -x "$_gcl" ]; then
+  MULE_LINT_CMD="$_gcl run ./..."
+  MULE_FIX_CMD="gofmt -w . && $_gcl run --fix ./... >/dev/null 2>&1 || true"
+else
+  MULE_LINT_CMD=""            # absent on the Pi; gofmt still runs
+  MULE_FIX_CMD="gofmt -w ."
+fi
+
+# Paths the mule must never modify: frozen spec, schema decisions, Giulio's voice, build pins.
+MULE_NEVER="docs/DESIGN.md docs/ROADMAP.md docs/site/* migrations/* .github/* deploy/* go.mod go.sum Dockerfile docker-compose.yml .trickle/*"
+
+# The mule never commits to main.
+MULE_BRANCH="mule/queue"
+
+# Per-task budget in seconds. A task needing more than this was specced too big. Generous
+# here because the Pi is slow: the gate alone is 3 minutes of it.
+MULE_TIMEOUT="1200"
+
+# How many tasks the timer may run per day. The provider is free; do not hammer it. At one
+# task per 30-minute tick the ceiling would be 48, so this is a deliberate ~3x reduction.
+MULE_DAILY_MAX="16"
+
+MULE_AGENT="build"
+MULE_MODEL=""

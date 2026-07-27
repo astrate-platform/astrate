@@ -1,0 +1,23 @@
+# Machines the mule can reach. Sourced as bash by tools/mule.sh; env vars override.
+#
+# The mule itself lives on the Pi. The Legion Go is the muscle: it is the only machine here
+# with the RAM and cores to hold a full Astarte stack next to an Astrate one, and it already
+# does — 15 containers, Scylla and VerneMQ included.
+
+# The Raspberry Pi (DietPi, 4 cores, 3.7GB, no Docker). Runs the queue on a timer.
+MULE_PI_SSH="root@192.168.0.XX"
+MULE_PI_REPO="/root/astrate-mule"
+
+# The Lenovo Legion Go (CachyOS, 16 cores, 12GB, Docker with the Astarte stack up).
+# It has no Go toolchain — the bench binary is cross-compiled and copied over instead.
+MULE_LEGION_SSH="user@192.168.0.YY"
+MULE_LEGION_REPO="/home/user/astrate"
+
+# A task tagged [legion] runs only when this probe passes. Cheap, and it must stay cheap:
+# it runs before every single tick.
+MULE_LEGION_PROBE='docker info >/dev/null 2>&1 && test -d '"$MULE_LEGION_REPO"
+
+# SSH options for every remote call. BatchMode so a missing key fails instead of prompting
+# forever on a machine nobody is watching — the exact failure an unattended timer cannot
+# survive.
+MULE_SSH_OPTS="-o BatchMode=yes -o ConnectTimeout=6 -o ServerAliveInterval=15 -o ServerAliveCountMax=3"
