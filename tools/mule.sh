@@ -160,6 +160,15 @@ gates() {
 # script runs on both. Getting it wrong on Linux is silent and expensive: `sed -i '' 32s/...`
 # makes sed read the *script* as a filename, so the completed task was never marked [x] and
 # would have been re-run every tick forever, against a provider we are trying not to abuse.
+# Did opencode fail because of the far end rather than because of the task? The provider is
+# free, so "not there right now" is a normal condition, not a defect in the queue. Observed on
+# 2026-07-27: a tick died with "Error: No provider available" and the identical command under
+# the identical systemd environment succeeded two minutes later. Kept deliberately narrow —
+# anything not listed here is still treated as a real failure and blocks the task.
+is_transient() {
+  grep -qiE 'no provider available|rate.?limit|too many requests|\b(429|500|502|503|504)\b|econnreset|etimedout|enotfound|socket hang up|network error|fetch failed' "$1"
+}
+
 sed_i() {
   if sed --version >/dev/null 2>&1; then sed -i "$@"; else sed -i '' "$@"; fi
 }
@@ -278,8 +287,9 @@ format MULE.md gives.'
 
   local sentinel="$MULE/.timeout"; rm -f "$sentinel"
   local started; started="$(date +%s)"
+  local outlog="$MULE/.last-output"
   ( cd "$REPO" && run_with_timeout "$MULE_TIMEOUT" "$sentinel" "${run[@]}" 2>&1 ) \
-    | sed $'s/\033\\[[0-9;]*[A-Za-z]//g' | cat -s
+    | sed $'s/\033\\[[0-9;]*[A-Za-z]//g' | cat -s | tee "$outlog"
   local rc=${PIPESTATUS[0]} elapsed=$(( $(date +%s) - started ))
   local timed_out=0; [ -f "$sentinel" ] && timed_out=1
   rm -f "$sentinel" "$taskfile"
@@ -287,6 +297,15 @@ format MULE.md gives.'
   local verdict="" reason=""
   if [ "$timed_out" = 1 ]; then
     verdict=blocked; reason="TIMEOUT after ${elapsed}s — task too big, split it"
+  elif [ "$rc" -ne 0 ] && [ -z "$(git -C "$REPO" status --porcelain -- . ':!.mule')" ] && is_transient "$outlog"; then
+    # The provider is free and occasionally just isn't there. That is not the task's fault,
+    # and marking it `- [!]` would retire a perfectly good task forever on a network blip.
+    # Put the tree back, leave the line open, and let the next tick have another go.
+    git -C "$REPO" checkout -- . 2>/dev/null; git -C "$REPO" clean -fdq -e .mule 2>/dev/null
+    log_row "$slug" "transient" "$elapsed" "$(head -c 120 "$outlog" | tr '\n' ' ')"
+    git -C "$REPO" add "$LOG" >/dev/null 2>&1 && git -C "$REPO" commit -q -m "mule: retry $slug"
+    note "provider hiccup, not a task failure — leaving $slug open for the next tick"
+    return 8
   elif [ "$rc" -ne 0 ]; then
     verdict=blocked; reason="opencode exited $rc"
   elif ! check_never; then
@@ -355,7 +374,12 @@ cmd_tick() {
   first_open >/dev/null 2>&1 || { note "queue empty — nothing to do"; exit 0; }
   echo "$today $((count + 1))" > "$stamp"
   note "tick $((count + 1))/${MULE_DAILY_MAX:-16} for $today"
-  cmd_next
+  cmd_next; local rc=$?
+  # 8 is "the provider was down" — the task is untouched and still queued, so this tick did
+  # nothing wrong. Exiting non-zero here would just paint the timer red for someone else's
+  # outage.
+  [ "$rc" = 8 ] && exit 0
+  return "$rc"
 }
 
 cmd_loop() {
@@ -363,6 +387,9 @@ cmd_loop() {
   while [ "$i" -lt "$budget" ]; do
     cmd_next; local rc=$?
     [ "$rc" = 9 ] && return 0                       # queue drained; menu already printed
+    # 8 = provider outage. Retrying in a tight loop would only hammer it, and the task is
+    # still queued, so stop here and let the timer come back in half an hour.
+    [ "$rc" = 8 ] && { note "stopping the loop — the provider is down, the queue is intact"; return 0; }
     [ "$rc" != 0 ] && fails=$((fails+1))
     # Two consecutive blocks means something systemic — stop rather than burn the queue.
     [ "$fails" -ge 2 ] && { bad "two blocked tasks — stopping, a human should look"; return 1; }

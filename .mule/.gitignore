@@ -7,4 +7,5 @@ task.md
 .lock
 .budget
 .bench-linux-amd64
+.last-output
 hosts
