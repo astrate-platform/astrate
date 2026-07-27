@@ -181,14 +181,49 @@ static_headers = { Authorization = "Bearer tok", X-Forward = "yes" }
 	}
 }
 
+func TestTriggersForwardNATSRoundTrip(t *testing.T) {
+	body := `
+[database]
+dsn = "x"
+[mqtt]
+insecure_dev_mode = true
+[triggers.forward]
+kind = "nats"
+url = "nats://bus.example:4222"
+subject = "astrate.triggers"
+`
+	cfg, err := Load(writeTOML(t, body))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	f := cfg.Triggers.Forward
+	if f.Kind != "nats" {
+		t.Errorf("Kind = %q, want nats", f.Kind)
+	}
+	if f.URL != "nats://bus.example:4222" {
+		t.Errorf("URL = %q", f.URL)
+	}
+	if f.Subject != "astrate.triggers" {
+		t.Errorf("Subject = %q, want astrate.triggers", f.Subject)
+	}
+}
+
 func TestTriggersForwardValidation(t *testing.T) {
 	cases := map[string]struct {
 		body    string
 		wantErr string
 	}{
-		"kind nats": {
-			`[database]` + "\ndsn=\"x\"\n[mqtt]\ninsecure_dev_mode=true\n[triggers.forward]\nkind=\"nats\"",
+		"kind unknown": {
+			`[database]` + "\ndsn=\"x\"\n[mqtt]\ninsecure_dev_mode=true\n[triggers.forward]\nkind=\"amqp\"",
 			"kind",
+		},
+		"nats missing url": {
+			`[database]` + "\ndsn=\"x\"\n[mqtt]\ninsecure_dev_mode=true\n[triggers.forward]\nkind=\"nats\"",
+			"url is required",
+		},
+		"nats missing subject": {
+			`[database]` + "\ndsn=\"x\"\n[mqtt]\ninsecure_dev_mode=true\n[triggers.forward]\nkind=\"nats\"\nurl=\"nats://bus.example:4222\"",
+			"subject is required",
 		},
 		// An absent url is refused by the absolute-URL rule as well, so
 		// asserting only that the message mentions "url" leaves the dedicated

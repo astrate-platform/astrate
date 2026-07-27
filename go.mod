@@ -14,11 +14,16 @@ require (
 	github.com/jackc/pgx/v5 v5.10.0 // Postgres/TimescaleDB driver + pgxpool (§1.3)
 	github.com/mochi-mqtt/server/v2 v2.7.9 // embedded MQTT broker (§1.1)
 	github.com/prometheus/client_golang v1.23.2 // metrics (§5.2)
-	github.com/testcontainers/testcontainers-go v0.42.0 // T2 integration harness (§5.4)
+	github.com/testcontainers/testcontainers-go v0.43.0 // T2 integration harness (§5.4)
 	github.com/testcontainers/testcontainers-go/modules/postgres v0.42.0 // Timescale container module
 	go.etcd.io/bbolt v1.4.3 // broker session store (§3.1; pinned over pebble)
 	go.mongodb.org/mongo-driver/v2 v2.6.0 // BSON raw-document API only (§3.5.5)
 	golang.org/x/crypto v0.53.0 // bcrypt cost 10 for credentials secrets (§4.1)
+)
+
+require (
+	github.com/nats-io/nats.go v1.52.0
+	github.com/testcontainers/testcontainers-go/modules/nats v0.43.0
 )
 
 require (
@@ -54,7 +59,7 @@ require (
 	github.com/magiconair/properties v1.8.10 // indirect
 	github.com/moby/docker-image-spec v1.3.1 // indirect
 	github.com/moby/go-archive v0.2.0 // indirect
-	github.com/moby/moby/api v1.54.1 // indirect
+	github.com/moby/moby/api v1.54.2 // indirect
 	github.com/moby/moby/client v0.4.0 // indirect
 	github.com/moby/patternmatcher v0.6.1 // indirect
 	github.com/moby/sys/sequential v0.6.0 // indirect
@@ -62,6 +67,8 @@ require (
 	github.com/moby/sys/userns v0.1.0 // indirect
 	github.com/moby/term v0.5.2 // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
+	github.com/nats-io/nkeys v0.4.15 // indirect
+	github.com/nats-io/nuid v1.0.1 // indirect
 	github.com/opencontainers/go-digest v1.0.0 // indirect
 	github.com/opencontainers/image-spec v1.1.1 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
@@ -70,7 +77,7 @@ require (
 	github.com/prometheus/common v0.66.1 // indirect
 	github.com/prometheus/procfs v0.16.1 // indirect
 	github.com/rs/xid v1.4.0 // indirect
-	github.com/shirou/gopsutil/v4 v4.26.3 // indirect
+	github.com/shirou/gopsutil/v4 v4.26.5 // indirect
 	github.com/sirupsen/logrus v1.9.4 // indirect
 	github.com/stretchr/testify v1.11.1 // indirect
 	github.com/tklauser/go-sysconf v0.3.16 // indirect

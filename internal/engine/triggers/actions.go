@@ -95,11 +95,11 @@ func parseAction(raw json.RawMessage) (*Action, []string, error) {
 // Forwarder is the extension point for non-HTTP trigger actions
 // (docs/DESIGN.md §1.1: "AMQP action replaced by optional NATS/HTTP
 // forwarding"). The executor hands it every matched event whose action is
-// not an HTTP webhook.
-//
-// TODO(extension): provide NATS and HTTP-bus Forwarder implementations; the
-// default (nil) logs the event and counts it as skipped, which is the
-// designed v1 behaviour, not a gap in this code path.
+// not an HTTP webhook. internal/engine/forward provides the HTTP and NATS
+// (build-tag "nats") implementations, wired from [triggers.forward] by
+// internal/config and cmd/astrate. The default (nil) logs the event and
+// counts it as skipped, which is the designed behaviour, not a gap in this
+// code path.
 type Forwarder interface {
 	// Forward delivers one rendered event for a custom action.
 	Forward(ctx context.Context, realm, trigger string, action json.RawMessage, event []byte) error
