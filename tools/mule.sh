@@ -17,6 +17,7 @@
 #   mule.sh menu             print the "what next?" options for the user
 #   mule.sh recipe <name>    run a recipe: proposes new tasks, executes none
 #   mule.sh review           show what is waiting to be reviewed before merge
+#   mule.sh budget [reset]   ticks used today; reset clears the daily cap
 #   mule.sh revert           undo the last mule commit
 #
 set -uo pipefail
@@ -277,7 +278,8 @@ cmd_preflight() {
   # a line in the journal nobody reads.
   local fn missing=0
   for fn in beat check_pulse first_open code_id line_slug proof_gate gates issue_tasks \
-            issue_done refill_from_recipe cmd_next cmd_refill cmd_review sed_i is_transient \
+            issue_done refill_from_recipe cmd_next cmd_refill cmd_review cmd_budget \
+            sed_i is_transient \
             run_with_timeout ensure_branch legion_up check_never log_row; do
     declare -F "$fn" >/dev/null || { bad "internal: $fn() is called but not defined"; missing=1; }
   done
@@ -688,6 +690,23 @@ Filed automatically. Close it — the mule reopens a new one if the silence cont
     "Filed by the dead-man's switch; see journalctl on the Pi." >> "$MULE/for-giulio.md"
 }
 
+# Today's tick count. Worth a command rather than hand-editing a gitignored file over ssh,
+# and worth being able to reset: the budget is there to be polite to a free provider, so a
+# day's allowance spent on testing the runner rather than on running tasks is not a reason to
+# stay quiet until midnight. Refused runs already refund themselves.
+cmd_budget() {
+  local stamp="$MULE/.budget" today; today="$(date +%F)"
+  local d="" c=0
+  [ -f "$stamp" ] && read -r d c < "$stamp"
+  [ "$d" = "$today" ] || c=0
+  case "${1:-show}" in
+    show) echo "$c/${MULE_DAILY_MAX:-16} ticks used today ($today)";;
+    reset) echo "$today 0" > "$stamp"; ok "budget reset — ${MULE_DAILY_MAX:-16} ticks available today";;
+    [0-9]*) echo "$today $1" > "$stamp"; ok "budget set to $1/${MULE_DAILY_MAX:-16} for today";;
+    *) die "budget: show | reset | <n>";;
+  esac
+}
+
 # What a reviewer needs in order to decide whether any of this should reach main. The mule
 # never merges: the gates prove a change compiles, passes tests and does not touch the frozen
 # files, which is emphatically not the same as the change being worth having. Only a model or
@@ -850,6 +869,7 @@ case "${1:-}" in
   recipe)    shift; cmd_recipe "$@";;
   refill)    shift; cmd_refill "$@";;
   review)    shift; cmd_review "$@";;
+  budget)    shift; cmd_budget "$@";;
   legion)    shift; cmd_legion "$@";;
   tick)      shift; cmd_tick "$@";;
   revert)    shift; cmd_revert "$@";;
