@@ -1,20 +1,25 @@
-code: f555e2f2bc98ae5c7cd7deba5030ab4c54693b63
-at:  7099f80
-ran: 2026-07-27T09:16:38Z on DietPi in 82s
+code: 9c9e6b89dfee6fbb71cd4d08a0cee94888d74ce5
+at:  13cd7f1
+ran: 2026-07-27T10:34:09Z on DietPi in 59s
 
 
 > build · big-pickle
 
 → Read .mule/MULE.md
 → Read .mule/task.md
-→ Read .mule/recipes/legion-go.md
-The task is a `[legion] [readonly]` race-check: SSH into Legion Go, fetch/merge, run `go test -race ./...`, and report any failures. Let me check if it's reachable first.
+This is a `[legion] [readonly]` task: run `go test -race ./...` on the Legion Go and report failures. Let me try to reach Legion.
 
-$ ssh legion 'echo reachable' 2>&1
+$ ssh -o ConnectTimeout=5 -o BatchMode=yes legion "echo reachable" 2>&1
 reachable
 
-Good, Legion Go is up. Running the race check now.
-$ ssh legion 'cd ~/astrate && git fetch -q && git merge --ff-only -q origin/main && go test -race ./... 2>&1'
+Legion is reachable. Running the race test now.
+$ ssh legion "cd ~/astrate && git fetch -q && git merge --ff-only -q origin/main && go test -race ./... 2>&1; echo EXIT_CODE:\$?"
+fish: $? is not the exit status. In fish, please use $status.
+cd ~/astrate && git fetch -q && git merge --ff-only -q origin/main && go test -race ./... 2>&1; echo EXIT_CODE:$?
+                                                                                                                ^
+
+Legion uses fish shell. Let me adjust.
+$ ssh legion 'cd ~/astrate && git fetch -q && git merge --ff-only -q origin/main && go test -race ./... 2>&1; echo EXIT_CODE:$status'
 ok  	github.com/astrate-platform/astrate/cmd/astrate	(cached)
 ?   	github.com/astrate-platform/astrate/docs	[no test files]
 ok  	github.com/astrate-platform/astrate/internal/appengine	(cached)
@@ -41,11 +46,14 @@ ok  	github.com/astrate-platform/astrate/pkg/astarteapi	(cached)
 ok  	github.com/astrate-platform/astrate/pkg/deviceid	(cached)
 ok  	github.com/astrate-platform/astrate/pkg/interfaceschema	(cached)
 ok  	github.com/astrate-platform/astrate/pkg/payload	(cached)
+EXIT_CODE:0
 
-All packages passed with `-race` — no data races detected (all cached, clean merge to origin/main).
+All packages passed, no races detected. Clean run.
 
-**Done:** race-check on Legion Go — all tests pass, no races detected
-**Files:** none changed (readonly task)
-**Verified:** `ssh legion 'cd ~/astrate && git fetch -q && git merge --ff-only -q origin/main && go test -race ./...'` → all ok, cached
-**Unsure:** nothing
-**Follow-ups:** none
+```
+Done: Race check on Legion Go — all 21 packages passed, no races found
+Files: none (readonly task, no changes made)
+Verified: ssh legion "cd ~/astrate && git fetch -q && git merge --ff-only -q origin/main && go test -race ./..." -> pass (exit 0)
+Unsure: nothing
+Follow-ups: none
+```
