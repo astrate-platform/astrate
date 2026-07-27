@@ -31,7 +31,7 @@ type ownershipFn func(iface string) (interfaceschema.Ownership, bool)
 // checkACL is the pure §3.2 ACL matrix decision for a device whose base
 // topic is base ("<realm>/<device_id>"):
 //
-//	PUBLISH:   base | base/control/emptyCache | base/control/producer/properties
+//	PUBLISH:   base | base/capabilities | base/control/emptyCache | base/control/producer/properties
 //	           | base/<iface><path> for introspected ownership:device interfaces
 //	SUBSCRIBE: any filter within the device's own subtree (base/...) — a
 //	           tolerated superset; harmless because a device can only ever
@@ -59,7 +59,7 @@ func checkACL(base, topic string, write bool, ownership ownershipFn) bool {
 		if !ok {
 			return false
 		}
-		if rest == "control/emptyCache" || rest == "control/producer/properties" {
+		if rest == "capabilities" || rest == "control/emptyCache" || rest == "control/producer/properties" {
 			return true
 		}
 		iface, path, found := strings.Cut(rest, "/")

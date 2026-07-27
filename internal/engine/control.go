@@ -184,8 +184,9 @@ func (e *Engine) resendServerProperties(ctx context.Context, realm *realmSchema,
 // property paths (docs/DESIGN.md §3.4). It is sent after emptyCache, after
 // a device (re)connects, and after a server-owned property unset; the list
 // is always the full current truth, so the message is idempotent and safe
-// to send at any time. Control payloads keep the zlib+size framing for JSON
-// devices too (docs/DESIGN.md §3.5.4).
+// to send at any time. When the device has declared
+// purge_properties_compression_format = "plaintext" via the capabilities
+// topic, the payload is sent uncompressed.
 func (e *Engine) sendConsumerProperties(ctx context.Context, realm *realmSchema, id deviceid.ID) error {
 	props, err := e.st.ListServerOwnedProperties(ctx, realm.id, id)
 	if err != nil {
@@ -199,9 +200,19 @@ func (e *Engine) sendConsumerProperties(ctx context.Context, realm *realmSchema,
 		}
 		entries = append(entries, ci.Name+props[i].Path)
 	}
-	frame, err := deflateProperties(entries)
-	if err != nil {
-		return fmt.Errorf("engine: building consumer/properties payload: %w", err)
+	compression := compressionZlib
+	if dev := e.devices.peek(realm.name, id); dev != nil {
+		compression = purgeCompressionFor(dev)
+	}
+	var frame []byte
+	switch compression {
+	case compressionPlaintext:
+		frame = plaintextProperties(entries)
+	default:
+		frame, err = deflateProperties(entries)
+		if err != nil {
+			return fmt.Errorf("engine: building consumer/properties payload: %w", err)
+		}
 	}
 	topic := deviceTopic(realm.name, id, controlPrefix+controlConsumerProperties)
 	if err := e.broker.Publish(topic, frame, 2, false, 0); err != nil {
@@ -260,6 +271,14 @@ func deflateProperties(entries []string) ([]byte, error) {
 		return nil, err
 	}
 	return buf.Bytes(), nil
+}
+
+// plaintextProperties returns the `;`-joined property list as raw bytes,
+// without zlib framing. Used when the device has set
+// purge_properties_compression_format = "plaintext" via the capabilities
+// topic (upstream MQTT v1 §2).
+func plaintextProperties(entries []string) []byte {
+	return []byte(strings.Join(entries, ";"))
 }
 
 // inflateProperties parses a zlib control payload with the docs/DESIGN.md

@@ -33,6 +33,7 @@ func TestCheckACLMatrix(t *testing.T) {
 	}{
 		// --- PUBLISH: allowed rows ---
 		{"pub introspection base", base, true, true},
+		{"pub capabilities", base + "/capabilities", true, true},
 		{"pub control emptyCache", base + "/control/emptyCache", true, true},
 		{"pub control producer properties", base + "/control/producer/properties", true, true},
 		{"pub device-owned path", base + "/com.ex.DeviceData/value", true, true},

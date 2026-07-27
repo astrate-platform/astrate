@@ -20,6 +20,8 @@ type topicKind uint8
 const (
 	// kindIntrospection is the bare "<realm>/<device_id>" topic.
 	kindIntrospection topicKind = iota + 1
+	// kindCapabilities is "<realm>/<device_id>/capabilities".
+	kindCapabilities
 	// kindControl is "<realm>/<device_id>/control/...".
 	kindControl
 	// kindData is a data publish on "<realm>/<device_id>/<interface><path>".
@@ -57,11 +59,15 @@ func splitDeviceTopic(topic, realm string, id deviceid.ID) (rest string, ok bool
 // classify buckets rest into the §3.3 taxonomy. For control topics, subpath
 // is the remainder after "control/" (e.g. "emptyCache",
 // "producer/properties"); a bare "control" yields an empty subpath, which
-// the control handler rejects.
+// the control handler rejects. The capabilities topic is a standalone kind
+// because it carries a BSON document of device capabilities, not a control
+// subpath.
 func classify(rest string) (kind topicKind, subpath string) {
 	switch {
 	case rest == "":
 		return kindIntrospection, ""
+	case rest == "capabilities":
+		return kindCapabilities, ""
 	case rest == "control":
 		return kindControl, ""
 	case strings.HasPrefix(rest, controlPrefix):
