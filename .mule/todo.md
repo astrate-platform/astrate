@@ -29,4 +29,4 @@ alone -- past the per-task budget -- and because they want someone watching. Run
 - [~] bench-giant-astrate [legion]: run `bench/scripts/run-tier.sh giant astrate` against Legion Go Astrate, commit results (two runs minimum)
 - [~] bench-big-astarte [legion]: run `bench/scripts/run-tier.sh big astarte` against Legion Go Astarte, commit results (two runs minimum)
 - [~] bench-giant-astarte [legion]: run `bench/scripts/run-tier.sh giant astarte` against Legion Go Astarte, commit results (two runs minimum)
-- [ ] race-check: run `go test -race ./...` on the Legion Go (`ssh legion`) and report failures to .mule/for-giulio.md — the Pi cannot run it, so this is the only race coverage there is. If Go is not installed there, write that one line to .mule/for-giulio.md and stop; do not install it. [legion]
+- [x] race-check: run `go test -race ./...` on the Legion Go (`ssh legion`) and report failures to .mule/for-giulio.md — the Pi cannot run it, so this is the only race coverage there is. If Go is not installed there, write that one line to .mule/for-giulio.md and stop; do not install it. [legion]
