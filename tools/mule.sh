@@ -156,6 +156,14 @@ gates() {
   return $rc
 }
 
+# GNU sed takes -i with no argument; BSD/macOS sed requires an empty suffix after it. This
+# script runs on both. Getting it wrong on Linux is silent and expensive: `sed -i '' 32s/...`
+# makes sed read the *script* as a filename, so the completed task was never marked [x] and
+# would have been re-run every tick forever, against a provider we are trying not to abuse.
+sed_i() {
+  if sed --version >/dev/null 2>&1; then sed -i "$@"; else sed -i '' "$@"; fi
+}
+
 log_row() { printf '| %s | %s | %s | %ss | %s |\n' "$(date +%F)" "$1" "$2" "$3" "${4:-}" >> "$LOG"; }
 
 # --- preflight --------------------------------------------------------------
@@ -295,7 +303,7 @@ format MULE.md gives.'
     git -C "$REPO" add -A
     git -C "$REPO" commit -q -m "mule: $text" || { bad "commit failed"; return 1; }
     # mark the line done, in the commit that follows
-    sed -i '' "${lineno}s/^- \[ \]/- [x]/" "$TODO"
+    sed_i "${lineno}s/^- \[ \]/- [x]/" "$TODO"
     log_row "$slug" done "$elapsed" "$(git -C "$REPO" rev-parse --short HEAD)"
     git -C "$REPO" add "$TODO" "$LOG" && git -C "$REPO" commit -q -m "mule: log $slug"
     if [ -n "${MULE_PUSH:-}" ]; then
@@ -310,8 +318,8 @@ format MULE.md gives.'
   mkdir -p "$MULE/failed"
   git -C "$REPO" diff > "$MULE/failed/$slug.diff" 2>/dev/null
   git -C "$REPO" checkout -- . 2>/dev/null; git -C "$REPO" clean -fdq -e .mule 2>/dev/null
-  sed -i '' "${lineno}s/^- \[ \]/- [!]/" "$TODO"
-  sed -i '' "${lineno}s|\$| — BLOCKED: $reason|" "$TODO"
+  sed_i "${lineno}s/^- \[ \]/- [!]/" "$TODO"
+  sed_i "${lineno}s|\$| — BLOCKED: $reason|" "$TODO"
   log_row "$slug" "blocked" "$elapsed" "$reason"
   git -C "$REPO" add "$TODO" "$LOG" >/dev/null 2>&1 && git -C "$REPO" commit -q -m "mule: blocked $slug"
   bad "blocked: $reason (fragment kept at .mule/failed/$slug.diff)"
