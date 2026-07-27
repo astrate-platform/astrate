@@ -46,13 +46,19 @@ nav:
   - MQTT Protocol: mqtt-protocol.md
   - Pairing & Security: pairing-and-security.md
   - Payload Formats: payload-formats.md
+  - JSON Payload Profile: json-payload-profile.md
   - AppEngine API: appengine-api.md
   - Realm Management API: realm-management-api.md
   - Housekeeping API: housekeeping-api.md
   - Interface Schema: interface-schema.md
   - Triggers: triggers.md
   - Deployment: deployment.md
+  - Operations: operations.md
   - Observability: observability.md
   - Compatibility: compatibility.md
+  - Configuration Reference: configuration-reference.md
+  - Troubleshooting: troubleshooting.md
+  - Contributing: contributing.md
+  - Migration from Astarte: migration-from-astarte.md
   - API Explorer: swagger.md
   - Quickstart: quickstart.md

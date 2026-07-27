@@ -2,16 +2,16 @@
 
 Astrate is one static binary plus PostgreSQL/TimescaleDB. This guide covers
 configuration, the deployment profiles, backups, and key management. The
-normative architecture is in [DESIGN.md](DESIGN.md); the milestone plan is in
-[ROADMAP.md](ROADMAP.md).
+normative architecture is in [Architecture](architecture.md); the milestone plan is in
+[ROADMAP](ROADMAP.md).
 
 ## Configuration
 
 Astrate reads one TOML file (`astrate -config path.toml`) with `ASTRATE_*`
 environment overrides; precedence is **defaults < TOML < environment**. The
-full key-by-key reference is in [Configuration Reference](site/configuration-reference.md);
+full key-by-key reference is in [Configuration Reference](configuration-reference.md);
 the annotated example is
-[`internal/config/config.example.toml`](../internal/config/config.example.toml).
+[`internal/config/config.example.toml`](https://github.com/atsetilam/astrate/blob/main/internal/config/config.example.toml).
 
 Only two things are mandatory:
 
@@ -95,10 +95,9 @@ without a restart.
 ## Dashboard
 
 The unmodified upstream Astarte Dashboard works against Astrate (see
-`docs/COMPATIBILITY.md`). The compose `full` profile ships it pre-wired at
-`http://localhost:4040`: the `test` realm is auto-provisioned with the
-committed **dev-only** keypair under `deploy/devrealm/`, and a login token
-comes from
+[Compatibility](compatibility.md)). The compose `full` profile ships it pre-wired at
+`http://localhost:4040`: the `test` realm is auto-provisioned with the committed
+**dev-only** keypair under `deploy/devrealm/`, and a login token comes from
 
 ```sh
 astartectl utils gen-jwt all-realm-apis -k deploy/devrealm/realm_private.pem
@@ -141,3 +140,11 @@ key. To recover from a suspected master-key or CA compromise:
 Rotate realm REST/JWT signing keys independently via
 `PUT /realmmanagement/v1/<realm>/config/auth` (multiple keys are accepted for
 zero-downtime rotation); this is unrelated to the device CA.
+
+## See also
+
+- [Deployment](deployment.md) — Docker Compose and bare VPS deployment profiles
+- [Configuration Reference](configuration-reference.md) — all TOML keys, env overrides, and defaults
+- [Observability](observability.md) — health probes, Prometheus metrics, and structured logging
+- [Pairing and Security](pairing-and-security.md) — credential planes, CA model, and pairing flows
+- [Troubleshooting](troubleshooting.md) — common failure modes and fixes

@@ -103,3 +103,10 @@ Two pieces of durable state:
 - **Session store** (`/var/lib/astrate`, bbolt): MQTT session/offline-queue state. Losing it only forces clean reconnects.
 
 Keep the master key backed up **separately** from the database.
+
+## See also
+
+- [Operations](operations.md) — configuration, backups, CA re-keying, and runtime management
+- [Configuration Reference](configuration-reference.md) — all TOML keys, env overrides, and defaults
+- [Compatibility](compatibility.md) — wire-compatible surfaces and deliberate deviations from Astarte
+- [Observability](observability.md) — health probes and Prometheus metrics for orchestrator integration
