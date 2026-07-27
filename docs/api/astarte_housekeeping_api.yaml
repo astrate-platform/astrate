@@ -245,22 +245,6 @@ components:
           example:
             detail: Bad Request
 
-    ErrorFields:
-      type: object
-      required: [errors]
-      properties:
-        errors:
-          type: object
-          additionalProperties:
-            type: array
-            items:
-              type: string
-          description: Field-level validation errors (Phoenix changeset shape).
-          example:
-            errors:
-              hw_id:
-                - "is invalid"
-
   responses:
     BadRequest:
       description: Bad Request — malformed or missing data envelope.

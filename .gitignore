@@ -20,6 +20,19 @@ coverage.*
 *.swp
 .DS_Store
 
+# Local AI documentation workflow/handoff
+/docs/AI-DOCUMENTATION-WORKFLOW.md
+/docs/handoff/
+
+# MkDocs build output
+/site-dist/
+
+# Docs site copies (refreshed by docs/make sync)
+/docs/site/DESIGN.md
+/docs/site/ROADMAP.md
+/docs/site/api/
+/docs/site/swagger-ui/
+
 # Local-only compose overrides
 docker-compose.override.yml
 __pycache__/

@@ -1,0 +1,58 @@
+site_name: Astrate
+site_description: Lean, single-binary, Astarte-wire-compatible IoT platform in Go
+repo_url: https://github.com/atsetilam/astrate
+
+docs_dir: site
+site_dir: ../site-dist
+
+theme:
+  name: material
+  palette:
+    - scheme: default
+      primary: teal
+      accent: amber
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - scheme: slate
+      primary: teal
+      accent: amber
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.instant
+    - navigation.sections
+    - navigation.top
+    - content.code.copy
+    - toc.follow
+
+markdown_extensions:
+  - admonition
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+
+nav:
+  - Home: index.md
+  - Architecture: architecture.md
+  - Data Modeling: data-modeling.md
+  - MQTT Protocol: mqtt-protocol.md
+  - Pairing & Security: pairing-and-security.md
+  - Payload Formats: payload-formats.md
+  - AppEngine API: appengine-api.md
+  - Realm Management API: realm-management-api.md
+  - Housekeeping API: housekeeping-api.md
+  - Interface Schema: interface-schema.md
+  - Triggers: triggers.md
+  - Deployment: deployment.md
+  - Observability: observability.md
+  - Compatibility: compatibility.md
+  - API Explorer: swagger.md
+  - Quickstart: quickstart.md

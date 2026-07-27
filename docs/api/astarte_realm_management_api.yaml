@@ -70,8 +70,8 @@ paths:
               required: [data]
               properties:
                 data:
-                  description: Raw JSON interface definition.
-                  type: object
+                  description: Astarte interface definition.
+                  $ref: "#/components/schemas/InterfaceDefinition"
       responses:
         "201":
           description: Interface installed. Returns the installed interface definition.
@@ -83,7 +83,7 @@ paths:
                 properties:
                   data:
                     description: Installed interface definition.
-                    type: object
+                    $ref: "#/components/schemas/InterfaceDefinition"
         "400":
           $ref: "#/components/responses/BadRequest"
         "401":
@@ -147,7 +147,7 @@ paths:
                 properties:
                   data:
                     description: Interface definition JSON.
-                    type: object
+                    $ref: "#/components/schemas/InterfaceDefinition"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "404":
@@ -281,8 +281,8 @@ paths:
               required: [data]
               properties:
                 data:
-                  description: Raw JSON trigger definition.
-                  type: object
+                  description: Astarte trigger definition.
+                  $ref: "#/components/schemas/TriggerDefinition"
       responses:
         "201":
           description: Trigger created. Returns the trigger definition.
@@ -294,7 +294,7 @@ paths:
                 properties:
                   data:
                     description: Trigger definition JSON.
-                    type: object
+                    $ref: "#/components/schemas/TriggerDefinition"
         "400":
           $ref: "#/components/responses/BadRequest"
         "401":
@@ -328,7 +328,7 @@ paths:
                 properties:
                   data:
                     description: Trigger definition JSON.
-                    type: object
+                    $ref: "#/components/schemas/TriggerDefinition"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "404":
@@ -562,8 +562,8 @@ paths:
               required: [data]
               properties:
                 data:
-                  description: Raw JSON policy definition.
-                  type: object
+                  description: Trigger delivery policy definition.
+                  $ref: "#/components/schemas/TriggerPolicyDefinition"
       responses:
         "201":
           description: Policy created. Returns the policy definition.
@@ -575,7 +575,7 @@ paths:
                 properties:
                   data:
                     description: Policy definition JSON.
-                    type: object
+                    $ref: "#/components/schemas/TriggerPolicyDefinition"
         "400":
           $ref: "#/components/responses/BadRequest"
         "401":
@@ -609,7 +609,7 @@ paths:
                 properties:
                   data:
                     description: Policy definition JSON.
-                    type: object
+                    $ref: "#/components/schemas/TriggerPolicyDefinition"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "404":
@@ -707,6 +707,221 @@ components:
         jwt_public_key_pem:
           type: string
           description: PEM-encoded JWT public key for the realm.
+
+    # ── Realm Management documents ──
+
+    InterfaceDefinition:
+      type: object
+      required: [interface_name, version_major, version_minor, type, ownership, mappings]
+      additionalProperties: false
+      properties:
+        interface_name:
+          type: string
+          maxLength: 128
+          pattern: '^([a-zA-Z][a-zA-Z0-9]*\.([a-zA-Z0-9][a-zA-Z0-9-]*\.)*)?[a-zA-Z][a-zA-Z0-9]*$'
+        version_major:
+          type: integer
+          minimum: 0
+        version_minor:
+          type: integer
+          minimum: 0
+        type:
+          type: string
+          enum: [datastream, properties]
+        ownership:
+          type: string
+          enum: [device, server]
+        aggregation:
+          type: string
+          enum: [individual, object]
+          default: individual
+        description:
+          type: string
+        doc:
+          type: string
+        mappings:
+          type: array
+          minItems: 1
+          maxItems: 1024
+          items:
+            $ref: "#/components/schemas/InterfaceMapping"
+
+    InterfaceMapping:
+      type: object
+      required: [endpoint, type]
+      additionalProperties: false
+      properties:
+        endpoint:
+          type: string
+          description: Rooted endpoint path. Parametric segments use the `%{name}` form.
+          example: /%{sensor_id}/value
+        type:
+          type: string
+          enum: [double, integer, boolean, longinteger, string, binaryblob, datetime, doublearray, integerarray, booleanarray, longintegerarray, stringarray, binaryblobarray, datetimearray]
+        reliability:
+          type: string
+          enum: [unreliable, guaranteed, unique]
+          default: unreliable
+        retention:
+          type: string
+          enum: [discard, volatile, stored]
+          default: discard
+        expiry:
+          type: integer
+          format: int64
+          minimum: 0
+          default: 0
+        database_retention_policy:
+          type: string
+          enum: [no_ttl, use_ttl]
+          default: no_ttl
+        database_retention_ttl:
+          type: integer
+          format: int64
+          minimum: 1
+        allow_unset:
+          type: boolean
+          default: false
+        explicit_timestamp:
+          type: boolean
+          default: false
+        description:
+          type: string
+        doc:
+          type: string
+
+    TriggerDefinition:
+      type: object
+      required: [name, action, simple_triggers]
+      properties:
+        name:
+          type: string
+          description: Trigger name. String names are accepted by Astrate; upstream-compatible raw values round-trip.
+        policy:
+          type: string
+          description: Optional trigger delivery policy name.
+        action:
+          $ref: "#/components/schemas/TriggerAction"
+        simple_triggers:
+          type: array
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/SimpleTrigger"
+
+    SimpleTrigger:
+      type: object
+      required: [type, on]
+      properties:
+        type:
+          type: string
+          enum: [data_trigger, device_trigger]
+        on:
+          type: string
+          enum: [incoming_data, value_change, value_change_applied, path_created, path_removed, value_stored, device_connected, device_disconnected, device_empty_cache_received, device_error, incoming_introspection, interface_added, interface_removed, interface_minor_updated]
+        group_name:
+          type: string
+          description: Accepted for upstream compatibility; group-scoped triggers are not evaluated in Astrate v1.
+        device_id:
+          type: string
+          description: Device ID or `*` wildcard.
+        interface_name:
+          type: string
+          description: Interface name or `*` wildcard where supported.
+        interface_major:
+          type: integer
+          minimum: 0
+        match_path:
+          type: string
+          description: Concrete or parametric path, or `/*` wildcard.
+        value_match_operator:
+          type: string
+          enum: ["*", "==", "!=", ">", ">=", "<", "<=", contains, not_contains]
+        known_value:
+          description: Value used by value_match_operator comparisons.
+
+    TriggerAction:
+      type: object
+      description: HTTP webhook action or a custom action object for the Forwarder extension point.
+      properties:
+        http_url:
+          type: string
+          format: uri
+        http_method:
+          type: string
+          enum: [delete, get, head, options, patch, post, put]
+        http_post_url:
+          type: string
+          format: uri
+          description: Legacy shorthand for a POST webhook.
+        http_static_headers:
+          type: object
+          additionalProperties:
+            type: string
+        ignore_ssl_errors:
+          type: boolean
+          default: false
+        template:
+          type: string
+          description: Accepted for upstream compatibility; Astrate v1 sends the default JSON envelope.
+        template_type:
+          type: string
+          description: Accepted for upstream compatibility; Astrate v1 sends the default JSON envelope.
+      additionalProperties: true
+
+    TriggerPolicyDefinition:
+      type: object
+      required: [name, error_handlers, maximum_capacity]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: '^[a-zA-Z0-9_.~-]{1,128}$'
+        error_handlers:
+          type: array
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/TriggerPolicyErrorHandler"
+        maximum_capacity:
+          type: integer
+          minimum: 1
+        retry_times:
+          type: integer
+          minimum: 1
+          maximum: 100
+          description: Required when any handler uses the retry strategy; forbidden otherwise.
+        event_ttl:
+          type: integer
+          minimum: 0
+          description: Optional event time-to-live in seconds.
+
+    TriggerPolicyErrorHandler:
+      type: object
+      required: [on, strategy]
+      properties:
+        on:
+          oneOf:
+            - type: string
+              enum: [any_error, client_error, server_error]
+            - type: array
+              minItems: 1
+              items:
+                type: integer
+                minimum: 400
+                maximum: 599
+            - type: object
+              required: [custom_status_codes]
+              properties:
+                custom_status_codes:
+                  type: array
+                  minItems: 1
+                  items:
+                    type: integer
+                    minimum: 400
+                    maximum: 599
+        strategy:
+          type: string
+          enum: [discard, retry]
 
     # ── Envelope variants ──
 

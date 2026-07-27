@@ -861,26 +861,6 @@ components:
             errors:
               detail: Device not found
 
-    Conflict:
-      description: Conflict — resource already exists.
-      content:
-        application/json; charset=utf-8:
-          schema:
-            $ref: "#/components/schemas/ErrorDetail"
-          example:
-            errors:
-              detail: Already exists
-
-    ValidationError:
-      description: Unprocessable Entity — request body failed validation.
-      content:
-        application/json; charset=utf-8:
-          schema:
-            $ref: "#/components/schemas/ErrorDetail"
-          example:
-            errors:
-              detail: "appengine: validation failed: invalid interface data"
-
     InternalServerError:
       description: Internal Server Error — unexpected failure.
       content:
