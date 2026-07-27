@@ -19,6 +19,7 @@
 #   mule.sh review           show what is waiting to be reviewed before merge
 #   mule.sh budget [reset]   ticks used today; reset clears the daily cap
 #   mule.sh revert           undo the last mule commit
+#   mule.sh reports [N]      list/show full session transcripts, newest first
 #
 set -uo pipefail
 
@@ -243,6 +244,21 @@ sed_i() {
 
 log_row() { printf '| %s | %s | %s | %ss | %s |\n' "$(date +%F)" "$1" "$2" "$3" "${4:-}" >> "$LOG"; }
 
+# Full-transcript history, one file per run, time-ordered by filename. Additive only: the
+# fixed-name `.mule/reports/<slug>.md` files the readonly gate reads (see first_open) are a
+# separate, load-bearing thing and are untouched by this.
+save_report() {
+  local slug="$1" verdict="$2" elapsed="$3" outlog="$4"
+  mkdir -p "$MULE/reports/log"
+  { echo "slug: $slug"
+    echo "verdict: $verdict"
+    echo "at:  $(git -C "$REPO" rev-parse --short HEAD 2>/dev/null)"
+    echo "ran: $(date -u '+%Y-%m-%dT%H:%M:%SZ') on $(uname -n) in ${elapsed}s"
+    echo
+    cat "$outlog" 2>/dev/null
+  } > "$MULE/reports/log/$(date -u '+%Y%m%dT%H%M%SZ')-$slug-$verdict.md"
+}
+
 # --- preflight --------------------------------------------------------------
 
 cmd_preflight() {
@@ -369,6 +385,23 @@ cmd_add() {
   ok "queued: $*"
 }
 
+# Full-transcript history written by save_report — filenames sort chronologically, so `ls`
+# is the ordering. No args: list. A number: print that many full transcripts, newest first.
+cmd_reports() {
+  local dir="$MULE/reports/log" n="${1:-}"
+  [ -d "$dir" ] || { note "no reports yet"; return 0; }
+  if [ -z "$n" ]; then
+    ls -1 "$dir" | sort | tac
+    note "mule.sh reports N   — print the N most recent transcripts in full"
+    return 0
+  fi
+  ls -1 "$dir" | sort | tac | head -n "$n" | while read -r f; do
+    echo "===== $f ====="
+    cat "$dir/$f"
+    echo
+  done
+}
+
 cmd_next() {
   ensure_branch
   local line; line="$(first_open)"
@@ -433,7 +466,8 @@ format MULE.md gives.'
     # Put the tree back, leave the line open, and let the next tick have another go.
     git -C "$REPO" checkout -- . 2>/dev/null; git -C "$REPO" clean -fdq -e .mule 2>/dev/null
     log_row "$slug" "transient" "$elapsed" "$(head -c 120 "$outlog" | tr '\n' ' ')"
-    git -C "$REPO" add "$LOG" >/dev/null 2>&1 && git -C "$REPO" commit -q -m "mule: retry $slug"
+    save_report "$slug" "transient" "$elapsed" "$outlog"
+    git -C "$REPO" add "$LOG" "$MULE/reports/log" >/dev/null 2>&1 && git -C "$REPO" commit -q -m "mule: retry $slug"
     note "provider hiccup, not a task failure — leaving $slug open for the next tick"
     return 8
   elif [ "$rc" -ne 0 ]; then
@@ -454,7 +488,8 @@ format MULE.md gives.'
           echo; cat "$outlog"
         } > "$MULE/reports/$slug.md"
         log_row "$slug" "checked" "$elapsed" "$(git -C "$REPO" rev-parse --short HEAD)"
-        git -C "$REPO" add "$MULE/reports/$slug.md" "$LOG" >/dev/null 2>&1
+        save_report "$slug" "checked" "$elapsed" "$outlog"
+        git -C "$REPO" add "$MULE/reports/$slug.md" "$MULE/reports/log" "$LOG" >/dev/null 2>&1
         git -C "$REPO" commit -q -m "mule: $slug passed on $(git -C "$REPO" rev-parse --short HEAD)"
         [ -n "${MULE_PUSH:-}" ] && { git -C "$REPO" push -q origin "$MULE_BRANCH" 2>/dev/null \
           && ok "pushed $MULE_BRANCH" || note "push failed — the work is safe locally"; }
@@ -477,7 +512,8 @@ format MULE.md gives.'
     # lives on the issue, which is the single copy of it.
     [ "$lineno" != 0 ] && sed_i "${lineno}s/^- \[ \]/- [x]/" "$TODO"
     log_row "$slug" done "$elapsed" "$(git -C "$REPO" rev-parse --short HEAD)"
-    git -C "$REPO" add "$TODO" "$LOG" && git -C "$REPO" commit -q -m "mule: log $slug"
+    save_report "$slug" "done" "$elapsed" "$outlog"
+    git -C "$REPO" add "$TODO" "$LOG" "$MULE/reports/log" && git -C "$REPO" commit -q -m "mule: log $slug"
     if [ -n "${MULE_PUSH:-}" ]; then
       git -C "$REPO" push -q origin "$MULE_BRANCH" 2>/dev/null \
         && ok "pushed $MULE_BRANCH" || note "push failed — the work is safe locally"
@@ -516,7 +552,8 @@ Taken out of its queue so it does not retry the same failure every half hour. Re
     esac
   fi
   log_row "$slug" "blocked" "$elapsed" "$reason"
-  git -C "$REPO" add "$TODO" "$LOG" >/dev/null 2>&1 && git -C "$REPO" commit -q -m "mule: blocked $slug"
+  save_report "$slug" "blocked" "$elapsed" "$outlog"
+  git -C "$REPO" add "$TODO" "$LOG" "$MULE/reports/log" >/dev/null 2>&1 && git -C "$REPO" commit -q -m "mule: blocked $slug"
   bad "blocked: $reason (fragment kept at .mule/failed/$slug.diff)"
   return 1
 }
@@ -855,9 +892,21 @@ propose. Do not touch git."
   [ -n "$MULE_MODEL" ] && run+=(--model "$MULE_MODEL")
   run+=("$prompt")
   local sentinel="$MULE/.timeout"; rm -f "$sentinel"
+  local started; started="$(date +%s)"
+  local outlog="$MULE/.last-output"
   ( cd "$REPO" && run_with_timeout "$MULE_TIMEOUT" "$sentinel" "${run[@]}" 2>&1 ) \
-    | sed $'s/\033\\[[0-9;]*[A-Za-z]//g' | cat -s
-  [ -f "$sentinel" ] && { rm -f "$sentinel"; bad "recipe timed out"; return 1; }
+    | sed $'s/\033\\[[0-9;]*[A-Za-z]//g' | cat -s | tee "$outlog"
+  local elapsed=$(( $(date +%s) - started ))
+  if [ -f "$sentinel" ]; then
+    rm -f "$sentinel"
+    save_report "recipe-$name" "timeout" "$elapsed" "$outlog"
+    git -C "$REPO" add "$MULE/reports/log" >/dev/null 2>&1 \
+      && git -C "$REPO" commit -q -m "mule: recipe $name timed out" >/dev/null 2>&1
+    bad "recipe timed out"; return 1
+  fi
+  save_report "recipe-$name" "proposed" "$elapsed" "$outlog"
+  git -C "$REPO" add "$MULE/reports/log" >/dev/null 2>&1 \
+    && git -C "$REPO" commit -q -m "mule: recipe $name ran (${elapsed}s)" >/dev/null 2>&1
   echo; note "proposed queue is now:"; grep -E '^- \[ \] ' "$TODO" | tail -20
   note "edit .mule/todo.md to approve/cut, then: tools/mule.sh loop"
 }
@@ -876,5 +925,6 @@ case "${1:-}" in
   legion)    shift; cmd_legion "$@";;
   tick)      shift; cmd_tick "$@";;
   revert)    shift; cmd_revert "$@";;
+  reports)   shift; cmd_reports "$@";;
   *) sed -n '2,19p' "$0" | sed 's/^# \{0,1\}//'; exit 1;;
 esac
