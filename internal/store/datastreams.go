@@ -298,10 +298,8 @@ type DownsamplePoint struct {
 // point per bucket via TimescaleDB time_bucket (AppEngine downsample_to,
 // docs/DESIGN.md §2.5). Non-numeric rows in the window are ignored.
 //
-// TODO(extension point, docs/ROADMAP.md §0.1 rule 3 / docs/DESIGN.md §2.5):
-// when s.hasToolkit is set (timescaledb_toolkit probed at startup), switch to
-// toolkit lttb() for shape-preserving downsampling; this time_bucket+avg
-// path is the always-available default and stays as the fallback.
+// This is the always-available fallback; the toolkit path lives in
+// DownsampleLTTB which callers prefer when Store.HasToolkitLTTB is true.
 func (s *Store) Downsample(ctx context.Context, q SeriesQuery, bucket time.Duration) ([]DownsamplePoint, error) {
 	if bucket <= 0 {
 		return nil, fmt.Errorf("store: downsample bucket must be positive, got %s", bucket)
@@ -324,6 +322,56 @@ func (s *Store) Downsample(ctx context.Context, q SeriesQuery, bucket time.Durat
 		%s
 		  AND (value_double IS NOT NULL OR value_integer IS NOT NULL OR value_longinteger IS NOT NULL)
 		GROUP BY bucket`+order+limit, len(args), where), args...)
+	if err != nil {
+		return nil, fmt.Errorf("store: downsampling series %s: %w", q.Path, err)
+	}
+	defer rows.Close()
+
+	var out []DownsamplePoint
+	for rows.Next() {
+		var p DownsamplePoint
+		if err := rows.Scan(&p.Bucket, &p.Value); err != nil {
+			return nil, fmt.Errorf("store: scanning downsample row: %w", err)
+		}
+		out = append(out, p)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("store: reading downsample of %s: %w", q.Path, err)
+	}
+	return out, nil
+}
+
+// DownsampleLTTB reduces a numeric individual-datastream series to at most
+// points samples using timescaledb_toolkit's lttb() (Largest-Triangle-Three-
+// Buckets), which preserves the visual shape of the curve by selecting real
+// samples rather than averaging them away.
+//
+// It requires the toolkit: callers must check Store.HasToolkitLTTB first and
+// fall back to Downsample when it is absent (docs/DESIGN.md §2.5). points must
+// be at least 3 — lttb rejects a smaller resolution outright.
+func (s *Store) DownsampleLTTB(ctx context.Context, q SeriesQuery, points int) ([]DownsamplePoint, error) {
+	if points < 3 {
+		return nil, fmt.Errorf("store: downsample lttb needs at least 3 points, got %d", points)
+	}
+	where, args := q.where()
+	args = append(args, points)
+	order := " ORDER BY time ASC"
+	if q.Descending {
+		order = " ORDER BY time DESC"
+	}
+	limit := ""
+	if q.Limit > 0 {
+		limit = " LIMIT " + strconv.Itoa(q.Limit)
+	}
+
+	rows, err := s.pool.Query(ctx, fmt.Sprintf(`
+		SELECT time, value
+		FROM unnest((
+			SELECT lttb(ts, coalesce(value_double, value_integer::double precision, value_longinteger::double precision), $%d)
+			FROM individual_datastreams
+			%s
+			  AND (value_double IS NOT NULL OR value_integer IS NOT NULL OR value_longinteger IS NOT NULL)
+		))`+order+limit, len(args), where), args...)
 	if err != nil {
 		return nil, fmt.Errorf("store: downsampling series %s: %w", q.Path, err)
 	}

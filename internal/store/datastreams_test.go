@@ -375,6 +375,160 @@ func testDatastreams(t *testing.T, s *Store) {
 		}
 	})
 
+	t.Run("DownsampleLTTB", func(t *testing.T) {
+		if !s.HasToolkitLTTB() {
+			t.Skip("timescaledb_toolkit not installed; lttb path unavailable")
+		}
+		realm := mustCreateRealm(t, s)
+		device := mustRegisterDevice(t, s, realm.ID)
+		si := mustInstallInterface(t, s, realm.ID, allTypesDef)
+
+		// A flat series with one sharp spike. This is the whole reason lttb
+		// exists: time_bucket+avg would dilute the spike into its bucket's
+		// mean and the shape would be lost, whereas lttb selects the real
+		// sample. 60 points, spike of 1000 at index 30.
+		base := time.Date(2026, 1, 18, 12, 0, 0, 0, time.UTC)
+		const spikeIdx, spikeVal = 30, 1000.0
+		var batch DatastreamBatch
+		for i := range 60 {
+			v := 1.0
+			if i == spikeIdx {
+				v = spikeVal
+			}
+			batch.Individual = append(batch.Individual, IndividualRow{
+				RealmID: realm.ID, DeviceID: device, InterfaceID: si.ID,
+				EndpointID: si.Endpoints["/d"], Path: "/d",
+				TS: base.Add(time.Duration(i) * time.Minute), ReceptionTS: base,
+				ValueDouble: &v,
+			})
+		}
+		if err := s.AppendDatastreams(ctx, batch); err != nil {
+			t.Fatalf("AppendDatastreams: %v", err)
+		}
+		q := SeriesQuery{RealmID: realm.ID, DeviceID: device, InterfaceID: si.ID, Path: "/d"}
+
+		got, err := s.DownsampleLTTB(ctx, q, 8)
+		if err != nil {
+			t.Fatalf("DownsampleLTTB: %v", err)
+		}
+		if len(got) != 8 {
+			t.Fatalf("resolution 8: got %d points, want 8", len(got))
+		}
+		// Ascending by time, first and last samples preserved.
+		for i := 1; i < len(got); i++ {
+			if !got[i].Bucket.After(got[i-1].Bucket) {
+				t.Errorf("point %d not strictly after its predecessor: %v", i, got)
+			}
+		}
+		if !got[0].Bucket.Equal(base) {
+			t.Errorf("first point: got %v, want %v", got[0].Bucket, base)
+		}
+		if want := base.Add(59 * time.Minute); !got[len(got)-1].Bucket.Equal(want) {
+			t.Errorf("last point: got %v, want %v", got[len(got)-1].Bucket, want)
+		}
+		// The spike survives, at its own real timestamp and exact value. An
+		// averaging downsample cannot pass this: with 60 points reduced to 8
+		// the spike shares a bucket with flat neighbours and its mean is far
+		// below 1000.
+		spikeTS := base.Add(spikeIdx * time.Minute)
+		var found bool
+		for _, p := range got {
+			if p.Bucket.Equal(spikeTS) {
+				found = true
+				if p.Value != spikeVal {
+					t.Errorf("spike value: got %g, want %g", p.Value, spikeVal)
+				}
+			}
+		}
+		if !found {
+			t.Errorf("lttb dropped the spike at %v: %v", spikeTS, got)
+		}
+		// Every returned value is a real sample, never an average.
+		for _, p := range got {
+			if p.Value != 1 && p.Value != spikeVal {
+				t.Errorf("point %v is not a real input sample", p)
+			}
+		}
+
+		// Descending reverses the output without changing which samples lttb
+		// picked: the aggregate sorts internally, so the order clause is
+		// applied outside it.
+		desc, err := s.DownsampleLTTB(ctx, SeriesQuery{
+			RealmID: realm.ID, DeviceID: device, InterfaceID: si.ID, Path: "/d", Descending: true,
+		}, 8)
+		if err != nil {
+			t.Fatalf("DownsampleLTTB descending: %v", err)
+		}
+		if len(desc) != len(got) {
+			t.Fatalf("descending: got %d points, want %d", len(desc), len(got))
+		}
+		for i := range desc {
+			if !desc[i].Bucket.Equal(got[len(got)-1-i].Bucket) {
+				t.Errorf("descending point %d: got %v, want %v", i, desc[i].Bucket, got[len(got)-1-i].Bucket)
+			}
+		}
+
+		// Limit trims the output but must not change the resolution lttb ran
+		// at — the first three points are the same as the unlimited run's.
+		lim, err := s.DownsampleLTTB(ctx, SeriesQuery{
+			RealmID: realm.ID, DeviceID: device, InterfaceID: si.ID, Path: "/d", Limit: 3,
+		}, 8)
+		if err != nil {
+			t.Fatalf("DownsampleLTTB limit: %v", err)
+		}
+		if len(lim) != 3 {
+			t.Fatalf("limit 3: got %d points", len(lim))
+		}
+		for i := range lim {
+			if !lim[i].Bucket.Equal(got[i].Bucket) || lim[i].Value != got[i].Value {
+				t.Errorf("limited point %d: got %v, want %v", i, lim[i], got[i])
+			}
+		}
+
+		// Integers coalesce into the value expression like the bucket path.
+		var intBatch DatastreamBatch
+		for i := range 10 {
+			v := int32(i)
+			intBatch.Individual = append(intBatch.Individual, IndividualRow{
+				RealmID: realm.ID, DeviceID: device, InterfaceID: si.ID,
+				EndpointID: si.Endpoints["/i"], Path: "/i",
+				TS: base.Add(time.Duration(i) * time.Minute), ReceptionTS: base,
+				ValueInteger: &v,
+			})
+		}
+		if err := s.AppendDatastreams(ctx, intBatch); err != nil {
+			t.Fatalf("AppendDatastreams integers: %v", err)
+		}
+		ints, err := s.DownsampleLTTB(ctx, SeriesQuery{
+			RealmID: realm.ID, DeviceID: device, InterfaceID: si.ID, Path: "/i",
+		}, 4)
+		if err != nil {
+			t.Fatalf("DownsampleLTTB integers: %v", err)
+		}
+		if len(ints) != 4 {
+			t.Errorf("integer lttb: got %d points, want 4", len(ints))
+		}
+
+		// Fewer samples than the resolution returns them all, not an error.
+		few, err := s.DownsampleLTTB(ctx, SeriesQuery{
+			RealmID: realm.ID, DeviceID: device, InterfaceID: si.ID, Path: "/i",
+		}, 50)
+		if err != nil {
+			t.Fatalf("DownsampleLTTB oversized resolution: %v", err)
+		}
+		if len(few) != 10 {
+			t.Errorf("oversized resolution: got %d points, want all 10", len(few))
+		}
+
+		// A resolution below 3 is refused by us, before Postgres raises
+		// "resolution must be greater than 2".
+		for _, n := range []int{-1, 0, 1, 2} {
+			if _, err := s.DownsampleLTTB(ctx, q, n); err == nil {
+				t.Errorf("resolution %d accepted", n)
+			}
+		}
+	})
+
 	t.Run("SeriesSpan", func(t *testing.T) {
 		realm := mustCreateRealm(t, s)
 		device := mustRegisterDevice(t, s, realm.ID)

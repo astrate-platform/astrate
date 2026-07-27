@@ -23,7 +23,14 @@
 # Credentials and the master key below are throwaway local-dev values.
 services:
   timescaledb:
-    image: timescale/timescaledb:latest-pg16
+    # The -ha image rather than the plain one, because it is the only published
+    # image carrying timescaledb_toolkit — and so the only one on which the
+    # lttb() downsampling path can execute at all (docs/DESIGN.md §2.5). Two
+    # consequences, both load-bearing: PGDATA moves to
+    # /home/postgres/pgdata/data, and the container runs as `postgres` rather
+    # than root, so this mounts a *new* volume name — pointing the old
+    # root-written `pgdata` at it fails on permissions.
+    image: timescale/timescaledb-ha:pg16
     command:
       - postgres
       - -c
@@ -37,7 +44,7 @@ services:
     ports:
       - "127.0.0.1:5432:5432"
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      - pgdata_ha:/home/postgres/pgdata/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U astrate -d astrate"]
       interval: 5s
@@ -92,5 +99,8 @@ services:
       - ./deploy/dashboard/config.json:/usr/share/nginx/html/user-config/config.json:ro
 
 volumes:
-  pgdata:
+  # Renamed from `pgdata` when the image moved to -ha: the old volume holds a
+  # data directory written by root at the old PGDATA path, and neither the
+  # ownership nor the location matches what this image expects.
+  pgdata_ha:
   sessions:
