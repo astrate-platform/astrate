@@ -72,6 +72,7 @@ func New(st Store, bp BrokerPort, cfg Config) (*Engine, error) {
 	e.afterCommit = e.fireCommitted
 	e.onLifecycle = e.handleLifecycle
 	e.onDeviceError = e.fireDeviceError
+	e.onCapabilities = e.handleCapabilities
 	return e, nil
 }
 

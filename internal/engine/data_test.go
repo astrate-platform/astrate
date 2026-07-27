@@ -409,6 +409,15 @@ func TestUnhandledDispatch(t *testing.T) {
 		t.Errorf("unhandled[control] = %v, want 1", got)
 	}
 
+	ack = &ackCounter{}
+	rig.handle(deviceMsg("capabilities", "", 2, []byte(`{"test":true}`), ack))
+	if !ack.acked() {
+		t.Error("unhandled capabilities not acknowledged")
+	}
+	if got := promtest.ToFloat64(rig.e.met.unhandled.WithLabelValues("capabilities")); got != 1 {
+		t.Errorf("unhandled[capabilities] = %v, want 1", got)
+	}
+
 	// Wired seams take over (and own the acknowledgment).
 	var introBody string
 	rig.e.onIntrospection = func(_ context.Context, m broker.InboundMessage, _ *realmSchema) { introBody = string(m.Payload) }

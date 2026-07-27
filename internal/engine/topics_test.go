@@ -49,6 +49,7 @@ func TestClassify(t *testing.T) {
 		wantSubpath string
 	}{
 		{"", kindIntrospection, ""},
+		{"capabilities", kindCapabilities, ""},
 		{"control", kindControl, ""},
 		{"control/emptyCache", kindControl, "emptyCache"},
 		{"control/producer/properties", kindControl, "producer/properties"},

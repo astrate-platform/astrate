@@ -355,6 +355,10 @@ type deviceState struct {
 	// next BSON data payload flips the hint back to bson (docs/DESIGN.md
 	// §3.5.4).
 	resetHintOnBSON bool
+	// purgeCompression is the device's preferred compression format for
+	// consumer/properties payloads ("zlib" or "plaintext"); set by the
+	// capabilities topic (upstream MQTT v1 §2). Empty means zlib (default).
+	purgeCompression string
 }
 
 // declares reports whether the device's introspection contains name, and at
@@ -389,6 +393,24 @@ func (d *deviceState) armHintReset() {
 	d.mu.Lock()
 	d.resetHintOnBSON = true
 	d.mu.Unlock()
+}
+
+// setPurgeCompression stores the device's preferred consumer/properties
+// compression format ("zlib" or "plaintext"), set by the capabilities topic
+// (upstream MQTT v1 §2).
+func (d *deviceState) setPurgeCompression(format string) {
+	d.mu.Lock()
+	d.purgeCompression = format
+	d.mu.Unlock()
+}
+
+// purgeCompressionFormat returns the device's preferred consumer/properties
+// compression format. Empty or "zlib" means zlib (the default).
+func (d *deviceState) purgeCompressionFormat() string {
+	d.mu.Lock()
+	f := d.purgeCompression
+	d.mu.Unlock()
+	return f
 }
 
 // introspectionCopy returns a copy of the cached introspection (the diff
