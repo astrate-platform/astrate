@@ -20,3 +20,4 @@ layer can actually do — read it before deciding whether a kind of task is wort
 | 2026-07-27 | race-check | checked | 82s | 7099f80 |
 | 2026-07-27 | issue-6 | transient | 19s |  > build · big-pickle  Error: No provider available  |
 | 2026-07-27 | issue-6 | transient | 20s |  > build · big-pickle  Error: No provider available  |
+| 2026-07-27 | race-check | transient | 21s |  > build · big-pickle  Error: No provider available  |
