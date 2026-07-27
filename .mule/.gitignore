@@ -1,5 +1,10 @@
-# Working files, never committed.
+# The mule's own working files. None of these belong in git, and — more sharply — any of
+# them that is not listed here makes the tree dirty, which makes `tick` refuse to run and so
+# turns the timer into a permanent silent no-op.
 failed/
 task.md
 .timeout
+.lock
+.budget
+.bench-linux-amd64
 hosts

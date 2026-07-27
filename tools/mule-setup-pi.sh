@@ -67,8 +67,13 @@ set -e
 if [ ! -d $PI_REPO/.git ]; then git clone -q $REPO_URL $PI_REPO; fi
 cd $PI_REPO
 git fetch -q origin
-git checkout -q main 2>/dev/null || true
-echo "clone at \$(git log -1 --format='%h %s')"
+# Fast-forward main, but only if that is where we are — never disturb mule/queue, which may
+# hold landed work that has not been merged yet.
+if [ "\$(git rev-parse --abbrev-ref HEAD)" = main ]; then
+  git merge --ff-only -q origin/main 2>/dev/null || echo "WARN: main would not fast-forward"
+fi
+mkdir -p $PI_REPO/.mule
+echo "clone at \$(git log -1 --format='%h %s') on \$(git rev-parse --abbrev-ref HEAD)"
 EOS
 ok "mule clone at $PI_REPO (your /root/astrate is left alone)"
 

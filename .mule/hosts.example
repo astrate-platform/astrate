@@ -10,7 +10,10 @@ MULE_PI_REPO="/root/astrate-mule"
 
 # The Lenovo Legion Go (CachyOS, 16 cores, 12GB, Docker with the Astarte stack up).
 # It has no Go toolchain — the bench binary is cross-compiled and copied over instead.
-MULE_LEGION_SSH="user@192.168.0.YY"
+# An ssh *alias*, not a bare user@host: the Pi reaches it with a dedicated key configured
+# under `Host legion` in its ~/.ssh/config, and spelling out the address bypasses that.
+# Defined on both the Mac and the Pi.
+MULE_LEGION_SSH="legion"
 MULE_LEGION_REPO="/home/user/astrate"
 
 # A task tagged [legion] runs only when this probe passes. Cheap, and it must stay cheap:
