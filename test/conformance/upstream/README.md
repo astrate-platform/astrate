@@ -152,15 +152,60 @@ paired so a refusal cannot be explained by a server that refuses everything:
 | join a room | `JOIN::<another room>` | refused |
 | watch a data trigger | `WATCH::.*` | accepted |
 
-**A blanket grant is not a grant.** Upstream matches the claim against `JOIN::<room name>`, so
-`.*::.*` fails for want of a `::` the room name does not contain — the opposite of the permissive
-reading M11 assumed. The verb is also matched per room, not merely required to be present.
+**A blanket grant is not a grant**, and the reason is not the one first written here. Upstream
+*partitions* the `a_ch` list by an **exact** match on the verb field: an entry is split on `:` into
+three parts and kept only if its first field is literally `JOIN` or `WATCH`, everything else being
+discarded. The path regex is then matched within the chosen bucket. So `.*::.*` authorizes nothing
+because `.*` is not the string `JOIN` — not, as the first version of this note claimed, because the
+room name lacks a `::`. That earlier story is refuted by the `.*` row in the same table: under it,
+`.*` would have matched the bare room name and been accepted, and it was refused. Confirmed against
+upstream's source (`socket_guardian.ex`, `extract_authorization_paths/2`, pinned `^match_prefix`).
+
+### What the `WATCH` claim is matched against
+
+The rows above all used `WATCH::.*`, which accepts whatever string upstream builds and therefore
+cannot say what that string *is*. These use narrow claims, so exactly one of a pair can be accepted:
+
+| trigger | claim | |
+| --- | --- | --- |
+| data trigger on `/value` | `WATCH::<device>/<interface>` | refused |
+| data trigger on `/value` | `WATCH::<device>/<interface>/value` | accepted |
+| device trigger | `WATCH::<that device>` | accepted |
+| device trigger | `WATCH::<another device>` | refused |
+
+So a data trigger's authorization path is **`<device_id>/<interface_name><match_path>`** — the
+match path is appended, with no separator because it already begins with a slash — and a device
+trigger's is the **bare device id**. Astrate built `<device_id>/<interface_name>` for data triggers
+until M12 phase 06b, which is wrong in *both* directions: it refused claims upstream accepts and
+accepted claims upstream refuses.
+
+The group shapes (`groups/<name>/<interface><match_path>` and `groups/<name>`) come from the same
+upstream function and are **not measured** — the realm has no group. They are the one part of this
+section still resting on a source read.
 
 One more, which is a client-facing trap rather than an authorization rule: a `device_trigger` is
-authorized only when `device_id` sits **inside `simple_trigger`**. With `device_id` only at the
-payload's top level — where the AppEngine REST API puts it — upstream refuses with
-`reason: "unauthorized"`, which sends a client author to look at their token for what is really a
-payload-shape problem. A wildcard `device_id: "*"` is refused too, even under `WATCH::.*`.
+authorized only when `device_id` sits **inside `simple_trigger`** *and equals the request's own
+`device_id`*. With `device_id` only at the payload's top level — where the AppEngine REST API puts
+it — upstream refuses with `reason: "unauthorized"`, which sends a client author to look at their
+token for what is really a payload-shape problem. A wildcard `device_id: "*"` is refused too, even
+under `WATCH::.*`.
+
+**A trap that cost this recording a pass:** `interface_major` is required as soon as
+`interface_name` is not `"*"`, and omitting it is refused with
+`{"errors":{"simple_trigger":{"interface_major":["can't be blank"]}}}` — a *validation* error
+returned before authorization is consulted at all. To a recorder checking only for `"status":"ok"`
+that is a refusal like any other, so both narrow data-trigger rows first came back "refused" and
+would have been read as evidence about the authorization path. The recorder now prints a loud
+`!! VALIDATION ERROR, NOT AN AUTHORIZATION REFUSAL` on any reply carrying `"errors"` rather than
+`"reason"`.
+
+### Re-recording one section at a time
+
+`ASTARTE_UPSTREAM_SECTION=auth|errors|all` (default `all`) re-records one section and carries the
+other over from the committed fixture, refusing to write a fixture with a section empty. Delivery of
+`device_error` to the room is unreliable on this stack, so settling an authorization question with a
+full re-run would churn `attempts`/`delivered` counts that were measured carefully and are not what
+is being asked about.
 
 ### Two facts a re-recorder needs and will otherwise lose an evening to
 

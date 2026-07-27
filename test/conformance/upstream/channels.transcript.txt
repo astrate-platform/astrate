@@ -1,4 +1,4 @@
-# Channels transcript, recorded 2026-07-26T20:53:09Z
+# Channels transcript, recorded 2026-07-26T22:34:04Z
 # upstream http://api.astarte.localhost:8080 realm "bench" device "KqYJ16Cs7lyeJ3PPzg7xQg"
 # socket: /appengine/v1/socket/websocket?vsn=2.0.0&realm=<realm>&token=<a_ch JWT>
 # The token is never printed; it is a realm-signed JWT carrying only the a_ch claims named per row.
@@ -63,175 +63,32 @@
   <- ["1","2","rooms:bench:probe","phx_reply",{"status":"error","response":{"reason":"unauthorized"}}]
   accepted: false
 
-## device_error: what upstream calls each rejection
-# One fresh websocket and one fresh device session per row. Several of these
-# provocations make upstream force a clean session and disconnect the device,
-# so a shared session would record the first row honestly and the rest as silence.
+### watch data_trigger, claim WATCH::<device>/<interface> (Astrate's shape)
+  a_ch: [JOIN::.* WATCH::KqYJ16Cs7lyeJ3PPzg7xQg/org.astrate.bench.Individual]
+  op: watch
+  payload: {"device_id":"KqYJ16Cs7lyeJ3PPzg7xQg","name":"probe","simple_trigger":{"interface_major":1,"interface_name":"org.astrate.bench.Individual","match_path":"/value","on":"incoming_data","type":"data_trigger","value_match_operator":"*"}}
+  <- ["1","2","rooms:bench:probe","phx_reply",{"status":"error","response":{"reason":"unauthorized"}}]
+  accepted: false
 
-### valid publish
-  topic: bench/KqYJ16Cs7lyeJ3PPzg7xQg/org.astrate.bench.Individual/value
-  payload (base64): EAAAAAF2AAAAAAAAAEVAAA==
-  (no device_error reached the room on this attempt)
+### watch data_trigger, claim WATCH::<device>/<interface><match_path>
+  a_ch: [JOIN::.* WATCH::KqYJ16Cs7lyeJ3PPzg7xQg/org.astrate.bench.Individual/value]
+  op: watch
+  payload: {"device_id":"KqYJ16Cs7lyeJ3PPzg7xQg","name":"probe","simple_trigger":{"interface_major":1,"interface_name":"org.astrate.bench.Individual","match_path":"/value","on":"incoming_data","type":"data_trigger","value_match_operator":"*"}}
+  <- ["1","2","rooms:bench:probe","phx_reply",{"status":"ok","response":{}}]
+  accepted: true
 
-### valid publish
-  topic: bench/KqYJ16Cs7lyeJ3PPzg7xQg/org.astrate.bench.Individual/value
-  payload (base64): EAAAAAF2AAAAAAAAAEVAAA==
-  (uncorrelated, belongs to the session) <- [null,null,"rooms:bench:probe","new_event",{"device_id":"KqYJ16Cs7lyeJ3PPzg7xQg","event":{"error_name":"device_session_not_found","metadata":{},"type":"device_error"},"timestamp":"2026-07-26T20:53:48.830Z"}]
-  (no device_error reached the room on this attempt)
+### watch device_trigger, claim WATCH::<this device>
+  a_ch: [JOIN::.* WATCH::KqYJ16Cs7lyeJ3PPzg7xQg]
+  op: watch
+  payload: {"device_id":"KqYJ16Cs7lyeJ3PPzg7xQg","name":"probe","simple_trigger":{"device_id":"KqYJ16Cs7lyeJ3PPzg7xQg","on":"device_error","type":"device_trigger"}}
+  <- ["1","2","rooms:bench:probe","phx_reply",{"status":"ok","response":{}}]
+  accepted: true
 
-### valid publish
-  topic: bench/KqYJ16Cs7lyeJ3PPzg7xQg/org.astrate.bench.Individual/value
-  payload (base64): EAAAAAF2AAAAAAAAAEVAAA==
-  (no device_error reached the room on this attempt)
-  => valid publish: (never reached the room), delivered 0/3
+### watch device_trigger, claim WATCH::<another device>
+  a_ch: [JOIN::.* WATCH::aaaaaaaaaaaaaaaaaaaaaa]
+  op: watch
+  payload: {"device_id":"KqYJ16Cs7lyeJ3PPzg7xQg","name":"probe","simple_trigger":{"device_id":"KqYJ16Cs7lyeJ3PPzg7xQg","on":"device_error","type":"device_trigger"}}
+  <- ["1","2","rooms:bench:probe","phx_reply",{"status":"error","response":{"reason":"unauthorized"}}]
+  accepted: false
 
-### interface not in introspection
-  topic: bench/KqYJ16Cs7lyeJ3PPzg7xQg/org.astrate.nonexistent.Iface/value
-  payload (base64): EAAAAAF2AAAAAAAAAPA/AA==
-  <- [null,null,"rooms:bench:probe","new_event",{"device_id":"KqYJ16Cs7lyeJ3PPzg7xQg","event":{"error_name":"interface_loading_failed","metadata":{"base64_payload":"EAAAAAF2AAAAAAAAAPA/AA==","interface":"\"org.astrate.nonexistent.Iface\"","path":"\"/value\""},"type":"device_error"},"timestamp":"2026-07-26T20:54:39.413Z"}]
-
-### interface not in introspection
-  topic: bench/KqYJ16Cs7lyeJ3PPzg7xQg/org.astrate.nonexistent.Iface/value
-  payload (base64): EAAAAAF2AAAAAAAAAPA/AA==
-  (uncorrelated, belongs to the session) <- [null,null,"rooms:bench:probe","new_event",{"device_id":"KqYJ16Cs7lyeJ3PPzg7xQg","event":{"error_name":"device_session_not_found","metadata":{},"type":"device_error"},"timestamp":"2026-07-26T20:55:07.678Z"}]
-  <- [null,null,"rooms:bench:probe","new_event",{"device_id":"KqYJ16Cs7lyeJ3PPzg7xQg","event":{"error_name":"interface_loading_failed","metadata":{"base64_payload":"EAAAAAF2AAAAAAAAAPA/AA==","interface":"\"org.astrate.nonexistent.Iface\"","path":"\"/value\""},"type":"device_error"},"timestamp":"2026-07-26T20:55:07.678Z"}]
-
-### interface not in introspection
-  topic: bench/KqYJ16Cs7lyeJ3PPzg7xQg/org.astrate.nonexistent.Iface/value
-  payload (base64): EAAAAAF2AAAAAAAAAPA/AA==
-  <- [null,null,"rooms:bench:probe","new_event",{"device_id":"KqYJ16Cs7lyeJ3PPzg7xQg","event":{"error_name":"interface_loading_failed","metadata":{"base64_payload":"EAAAAAF2AAAAAAAAAPA/AA==","interface":"\"org.astrate.nonexistent.Iface\"","path":"\"/value\""},"type":"device_error"},"timestamp":"2026-07-26T20:55:35.939Z"}]
-  (uncorrelated, belongs to the session) <- [null,null,"rooms:bench:probe","new_event",{"device_id":"KqYJ16Cs7lyeJ3PPzg7xQg","event":{"error_name":"device_session_not_found","metadata":{},"type":"device_error"},"timestamp":"2026-07-26T20:55:35.939Z"}]
-  => interface not in introspection: interface_loading_failed, delivered 3/3
-
-### unknown path on a known interface
-  topic: bench/KqYJ16Cs7lyeJ3PPzg7xQg/org.astrate.bench.Individual/nosuchpath
-  payload (base64): EAAAAAF2AAAAAAAAAPA/AA==
-  <- [null,null,"rooms:bench:probe","new_event",{"device_id":"KqYJ16Cs7lyeJ3PPzg7xQg","event":{"error_name":"mapping_not_found","metadata":{"base64_payload":"EAAAAAF2AAAAAAAAAPA/AA==","interface":"\"org.astrate.bench.Individual\"","path":"\"/nosuchpath\""},"type":"device_error"},"timestamp":"2026-07-26T20:55:58.587Z"}]
-  <- [null,null,"rooms:bench:probe","new_event",{"device_id":"KqYJ16Cs7lyeJ3PPzg7xQg","event":{"error_name":"mapping_not_found","metadata":{"base64_payload":"EAAAAAF2AAAAAAAAAPA/AA==","interface":"\"org.astrate.bench.Individual\"","path":"\"/nosuchpath\""},"type":"device_error"},"timestamp":"2026-07-26T20:56:06.758Z"}]
-
-### unknown path on a known interface
-  topic: bench/KqYJ16Cs7lyeJ3PPzg7xQg/org.astrate.bench.Individual/nosuchpath
-  payload (base64): EAAAAAF2AAAAAAAAAPA/AA==
-  <- [null,null,"rooms:bench:probe","new_event",{"device_id":"KqYJ16Cs7lyeJ3PPzg7xQg","event":{"error_name":"mapping_not_found","metadata":{"base64_payload":"EAAAAAF2AAAAAAAAAPA/AA==","interface":"\"org.astrate.bench.Individual\"","path":"\"/nosuchpath\""},"type":"device_error"},"timestamp":"2026-07-26T20:56:29.409Z"}]
-  <- [null,null,"rooms:bench:probe","new_event",{"device_id":"KqYJ16Cs7lyeJ3PPzg7xQg","event":{"error_name":"mapping_not_found","metadata":{"base64_payload":"EAAAAAF2AAAAAAAAAPA/AA==","interface":"\"org.astrate.bench.Individual\"","path":"\"/nosuchpath\""},"type":"device_error"},"timestamp":"2026-07-26T20:56:37.585Z"}]
-
-### unknown path on a known interface
-  topic: bench/KqYJ16Cs7lyeJ3PPzg7xQg/org.astrate.bench.Individual/nosuchpath
-  payload (base64): EAAAAAF2AAAAAAAAAPA/AA==
-  (uncorrelated, belongs to the session) <- [null,null,"rooms:bench:probe","new_event",{"device_id":"KqYJ16Cs7lyeJ3PPzg7xQg","event":{"error_name":"device_session_not_found","metadata":{},"type":"device_error"},"timestamp":"2026-07-26T20:57:05.866Z"}]
-  <- [null,null,"rooms:bench:probe","new_event",{"device_id":"KqYJ16Cs7lyeJ3PPzg7xQg","event":{"error_name":"mapping_not_found","metadata":{"base64_payload":"EAAAAAF2AAAAAAAAAPA/AA==","interface":"\"org.astrate.bench.Individual\"","path":"\"/nosuchpath\""},"type":"device_error"},"timestamp":"2026-07-26T20:57:05.866Z"}]
-  => unknown path on a known interface: mapping_not_found, delivered 3/3
-
-### payload that is not BSON at all
-  topic: bench/KqYJ16Cs7lyeJ3PPzg7xQg/org.astrate.bench.Individual/value
-  payload (base64): ZGVmaW5pdGVseSBub3QgYnNvbg==
-  (uncorrelated, belongs to the session) <- [null,null,"rooms:bench:probe","new_event",{"device_id":"KqYJ16Cs7lyeJ3PPzg7xQg","event":{"error_name":"device_session_not_found","metadata":{},"type":"device_error"},"timestamp":"2026-07-26T20:57:34.215Z"}]
-  <- [null,null,"rooms:bench:probe","new_event",{"device_id":"KqYJ16Cs7lyeJ3PPzg7xQg","event":{"error_name":"undecodable_bson_payload","metadata":{"base64_payload":"ZGVmaW5pdGVseSBub3QgYnNvbg==","interface":"\"org.astrate.bench.Individual\"","path":"\"/value\""},"type":"device_error"},"timestamp":"2026-07-26T20:57:34.215Z"}]
-
-### payload that is not BSON at all
-  topic: bench/KqYJ16Cs7lyeJ3PPzg7xQg/org.astrate.bench.Individual/value
-  payload (base64): ZGVmaW5pdGVseSBub3QgYnNvbg==
-  (no device_error reached the room on this attempt)
-
-### payload that is not BSON at all
-  topic: bench/KqYJ16Cs7lyeJ3PPzg7xQg/org.astrate.bench.Individual/value
-  payload (base64): ZGVmaW5pdGVseSBub3QgYnNvbg==
-  <- [null,null,"rooms:bench:probe","new_event",{"device_id":"KqYJ16Cs7lyeJ3PPzg7xQg","event":{"error_name":"undecodable_bson_payload","metadata":{"base64_payload":"ZGVmaW5pdGVseSBub3QgYnNvbg==","interface":"\"org.astrate.bench.Individual\"","path":"\"/value\""},"type":"device_error"},"timestamp":"2026-07-26T20:58:19.079Z"}]
-  <- [null,null,"rooms:bench:probe","new_event",{"device_id":"KqYJ16Cs7lyeJ3PPzg7xQg","event":{"error_name":"undecodable_bson_payload","metadata":{"base64_payload":"ZGVmaW5pdGVseSBub3QgYnNvbg==","interface":"\"org.astrate.bench.Individual\"","path":"\"/value\""},"type":"device_error"},"timestamp":"2026-07-26T20:58:19.171Z"}]
-  <- [null,null,"rooms:bench:probe","new_event",{"device_id":"KqYJ16Cs7lyeJ3PPzg7xQg","event":{"error_name":"undecodable_bson_payload","metadata":{"base64_payload":"ZGVmaW5pdGVseSBub3QgYnNvbg==","interface":"\"org.astrate.bench.Individual\"","path":"\"/value\""},"type":"device_error"},"timestamp":"2026-07-26T20:58:20.274Z"}]
-  <- [null,null,"rooms:bench:probe","new_event",{"device_id":"KqYJ16Cs7lyeJ3PPzg7xQg","event":{"error_name":"undecodable_bson_payload","metadata":{"base64_payload":"ZGVmaW5pdGVseSBub3QgYnNvbg==","interface":"\"org.astrate.bench.Individual\"","path":"\"/value\""},"type":"device_error"},"timestamp":"2026-07-26T20:58:22.443Z"}]
-  <- [null,null,"rooms:bench:probe","new_event",{"device_id":"KqYJ16Cs7lyeJ3PPzg7xQg","event":{"error_name":"undecodable_bson_payload","metadata":{"base64_payload":"ZGVmaW5pdGVseSBub3QgYnNvbg==","interface":"\"org.astrate.bench.Individual\"","path":"\"/value\""},"type":"device_error"},"timestamp":"2026-07-26T20:58:26.634Z"}]
-  => payload that is not BSON at all: undecodable_bson_payload, delivered 2/3
-
-### string where the mapping says double
-  topic: bench/KqYJ16Cs7lyeJ3PPzg7xQg/org.astrate.bench.Individual/value
-  payload (base64): EgAAAAJ2AAYAAABoZWxsbwAA
-  (no device_error reached the room on this attempt)
-
-### string where the mapping says double
-  topic: bench/KqYJ16Cs7lyeJ3PPzg7xQg/org.astrate.bench.Individual/value
-  payload (base64): EgAAAAJ2AAYAAABoZWxsbwAA
-  (uncorrelated, belongs to the session) <- [null,null,"rooms:bench:probe","new_event",{"device_id":"KqYJ16Cs7lyeJ3PPzg7xQg","event":{"error_name":"device_session_not_found","metadata":{},"type":"device_error"},"timestamp":"2026-07-26T20:59:09.866Z"}]
-  <- [null,null,"rooms:bench:probe","new_event",{"device_id":"KqYJ16Cs7lyeJ3PPzg7xQg","event":{"error_name":"unexpected_value_type","metadata":{"base64_payload":"EgAAAAJ2AAYAAABoZWxsbwAA","interface":"\"org.astrate.bench.Individual\"","path":"\"/value\""},"type":"device_error"},"timestamp":"2026-07-26T20:59:09.866Z"}]
-
-### string where the mapping says double
-  topic: bench/KqYJ16Cs7lyeJ3PPzg7xQg/org.astrate.bench.Individual/value
-  payload (base64): EgAAAAJ2AAYAAABoZWxsbwAA
-  (no device_error reached the room on this attempt)
-  => string where the mapping says double: unexpected_value_type, delivered 1/3
-
-### BSON document with no v key
-  topic: bench/KqYJ16Cs7lyeJ3PPzg7xQg/org.astrate.bench.Individual/value
-  payload (base64): EAAAAAF4AAAAAAAAAPA/AA==
-  <- [null,null,"rooms:bench:probe","new_event",{"device_id":"KqYJ16Cs7lyeJ3PPzg7xQg","event":{"error_name":"unexpected_value_type","metadata":{"base64_payload":"EAAAAAF4AAAAAAAAAPA/AA==","interface":"\"org.astrate.bench.Individual\"","path":"\"/value\""},"type":"device_error"},"timestamp":"2026-07-26T20:59:54.825Z"}]
-  <- [null,null,"rooms:bench:probe","new_event",{"device_id":"KqYJ16Cs7lyeJ3PPzg7xQg","event":{"error_name":"unexpected_value_type","metadata":{"base64_payload":"EAAAAAF4AAAAAAAAAPA/AA==","interface":"\"org.astrate.bench.Individual\"","path":"\"/value\""},"type":"device_error"},"timestamp":"2026-07-26T20:59:54.912Z"}]
-  <- [null,null,"rooms:bench:probe","new_event",{"device_id":"KqYJ16Cs7lyeJ3PPzg7xQg","event":{"error_name":"unexpected_value_type","metadata":{"base64_payload":"EAAAAAF4AAAAAAAAAPA/AA==","interface":"\"org.astrate.bench.Individual\"","path":"\"/value\""},"type":"device_error"},"timestamp":"2026-07-26T20:59:56.040Z"}]
-  <- [null,null,"rooms:bench:probe","new_event",{"device_id":"KqYJ16Cs7lyeJ3PPzg7xQg","event":{"error_name":"unexpected_value_type","metadata":{"base64_payload":"EAAAAAF4AAAAAAAAAPA/AA==","interface":"\"org.astrate.bench.Individual\"","path":"\"/value\""},"type":"device_error"},"timestamp":"2026-07-26T20:59:58.190Z"}]
-  <- [null,null,"rooms:bench:probe","new_event",{"device_id":"KqYJ16Cs7lyeJ3PPzg7xQg","event":{"error_name":"unexpected_value_type","metadata":{"base64_payload":"EAAAAAF4AAAAAAAAAPA/AA==","interface":"\"org.astrate.bench.Individual\"","path":"\"/value\""},"type":"device_error"},"timestamp":"2026-07-26T21:00:02.309Z"}]
-
-### BSON document with no v key
-  topic: bench/KqYJ16Cs7lyeJ3PPzg7xQg/org.astrate.bench.Individual/value
-  payload (base64): EAAAAAF4AAAAAAAAAPA/AA==
-  <- [null,null,"rooms:bench:probe","new_event",{"device_id":"KqYJ16Cs7lyeJ3PPzg7xQg","event":{"error_name":"unexpected_value_type","metadata":{"base64_payload":"EAAAAAF4AAAAAAAAAPA/AA==","interface":"\"org.astrate.bench.Individual\"","path":"\"/value\""},"type":"device_error"},"timestamp":"2026-07-26T21:00:17.345Z"}]
-  <- [null,null,"rooms:bench:probe","new_event",{"device_id":"KqYJ16Cs7lyeJ3PPzg7xQg","event":{"error_name":"unexpected_value_type","metadata":{"base64_payload":"EAAAAAF4AAAAAAAAAPA/AA==","interface":"\"org.astrate.bench.Individual\"","path":"\"/value\""},"type":"device_error"},"timestamp":"2026-07-26T21:00:25.528Z"}]
-
-### BSON document with no v key
-  topic: bench/KqYJ16Cs7lyeJ3PPzg7xQg/org.astrate.bench.Individual/value
-  payload (base64): EAAAAAF4AAAAAAAAAPA/AA==
-  (no device_error reached the room on this attempt)
-  => BSON document with no v key: unexpected_value_type, delivered 2/3
-
-### object with an unexpected key
-  topic: bench/KqYJ16Cs7lyeJ3PPzg7xQg/org.astrate.bench.Object/data
-  payload (base64): LgAAAAN2ACYAAAABdGVtcAAAAAAAAADwPwFib2d1c19rZXkAAAAAAAAAAEAAAA==
-  (uncorrelated, belongs to the session) <- [null,null,"rooms:bench:probe","new_event",{"device_id":"KqYJ16Cs7lyeJ3PPzg7xQg","event":{"error_name":"device_session_not_found","metadata":{},"type":"device_error"},"timestamp":"2026-07-26T21:01:16.112Z"}]
-  <- [null,null,"rooms:bench:probe","new_event",{"device_id":"KqYJ16Cs7lyeJ3PPzg7xQg","event":{"error_name":"unexpected_object_key","metadata":{"base64_payload":"LgAAAAN2ACYAAAABdGVtcAAAAAAAAADwPwFib2d1c19rZXkAAAAAAAAAAEAAAA==","interface":"\"org.astrate.bench.Object\"","path":"\"/data\""},"type":"device_error"},"timestamp":"2026-07-26T21:01:16.113Z"}]
-
-### object with an unexpected key
-  topic: bench/KqYJ16Cs7lyeJ3PPzg7xQg/org.astrate.bench.Object/data
-  payload (base64): LgAAAAN2ACYAAAABdGVtcAAAAAAAAADwPwFib2d1c19rZXkAAAAAAAAAAEAAAA==
-  <- [null,null,"rooms:bench:probe","new_event",{"device_id":"KqYJ16Cs7lyeJ3PPzg7xQg","event":{"error_name":"unexpected_object_key","metadata":{"base64_payload":"LgAAAAN2ACYAAAABdGVtcAAAAAAAAADwPwFib2d1c19rZXkAAAAAAAAAAEAAAA==","interface":"\"org.astrate.bench.Object\"","path":"\"/data\""},"type":"device_error"},"timestamp":"2026-07-26T21:01:38.762Z"}]
-
-### object with an unexpected key
-  topic: bench/KqYJ16Cs7lyeJ3PPzg7xQg/org.astrate.bench.Object/data
-  payload (base64): LgAAAAN2ACYAAAABdGVtcAAAAAAAAADwPwFib2d1c19rZXkAAAAAAAAAAEAAAA==
-  (uncorrelated, belongs to the session) <- [null,null,"rooms:bench:probe","new_event",{"device_id":"KqYJ16Cs7lyeJ3PPzg7xQg","event":{"error_name":"device_session_not_found","metadata":{},"type":"device_error"},"timestamp":"2026-07-26T21:02:06.700Z"}]
-  <- [null,null,"rooms:bench:probe","new_event",{"device_id":"KqYJ16Cs7lyeJ3PPzg7xQg","event":{"error_name":"unexpected_object_key","metadata":{"base64_payload":"LgAAAAN2ACYAAAABdGVtcAAAAAAAAADwPwFib2d1c19rZXkAAAAAAAAAAEAAAA==","interface":"\"org.astrate.bench.Object\"","path":"\"/data\""},"type":"device_error"},"timestamp":"2026-07-26T21:02:06.700Z"}]
-  => object with an unexpected key: unexpected_object_key, delivered 3/3
-
-### unknown control message
-  topic: bench/KqYJ16Cs7lyeJ3PPzg7xQg/control/bogusControl
-  payload (base64): MQ==
-  <- [null,null,"rooms:bench:probe","new_event",{"device_id":"KqYJ16Cs7lyeJ3PPzg7xQg","event":{"error_name":"unexpected_control_message","metadata":{"base64_payload":"MQ==","path":"\"/bogusControl\""},"type":"device_error"},"timestamp":"2026-07-26T21:02:34.547Z"}]
-
-### unknown control message
-  topic: bench/KqYJ16Cs7lyeJ3PPzg7xQg/control/bogusControl
-  payload (base64): MQ==
-  (no device_error reached the room on this attempt)
-
-### unknown control message
-  topic: bench/KqYJ16Cs7lyeJ3PPzg7xQg/control/bogusControl
-  payload (base64): MQ==
-  <- [null,null,"rooms:bench:probe","new_event",{"device_id":"KqYJ16Cs7lyeJ3PPzg7xQg","event":{"error_name":"unexpected_control_message","metadata":{"base64_payload":"MQ==","path":"\"/bogusControl\""},"type":"device_error"},"timestamp":"2026-07-26T21:03:26.166Z"}]
-  => unknown control message: unexpected_control_message, delivered 2/3
-
-### invalid introspection
-  topic: bench/KqYJ16Cs7lyeJ3PPzg7xQg
-  payload (base64): dGhpcyBpcyBub3QgYW4gaW50cm9zcGVjdGlvbg==
-  (no device_error reached the room on this attempt)
-
-### invalid introspection
-  topic: bench/KqYJ16Cs7lyeJ3PPzg7xQg
-  payload (base64): dGhpcyBpcyBub3QgYW4gaW50cm9zcGVjdGlvbg==
-  <- [null,null,"rooms:bench:probe","new_event",{"device_id":"KqYJ16Cs7lyeJ3PPzg7xQg","event":{"error_name":"invalid_introspection","metadata":{"base64_payload":"dGhpcyBpcyBub3QgYW4gaW50cm9zcGVjdGlvbg=="},"type":"device_error"},"timestamp":"2026-07-26T21:04:11.645Z"}]
-  <- [null,null,"rooms:bench:probe","new_event",{"device_id":"KqYJ16Cs7lyeJ3PPzg7xQg","event":{"error_name":"invalid_introspection","metadata":{"base64_payload":"dGhpcyBpcyBub3QgYW4gaW50cm9zcGVjdGlvbg=="},"type":"device_error"},"timestamp":"2026-07-26T21:04:11.736Z"}]
-  <- [null,null,"rooms:bench:probe","new_event",{"device_id":"KqYJ16Cs7lyeJ3PPzg7xQg","event":{"error_name":"invalid_introspection","metadata":{"base64_payload":"dGhpcyBpcyBub3QgYW4gaW50cm9zcGVjdGlvbg=="},"type":"device_error"},"timestamp":"2026-07-26T21:04:12.853Z"}]
-  <- [null,null,"rooms:bench:probe","new_event",{"device_id":"KqYJ16Cs7lyeJ3PPzg7xQg","event":{"error_name":"invalid_introspection","metadata":{"base64_payload":"dGhpcyBpcyBub3QgYW4gaW50cm9zcGVjdGlvbg=="},"type":"device_error"},"timestamp":"2026-07-26T21:04:15.001Z"}]
-  <- [null,null,"rooms:bench:probe","new_event",{"device_id":"KqYJ16Cs7lyeJ3PPzg7xQg","event":{"error_name":"invalid_introspection","metadata":{"base64_payload":"dGhpcyBpcyBub3QgYW4gaW50cm9zcGVjdGlvbg=="},"type":"device_error"},"timestamp":"2026-07-26T21:04:19.101Z"}]
-
-### invalid introspection
-  topic: bench/KqYJ16Cs7lyeJ3PPzg7xQg
-  payload (base64): dGhpcyBpcyBub3QgYW4gaW50cm9zcGVjdGlvbg==
-  (uncorrelated, belongs to the session) <- [null,null,"rooms:bench:probe","new_event",{"device_id":"KqYJ16Cs7lyeJ3PPzg7xQg","event":{"error_name":"device_session_not_found","metadata":{},"type":"device_error"},"timestamp":"2026-07-26T21:04:39.908Z"}]
-  <- [null,null,"rooms:bench:probe","new_event",{"device_id":"KqYJ16Cs7lyeJ3PPzg7xQg","event":{"error_name":"invalid_introspection","metadata":{"base64_payload":"dGhpcyBpcyBub3QgYW4gaW50cm9zcGVjdGlvbg=="},"type":"device_error"},"timestamp":"2026-07-26T21:04:39.908Z"}]
-  => invalid introspection: invalid_introspection, delivered 2/3
+# section=auth — the other section was carried over unchanged from upstream/channels.json
