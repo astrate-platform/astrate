@@ -1,15 +1,20 @@
-code: 31aa0209ce3cb9915d4a42bb0ef0ccb87cd78119
-at:  452b303
-ran: 2026-07-27T10:37:52Z on DietPi in 46s
+code: 7d4cac3aed5d71d3ab53b964fc354642428d191d
+at:  5ac1fdb
+ran: 2026-07-27T11:09:36Z on DietPi in 65s
 
 
 > build · big-pickle
 
 → Read .mule/MULE.md
 → Read .mule/task.md
-The task is a `[legion] [readonly]` race check: SSH to legion, fetch/merge, run `go test -race ./...`, and report failures. Let me read the Legion recipe first.
+This is a `[legion]` `[readonly]` task — run race detection on Legion Go. Let me check if Legion is reachable.
+
+$ ssh -o ConnectTimeout=5 -o BatchMode=yes legion "echo ok" 2>&1
+ok
+
+Legion is up. Let me read the Legion Go recipe first.
 → Read .mule/recipes/legion-go.md
-Running the race check on Legion Go now.
+Now running the race detection on Legion Go:
 
 $ ssh legion 'cd ~/astrate && git fetch -q && git merge --ff-only -q origin/main && go test -race ./...' 2>&1
 ok  	github.com/astrate-platform/astrate/cmd/astrate	(cached)
@@ -39,10 +44,10 @@ ok  	github.com/astrate-platform/astrate/pkg/deviceid	(cached)
 ok  	github.com/astrate-platform/astrate/pkg/interfaceschema	(cached)
 ok  	github.com/astrate-platform/astrate/pkg/payload	(cached)
 
-All 26 packages passed `go test -race ./...` with zero race failures. No action needed.
+All 26 test packages passed with `-race`, no data races detected. This is a `[readonly]` task — nothing to change, nothing to report to `for-giulio.md`.
 
-Done: Race check passed on Legion Go — all packages clean, no races detected.
-Files: none (readonly task)
-Verified: `ssh legion 'cd ~/astrate && git fetch -q && git merge --ff-only -q origin/main && go test -race ./...'` -> pass
+Done: race-check passed — all tests pass under -race on Legion Go
+Files: none changed (readonly task)
+Verified: `ssh legion 'cd ~/astrate && git fetch -q && git merge --ff-only -q origin/main && go test -race ./...'` -> pass (26 packages, 0 races)
 Unsure: nothing
 Follow-ups: none
