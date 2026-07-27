@@ -36,3 +36,4 @@ layer can actually do — read it before deciding whether a kind of task is wort
 | 2026-07-27 | issue-16 | done | 1092s | d670932 |
 | 2026-07-27 | race-check | checked | 72s | cc13242 |
 | 2026-07-27 | issue-20 | checked | 211s | 446b806 |
+| 2026-07-27 | issue-22 | blocked | 340s | touched a never-touch path |
