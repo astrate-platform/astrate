@@ -20,9 +20,10 @@ coverage.*
 *.swp
 .DS_Store
 
-# Local AI documentation workflow/handoff
+# Local AI documentation workflow. The handoff files under docs/handoff/ ARE tracked:
+# they are the project's phase history, and the agents that need it most are the cheap ones
+# that cannot re-derive it.
 /docs/AI-DOCUMENTATION-WORKFLOW.md
-/docs/handoff/
 
 # MkDocs build output
 /site-dist/
@@ -37,10 +38,11 @@ coverage.*
 docker-compose.override.yml
 __pycache__/
 
-# bench harness artifacts (bench/README.md)
+# bench harness artifacts (bench/README.md). Note bench/results/ is deliberately NOT here:
+# a benchmark number without its host and its history is worthless, so results are evidence
+# and evidence is versioned.
 /bench/.astarte/
 /bench/keys/
-/bench/results/
 /bench/astrate/conf/
 /bench/*.json
 /bench/bench
