@@ -211,7 +211,7 @@ paths:
         "101":
           description: WebSocket upgrade successful.
         "200":
-          description: SSE stream started (when `Accept: text/event-stream`).
+          description: "SSE stream started (when `Accept: text/event-stream`)"
         "401":
           $ref: "#/components/responses/Unauthorized"
 
@@ -289,7 +289,7 @@ components:
           type: object
           additionalProperties:
             type: string
-          description: Per-dependency check results ("ok" or "error: ...").
+          description: "Per-dependency check results (\"ok\" or \"error: ...\")"
 
     DataEnvelopeHealthStatus:
       type: object
