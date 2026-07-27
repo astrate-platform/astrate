@@ -149,6 +149,54 @@ check_never() {
   return $hit
 }
 
+# MULE.md tells the mule that a behaviour change must come with a test that fails without it.
+# That was etiquette: nothing checked, and a cheap model can always write a test that asserts
+# something already true. This makes it mechanical — take the implementation back out, keep
+# the tests, and require them to break. If they still pass, the test proves nothing about the
+# change and the diff is unreviewable evidence of nothing.
+#
+# Only fires when the diff has both test and non-test Go changes. A pure refactor with no new
+# test, or a test-only commit, is not this gate's business.
+proof_gate() {
+  local impl tests
+  # A brand-new test file is untracked, and `git diff` cannot see it — so without this the
+  # gate silently passed exactly the case it exists for: a new test added alongside a change.
+  # Intent-to-add makes untracked files visible to diff without staging their content.
+  git -C "$REPO" add -N -- '*.go' >/dev/null 2>&1 || true
+  impl="$(git -C "$REPO" diff --name-only -- '*.go' ':!*_test.go')"
+  tests="$(git -C "$REPO" diff --name-only -- '*_test.go')"
+  [ -n "$impl" ] && [ -n "$tests" ] || return 0
+
+  local patch="$MULE/.impl.patch"
+  git -C "$REPO" diff -- '*.go' ':!*_test.go' > "$patch"
+  [ -s "$patch" ] || return 0
+
+  note "gate: do the new tests actually fail without the change?"
+  if ! git -C "$REPO" apply -R "$patch" 2>/dev/null; then
+    # Could not isolate the implementation — say so rather than pretend the gate ran.
+    note "  could not un-apply the implementation; skipping this gate"
+    rm -f "$patch"; return 0
+  fi
+
+  local still_passes=0
+  # A compile failure here is a pass, not an error: the test referencing something that no
+  # longer exists is exactly the dependency we are trying to demonstrate.
+  ( cd "$REPO" && eval "${MULE_TEST_CMD:-go test ./...}" ) >/dev/null 2>&1 && still_passes=1
+
+  git -C "$REPO" apply "$patch" 2>/dev/null || {
+    bad "could not restore the implementation after the proof gate — leaving the tree alone"
+    rm -f "$patch"; return 1
+  }
+  rm -f "$patch"
+
+  if [ "$still_passes" = 1 ]; then
+    bad "the new tests pass with the implementation removed — they do not prove the change"
+    return 1
+  fi
+  ok "the tests fail without the change, as they should"
+  return 0
+}
+
 gates() {
   local rc=0
   if [ -n "${MULE_FIX_CMD:-}" ]; then ( cd "$REPO" && eval "$MULE_FIX_CMD" ) >/dev/null 2>&1; fi
@@ -159,6 +207,14 @@ gates() {
   if [ "$rc" = 0 ] && [ -n "${MULE_LINT_CMD:-}" ]; then
     note "gate: lint"
     ( cd "$REPO" && eval "$MULE_LINT_CMD" ) >/dev/null 2>&1 || { bad "lint failed"; rc=1; }
+  fi
+  if [ "$rc" = 0 ] && [ -z "${MULE_NO_PROOF_GATE:-}" ]; then
+    proof_gate || rc=1
+    # proof_gate marks untracked files intent-to-add so diff can see them, which leaves index
+    # entries behind on every exit path. Nothing is deliberately staged during a task — the
+    # runner stages after the gates — so clearing the index here is safe, and not clearing it
+    # leaves a phantom deletion that the revert path would act on.
+    git -C "$REPO" reset -q >/dev/null 2>&1 || true
   fi
   return $rc
 }
