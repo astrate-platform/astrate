@@ -6,9 +6,10 @@ import (
 
 func TestCompilePolicy(t *testing.T) {
 	tests := []struct {
-		name    string
-		def     string
-		wantErr string
+		name              string
+		def               string
+		wantErr           string
+		wantPrefetchCount int // 0 means don't check
 	}{
 		{
 			name:    "valid discard policy",
@@ -110,6 +111,18 @@ func TestCompilePolicy(t *testing.T) {
 			def:     `{"name":"k","error_handlers":[{"on":[200],"strategy":"discard"}],"maximum_capacity":1}`,
 			wantErr: "status codes must be in 400..599",
 		},
+		{
+			name:              "prefetch_count round-trips",
+			def:               `{"name":"k","error_handlers":[{"on":"any_error","strategy":"discard"}],"maximum_capacity":1,"prefetch_count":5}`,
+			wantErr:           "",
+			wantPrefetchCount: 5,
+		},
+		{
+			name:              "prefetch_count defaults to 1 when omitted",
+			def:               `{"name":"k","error_handlers":[{"on":"any_error","strategy":"discard"}],"maximum_capacity":1}`,
+			wantErr:           "",
+			wantPrefetchCount: 1,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -120,6 +133,9 @@ func TestCompilePolicy(t *testing.T) {
 				}
 				if p == nil {
 					t.Fatal("expected non-nil policy")
+				}
+				if tt.wantPrefetchCount != 0 && p.PrefetchCount != tt.wantPrefetchCount {
+					t.Errorf("PrefetchCount = %d, want %d", p.PrefetchCount, tt.wantPrefetchCount)
 				}
 				return
 			}
