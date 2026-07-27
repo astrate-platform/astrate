@@ -33,3 +33,4 @@ layer can actually do — read it before deciding whether a kind of task is wort
 | 2026-07-27 | race-check | checked | 48s | 344d013 |
 | 2026-07-27 | store-delete-device-objects | done | 321s | deb01ac |
 | 2026-07-27 | race-check | checked | 71s | ad335ec |
+| 2026-07-27 | issue-16 | done | 1092s | d670932 |
