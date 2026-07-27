@@ -374,13 +374,36 @@ func testDevices(t *testing.T, s *Store) {
 
 		// Give d1 data + a property + a group membership, then delete it.
 		si := mustInstallInterface(t, s, realm.ID, allTypesDef)
+		objSI := mustInstallInterface(t, s, realm.ID, `{
+			"interface_name": "com.astrate.test.ObjectDel",
+			"version_major": 1,
+			"version_minor": 0,
+			"type": "datastream",
+			"ownership": "device",
+			"aggregation": "object",
+			"mappings": [
+				{"endpoint": "/%{id}/temp", "type": "double"}
+			]
+		}`)
 		v := 1.5
 		ts := time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC)
-		if err := s.AppendDatastreams(ctx, DatastreamBatch{Individual: []IndividualRow{{
-			RealmID: realm.ID, DeviceID: d1, InterfaceID: si.ID, EndpointID: si.Endpoints["/d"],
-			Path: "/d", TS: ts, ReceptionTS: ts, ValueDouble: &v,
-		}}}); err != nil {
+		if err := s.AppendDatastreams(ctx, DatastreamBatch{
+			Individual: []IndividualRow{{
+				RealmID: realm.ID, DeviceID: d1, InterfaceID: si.ID, EndpointID: si.Endpoints["/d"],
+				Path: "/d", TS: ts, ReceptionTS: ts, ValueDouble: &v,
+			}},
+			Objects: []ObjectRow{{
+				RealmID: realm.ID, DeviceID: d1, InterfaceID: objSI.ID, Path: "/node-1",
+				TS: ts, ReceptionTS: ts, Value: []byte(`{"temp": 22.5}`),
+			}},
+		}); err != nil {
 			t.Fatal(err)
+		}
+		objRows, err := s.ObjectSeries(ctx, SeriesQuery{
+			RealmID: realm.ID, DeviceID: d1, InterfaceID: objSI.ID, Path: "/node-1",
+		})
+		if err != nil || len(objRows) != 1 {
+			t.Fatalf("ObjectSeries before delete: %d rows, err %v", len(objRows), err)
 		}
 		g, err := s.CreateGroup(ctx, realm.ID, "del-grp")
 		if err != nil {
@@ -399,6 +422,12 @@ func testDevices(t *testing.T, s *Store) {
 		rows, err := s.Series(ctx, SeriesQuery{RealmID: realm.ID, DeviceID: d1, InterfaceID: si.ID, Path: "/d"})
 		if err != nil || len(rows) != 0 {
 			t.Errorf("datastreams survived the delete: %d rows, err %v", len(rows), err)
+		}
+		objRows, err = s.ObjectSeries(ctx, SeriesQuery{
+			RealmID: realm.ID, DeviceID: d1, InterfaceID: objSI.ID, Path: "/node-1",
+		})
+		if err != nil || len(objRows) != 0 {
+			t.Errorf("object datastreams survived the delete: %d rows, err %v", len(objRows), err)
 		}
 		members, err := s.ListGroupDevices(ctx, g.ID)
 		if err != nil || len(members) != 0 {
