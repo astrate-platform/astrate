@@ -9,7 +9,7 @@ import "embed"
 //go:embed swagger-ui/*
 var SwaggerUI embed.FS
 
-// API holds the OpenAPI 3.0 YAML specifications for all five API surfaces.
+// APIYAML holds the OpenAPI 3.0 YAML specifications for all five API surfaces.
 //
 //go:embed api/*.yaml
 var APIYAML embed.FS
