@@ -87,6 +87,14 @@ Follow-ups: <task lines you appended to .mule/todo.md, or "none">
 
 A stated doubt is worth more than a silent patch. Your diff gets read.
 
+## Tasks that came from an issue
+
+A task slugged `issue-<N>` came from a GitHub issue. Read it first — `gh issue view <N>` —
+because the line in the queue is only its title, and the body is where the actual requirement
+is. If the issue asks for more than one tick's worth, do the first independently useful part
+and propose the rest as new lines, exactly as you would for any oversized task. Do not close
+the issue; the script comments the sha on it for you.
+
 ## Adding tasks
 
 Append to `.mule/todo.md`, one line each, never more than ~8 at a time:

@@ -41,6 +41,9 @@ MULE_BRANCH="${MULE_BRANCH:-mule/queue}"
 MULE_TIMEOUT="${MULE_TIMEOUT:-900}"
 MULE_AGENT="${MULE_AGENT:-build}"
 MULE_MODEL="${MULE_MODEL:-}"
+# The label that means "a human or a model decided the mule should do this". Only issues
+# carrying it are ever pulled into the queue, so filing an ordinary issue never conscripts it.
+MULE_ISSUE_LABEL="${MULE_ISSUE_LABEL:-mule}"
 
 # --- helpers ----------------------------------------------------------------
 
@@ -379,6 +382,18 @@ format MULE.md gives.'
       git -C "$REPO" push -q origin "$MULE_BRANCH" 2>/dev/null \
         && ok "pushed $MULE_BRANCH" || note "push failed — the work is safe locally"
     fi
+    # If this task came from an issue, say so on the issue. Deliberately a comment and not a
+    # close: whether the issue is actually resolved is a judgement about intent, and the mule
+    # is the last thing that should be making it.
+    case "$slug" in
+      issue-*)
+        if [ -n "${MULE_PUSH:-}" ] && command -v gh >/dev/null; then
+          gh issue comment "${slug#issue-}" --body \
+            "The mule pushed \`$(git -C "$REPO" rev-parse --short HEAD)\` to \`$MULE_BRANCH\` for this. Unreviewed — the gates passed, nothing more." \
+            >/dev/null 2>&1 && note "commented on ${slug#issue-}"
+        fi
+        ;;
+    esac
     ok "landed: $text (${elapsed}s)"
     return 0
   fi
@@ -421,7 +436,19 @@ cmd_tick() {
   # and Giulio's own pushes are picked up without anyone logging into the Pi.
   git -C "$REPO" fetch -q origin 2>/dev/null || note "fetch failed — working offline"
 
-  first_open >/dev/null 2>&1 || { note "queue empty — nothing to do"; exit 0; }
+  # An empty queue is not a reason to stop — it is the cue to go find work. Charge the refill
+  # to the daily budget first, so a recipe that proposes nothing still costs a tick and a
+  # provider that keeps handing back empty proposals cannot spin all day for free.
+  if ! first_open >/dev/null 2>&1; then
+    if [ -n "${MULE_NO_REFILL:-}" ]; then note "queue empty — nothing to do"; exit 0; fi
+    echo "$today $((count + 1))" > "$stamp"
+    note "tick $((count + 1))/${MULE_DAILY_MAX:-16} for $today — refilling"
+    cmd_refill || { note "nothing to propose right now — idling until the next tick"; exit 0; }
+    # Whatever it just proposed waits for the next tick. That is deliberate: the proposals
+    # are visible on GitHub for half an hour before anything acts on them, which is the only
+    # chance a human gets to cut a bad one.
+    exit 0
+  fi
   echo "$today $((count + 1))" > "$stamp"
   note "tick $((count + 1))/${MULE_DAILY_MAX:-16} for $today"
   cmd_next; local rc=$?
@@ -430,6 +457,62 @@ cmd_tick() {
   # outage.
   [ "$rc" = 8 ] && exit 0
   return "$rc"
+}
+
+# Pull open GitHub issues labelled `mule` into the queue, one task line each. This is the
+# front door: a stronger model, or Giulio, files an issue and the mule picks it up on its own
+# without anyone logging into the Pi. GitHub is the approval surface — an issue exists because
+# a human or a model deliberately wrote it, which is a far better filter than anything the
+# mule could apply to its own proposals.
+#
+# Prints the number of lines added.
+refill_from_issues() {
+  command -v gh >/dev/null || return 1
+  local repo added=0 n title
+  repo="$(gh repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null)" || return 1
+  while IFS=$'\t' read -r n title; do
+    [ -n "$n" ] || continue
+    # Already queued, running, done or blocked — the slug is the issue number, so one grep
+    # over every state is enough and a closed-then-reopened issue is not duplicated.
+    grep -q "^- \[.\] issue-$n:" "$TODO" && continue
+    printf -- '- [ ] issue-%s: %s (gh issue view %s) [auto]\n' "$n" "$title" "$n" >> "$TODO"
+    added=$((added+1))
+  done < <(gh issue list --repo "$repo" --state open --label "$MULE_ISSUE_LABEL" \
+             --limit 20 --json number,title -q '.[] | "\(.number)\t\(.title)"' 2>/dev/null)
+  echo "$added"
+}
+
+# Ask the mule to propose its own work, one recipe per call, rotating. Rotation matters: left
+# to a fixed order it would re-run `code-review` forever and never look upstream.
+refill_from_recipe() {
+  local order="github-issues astarte-upstream code-review docs-sync hygiene"
+  local last next=""; last="$(cat "$MULE/.rotation" 2>/dev/null)"
+  local first="" seen=""
+  for r in $order; do
+    [ -n "$first" ] || first="$r"
+    if [ -n "$seen" ]; then next="$r"; break; fi
+    [ "$r" = "$last" ] && seen=1
+  done
+  [ -n "$next" ] || next="$first"
+  echo "$next" > "$MULE/.rotation"
+  note "queue is empty — running the '$next' recipe to propose work"
+  cmd_recipe "$next"
+}
+
+# What the timer does when there is nothing queued. Autonomy lives here.
+cmd_refill() {
+  ensure_branch
+  local added; added="$(refill_from_issues)"
+  if [ -n "$added" ] && [ "$added" -gt 0 ] 2>/dev/null; then
+    ok "pulled $added issue(s) from GitHub into the queue"
+  else
+    refill_from_recipe || return 1
+  fi
+  # Proposals are worth nothing if they only exist on the Pi.
+  git -C "$REPO" add -A "$MULE" >/dev/null 2>&1
+  git -C "$REPO" diff --cached --quiet || git -C "$REPO" commit -q -m "mule: refill the queue"
+  [ -n "${MULE_PUSH:-}" ] && git -C "$REPO" push -q origin "$MULE_BRANCH" 2>/dev/null
+  first_open >/dev/null 2>&1
 }
 
 cmd_loop() {
@@ -479,6 +562,15 @@ cmd_menu() {
    Each option is a recipe in .mule/recipes/. Running one PROPOSES
    tasks — it appends them to .mule/todo.md for you to approve
    before the mule executes them.
+
+   You are being asked because you are HERE. Left alone on the
+   timer the mule refills its own queue: open GitHub issues
+   labelled 'mule' first, then these recipes in rotation. So the
+   real question is whether you want to steer this round, not
+   whether it has anything to do.
+
+     gh issue create --label mule    queue work from anywhere
+     tools/mule.sh refill            do the automatic thing now
 
      tools/mule.sh add "<slug>: <what to do>"
      tools/mule.sh loop
@@ -531,6 +623,7 @@ case "${1:-}" in
   add)       shift; cmd_add "$@";;
   menu)      shift; cmd_menu "$@";;
   recipe)    shift; cmd_recipe "$@";;
+  refill)    shift; cmd_refill "$@";;
   legion)    shift; cmd_legion "$@";;
   tick)      shift; cmd_tick "$@";;
   revert)    shift; cmd_revert "$@";;

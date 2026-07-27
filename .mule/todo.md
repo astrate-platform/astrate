@@ -30,6 +30,25 @@ alone -- past the per-task budget -- and because they want someone watching. Run
     tools/mule.sh legion bench-push
     ssh legion 'cd ~/astrate/bench && ./scripts/run-tier.sh small astrate -base-url ... -housekeeping-key ...'
 
+## Where tasks come from
+
+You do not have to feed this file by hand. When a tick finds the queue empty it refills it:
+
+1. **Open GitHub issues labelled `mule`** become task lines, one each, slugged `issue-<N>`.
+   This is the front door — anyone, including a stronger model with access to the repo, files
+   an issue and the mule picks it up on the next tick without touching the Pi. GitHub is the
+   approval surface: an issue exists because someone deliberately wrote it. When a task from
+   an issue lands, the mule comments the sha on that issue. It never closes it — whether the
+   issue is actually resolved is a judgement about intent, and that is not the mule's call.
+2. **Otherwise a proposal recipe runs**, rotating through `github-issues`, `astarte-upstream`,
+   `code-review`, `docs-sync`, `hygiene`, so it cannot get stuck re-reviewing the same code
+   forever. Lines it invents itself are tagged `[auto]` — nobody approved those, and the tag
+   is there so you can tell them apart at a glance and cut them.
+
+A refill costs a tick from the daily budget and never runs the work it just proposed: the
+proposals sit for one tick, visible on the branch, which is the window you get to cut a bad
+one. `MULE_NO_REFILL=1` turns the whole thing off and makes the mule purely obedient again.
+
 ## Queue
 
 - [x] bench-tiers: create the tiered benchmark definitions per .mule/recipes/benchmarks.md (first run only — this task builds the harness, it does not run it)
