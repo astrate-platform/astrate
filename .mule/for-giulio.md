@@ -10,6 +10,16 @@ line once you have dealt with it — this file is a queue, not a log.
 
 ---
 
+- **v3.0/v4.0 boundary**: while designing #29 (Portal appliance views), realized QR-on-box
+  device claim, warehouse/stock state, remote actions/OTA, and a mobile fleet-monitoring
+  dashboard are all things an operator will ask for, but per `.mule/milestones.md` those are
+  Edgehog (v4.0) territory, not Portal (v3.0) — Portal just shows/edits metadata over
+  devices that already exist. Doc: `docs/design/clea-portal-appliance-management.md`. Not
+  blocking #29 (scoped it out there), but worth deciding now whether v4.0's milestone
+  section should call these out explicitly so they don't get lost between milestones.
+
+---
+
 - ~~`device_deletion_started`/`device_deletion_finished` trigger events are not emitted~~ —
   **decided 2026-07-27: emit both, back-to-back, around the synchronous delete.** Filed as
   issue #21 (`mule`). (Cross-project survey, 2026-07-27,
