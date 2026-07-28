@@ -90,10 +90,12 @@ else
   bad "no .mule/hosts here — copy .mule/hosts.example to .mule/hosts and fill it in"
 fi
 
-# --- 4. the timer -----------------------------------------------------------
-# systemd, not cron: OnUnitInactiveSec measures from the previous run *finishing*, so a task
-# that overruns 30 minutes delays the next tick instead of racing it. flock inside `tick` is
-# the belt to that braces.
+# --- 4. the schedule ---------------------------------------------------------
+# mule.service stays around for manual/off-schedule runs (systemctl start mule.service), but
+# ticks are no longer driven by a flat 30-minute systemd timer. A daily planner
+# (mule-plan-day.sh) picks a random tick count and random times inside two windows and writes
+# them as one-shot cron entries for the day; a small systemd timer runs the planner itself
+# once a day, early, before either window opens.
 [ "$MODE" = check ] || pish <<'EOS'
 set -e
 cat > /etc/systemd/system/mule.service <<'UNIT'
@@ -113,26 +115,42 @@ TimeoutStartSec=1800
 Nice=10
 UNIT
 
-cat > /etc/systemd/system/mule.timer <<'UNIT'
+# Old flat 30-minute timer, if present from a previous install — cron now drives ticks.
+systemctl disable --now mule.timer 2>/dev/null || true
+rm -f /etc/systemd/system/mule.timer
+
+cat > /etc/systemd/system/mule-planner.service <<'UNIT'
 [Unit]
-Description=Run the Astrate mule every 30 minutes
+Description=Plan the Astrate mule's tick times for today
+After=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/root/astrate-mule
+ExecStart=/bin/bash /root/astrate-mule/tools/mule-plan-day.sh
+UNIT
+
+cat > /etc/systemd/system/mule-planner.timer <<'UNIT'
+[Unit]
+Description=Pick the Astrate mule's tick times for today, once a day
 
 [Timer]
-# Measured from when the last run FINISHED, so runs can never overlap or pile up.
-OnBootSec=10min
-OnUnitInactiveSec=30min
-AccuracySec=1min
-Persistent=false
+OnCalendar=*-*-* 06:00:00
+RandomizedDelaySec=1800
+AccuracySec=5min
+Persistent=true
 
 [Install]
 WantedBy=timers.target
 UNIT
 
 systemctl daemon-reload
-systemctl enable --now mule.timer
-systemctl list-timers mule.timer --no-pager | head -3
+systemctl enable --now mule-planner.timer
+systemctl start mule-planner.service
+systemctl list-timers mule-planner.timer --no-pager | head -3
+crontab -l | grep -A30 'BEGIN mule-daily-schedule' || true
 EOS
-ok "timer installed and enabled"
+ok "daily schedule installed (mule-planner.timer + cron)"
 
 # --- 5. the daily survey: its own clone, its own timer ----------------------
 # A second, separate clone (not /root/astrate-mule) because the survey works its own branch
@@ -258,9 +276,9 @@ cat <<EOF
 
   Installed. From here on:
 
-    ssh $PI 'systemctl list-timers mule.timer'              # when it next fires
-    ssh $PI 'journalctl -u mule.service -n 50'              # what it did
-    ssh $PI 'systemctl stop mule.timer'                     # make it stop
+    ssh $PI 'crontab -l'                                     # today's planned tick times
+    ssh $PI 'journalctl -u mule.service -n 50'              # what the last tick did
+    ssh $PI 'systemctl stop mule-planner.timer'             # stop planning new days
     ssh $PI 'cd $PI_REPO && ./tools/mule.sh status'
 
     ssh $PI 'systemctl list-timers mule-survey.timer'       # when the daily survey next fires
@@ -271,8 +289,8 @@ cat <<EOF
     ssh $PI                                                  # then just: opencode
                                                                # /astrate-workflow, /mule-triage work there too now
 
-  The 30-min mule does nothing at all until there are approved tasks in .mule/todo.md or
-  issues labelled 'mule' — an idle mule is the correct mule. The daily survey runs
+  The mule does nothing at all until there are approved tasks in .mule/todo.md or issues
+  labelled 'mule' — an idle mule is the correct mule. The daily survey runs
   regardless, but is itself incremental: most days it should report "no material change" and
   commit nothing you need to read. Its output on branch mule/research is a report for you or
   a strong model to triage into issues — it never files one itself.
