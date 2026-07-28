@@ -115,6 +115,10 @@ type Engine struct {
 	// onDeviceError observes every rejection (M6b wires device_error trigger
 	// events here, docs/DESIGN.md §2.6). Nil means metrics and logs only.
 	onDeviceError func(m broker.InboundMessage, reason, detail string)
+	// onCapabilities handles `<realm>/<device_id>/capabilities` BSON
+	// publishes (device capability negotiation, upstream MQTT v1 §2).
+	// Nil behaves like onIntrospection.
+	onCapabilities func(ctx context.Context, m broker.InboundMessage, realm *realmSchema)
 }
 
 // Compile-time port guards.

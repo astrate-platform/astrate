@@ -76,6 +76,17 @@ func NewIncomingDataEvent(iface, path string, value any) IncomingDataEvent {
 	return IncomingDataEvent{Type: OnIncomingData, Interface: iface, Path: path, Value: value}
 }
 
+// DeviceRegisteredEvent is the device_registered event body.
+type DeviceRegisteredEvent struct {
+	// Type is always "device_registered".
+	Type string `json:"type"`
+}
+
+// NewDeviceRegisteredEvent builds a device_registered event body.
+func NewDeviceRegisteredEvent() DeviceRegisteredEvent {
+	return DeviceRegisteredEvent{Type: OnDeviceRegistered}
+}
+
 // DeviceConnectedEvent is the device_connected event body.
 type DeviceConnectedEvent struct {
 	// Type is always "device_connected".

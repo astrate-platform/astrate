@@ -45,6 +45,9 @@ const (
 	// reasonControlInvalid: a control payload with a bad zlib frame, a
 	// declared size above the ceiling, or a lying size header (§4.5).
 	reasonControlInvalid = "control_payload_invalid"
+	// reasonCapabilitiesInvalid: a capabilities payload that is not a valid
+	// BSON document or contains an unknown/unparseable capability.
+	reasonCapabilitiesInvalid = "capabilities_payload_invalid"
 )
 
 // engineRejectReasons pre-registers the labels above (newMetrics).
@@ -53,6 +56,7 @@ var engineRejectReasons = []string{
 	reasonInterfaceNotDeclared, reasonInterfaceNotInstalled,
 	reasonOwnershipViolation, reasonUnexpectedPath,
 	reasonIntrospectionInvalid, reasonControlUnknown, reasonControlInvalid,
+	reasonCapabilitiesInvalid,
 }
 
 // Shard-parking backoff bounds for transient store failures
@@ -174,6 +178,17 @@ func (e *Engine) handle(ctx context.Context, sh *shard, m broker.InboundMessage)
 		e.met.unhandled.WithLabelValues("control").Inc()
 		e.log.Debug("control handler not wired; message consumed",
 			"realm", m.Realm, "device", m.DeviceID.String(), "subpath", subpath)
+		m.Ack()
+		return
+	case kindCapabilities:
+		if e.onCapabilities != nil {
+			e.flushShard(ctx, sh)
+			e.onCapabilities(ctx, m, realm)
+			return
+		}
+		e.met.unhandled.WithLabelValues("capabilities").Inc()
+		e.log.Debug("capabilities handler not wired; message consumed",
+			"realm", m.Realm, "device", m.DeviceID.String())
 		m.Ack()
 		return
 	case kindData:

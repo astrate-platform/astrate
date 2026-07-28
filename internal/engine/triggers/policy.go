@@ -85,6 +85,7 @@ func (h *compiledHandler) onLabel() string {
 type Policy struct {
 	Name            string
 	MaximumCapacity int
+	PrefetchCount   int
 	RetryTimes      int           // 0 when no handler retries
 	EventTTL        time.Duration // 0 when unset
 	handlers        []compiledHandler
@@ -101,6 +102,7 @@ func CompilePolicy(def []byte) (*Policy, error) {
 			Strategy string          `json:"strategy"`
 		} `json:"error_handlers"`
 		MaximumCapacity int  `json:"maximum_capacity"`
+		PrefetchCount   *int `json:"prefetch_count"`
 		RetryTimes      *int `json:"retry_times"`
 		EventTTL        *int `json:"event_ttl"`
 	}
@@ -157,10 +159,15 @@ func CompilePolicy(def []byte) (*Policy, error) {
 	if doc.EventTTL != nil {
 		eventTTL = time.Duration(*doc.EventTTL) * time.Second
 	}
+	prefetchCount := 1
+	if doc.PrefetchCount != nil && *doc.PrefetchCount > 0 {
+		prefetchCount = *doc.PrefetchCount
+	}
 
 	return &Policy{
 		Name:            doc.Name,
 		MaximumCapacity: doc.MaximumCapacity,
+		PrefetchCount:   prefetchCount,
 		RetryTimes:      retryTimes,
 		EventTTL:        eventTTL,
 		handlers:        handlers,

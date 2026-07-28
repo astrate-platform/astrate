@@ -481,10 +481,15 @@ format MULE.md gives.'
         # outcome — blocking it would retire the gate the first time it passed. Its report is
         # the deliverable, and the sha in it is what stops the task re-running on unchanged
         # code. The line stays `- [ ]`: a gate is never done.
+        go_ver=""
+        case "$slug" in
+          race-check) go_ver="$(legion_sh 'go version' 2>/dev/null || true)";;
+        esac
         mkdir -p "$MULE/reports"
         { echo "code: $(code_id)"
           echo "at:  $(git -C "$REPO" rev-parse --short HEAD)"
           echo "ran: $(date -u '+%Y-%m-%dT%H:%M:%SZ') on $(uname -n) in ${elapsed}s"
+          [ -n "$go_ver" ] && echo "toolchain: $go_ver"
           echo; cat "$outlog"
         } > "$MULE/reports/$slug.md"
         log_row "$slug" "checked" "$elapsed" "$(git -C "$REPO" rev-parse --short HEAD)"
