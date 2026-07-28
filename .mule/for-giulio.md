@@ -39,10 +39,11 @@ line once you have dealt with it — this file is a queue, not a log.
   Go, where the full suite runs clean in ~40s on 16 cores. The standing `race-check` task is
   the concurrency gate. Concurrency work is queueable again, provided the race-check runs
   after it.
-- **golangci-lint is not installed on the Pi**, so the mule's second gate is silently absent
-  there — `gofmt` still runs, the linter does not. `go install
-  github.com/golangci/golangci-lint/cmd/golangci-lint@<the pinned version>` on the Pi would
-  close it; I did not pick a version for you, since the pin is a decision.
+- ~~golangci-lint is not installed on the Pi~~ — **resolved 2026-07-28**: installed v2.12.2
+  via `go install` (the prebuilt-binary installer's published sha256 for linux/arm64 did not
+  verify, reproducibly, so built from source instead). `mule.service` now sets
+  `MULE_LINT_CMD=golangci-lint run ./...` and has `/root/go/bin` on `PATH`; the lint gate
+  runs starting with the next tick.
 - ~~`/root/astrate` on the Pi has uncommitted work~~ — **resolved 2026-07-27** with the new
   `tools/reconcile.sh`: rescued onto `origin/wip/DietPi-20260727T171543Z` (pushed, not
   reviewed — read the diff before merging anything from it) and `/root/astrate` is now clean
