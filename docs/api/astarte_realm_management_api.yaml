@@ -817,7 +817,7 @@ components:
           enum: [data_trigger, device_trigger]
         on:
           type: string
-          enum: [incoming_data, value_change, value_change_applied, path_created, path_removed, value_stored, device_connected, device_disconnected, device_empty_cache_received, device_error, incoming_introspection, interface_added, interface_removed, interface_minor_updated]
+          enum: [incoming_data, value_change, value_change_applied, path_created, path_removed, value_stored, device_registered, device_connected, device_disconnected, device_empty_cache_received, device_error, incoming_introspection, interface_added, interface_removed, interface_minor_updated]
         group_name:
           type: string
           description: Accepted for upstream compatibility; group-scoped triggers are not evaluated in Astrate v1.

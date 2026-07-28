@@ -40,6 +40,8 @@ const (
 	// OnValueStored fires after a datastream insert (accepted, not evaluated
 	// in v1).
 	OnValueStored = "value_stored"
+	// OnDeviceRegistered fires when a device is registered via the Pairing API.
+	OnDeviceRegistered = "device_registered"
 	// OnDeviceConnected fires when a device session is established.
 	OnDeviceConnected = "device_connected"
 	// OnDeviceDisconnected fires when a device connection ends.
@@ -82,6 +84,7 @@ var dataOns = map[string]bool{
 // deviceOns enumerates the device_trigger conditions; the value records
 // whether this version evaluates them.
 var deviceOns = map[string]bool{
+	OnDeviceRegistered:         true,
 	OnDeviceConnected:          true,
 	OnDeviceDisconnected:       true,
 	OnDeviceEmptyCacheReceived: false,

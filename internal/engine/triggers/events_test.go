@@ -36,6 +36,7 @@ func TestEventGoldens(t *testing.T) {
 		{name: "incoming_data_unset.json", body: NewIncomingDataEvent(
 			"com.example.Props", "/setting", nil)},
 		{name: "device_connected.json", body: NewDeviceConnectedEvent("203.0.113.89")},
+		{name: "device_registered.json", body: NewDeviceRegisteredEvent()},
 		{name: "device_disconnected.json", body: NewDeviceDisconnectedEvent()},
 		{name: "device_error.json", body: NewDeviceErrorEvent(
 			"interface_not_in_introspection", map[string]string{"detail": "no introspected interface matches x"})},

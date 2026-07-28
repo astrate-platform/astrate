@@ -18,6 +18,8 @@ import (
 const (
 	// KindIncomingData is a committed device data operation (set or unset).
 	KindIncomingData = "incoming_data"
+	// KindDeviceRegistered is a device registration via the Pairing API.
+	KindDeviceRegistered = "device_registered"
 	// KindDeviceConnected is a device connection.
 	KindDeviceConnected = "device_connected"
 	// KindDeviceDisconnected is a device disconnection.

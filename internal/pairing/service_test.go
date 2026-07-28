@@ -179,6 +179,51 @@ var testIP = netip.MustParseAddr("192.0.2.10")
 
 // --- flow A ----------------------------------------------------------------
 
+func TestRegisterEmitsEvent(t *testing.T) {
+	ctx := context.Background()
+	svc, fs, _ := newServiceFixture(t, Config{})
+	hwID := randomDeviceID(t)
+
+	type registeredCall struct {
+		realm string
+		id    string
+	}
+	var calls []registeredCall
+	svc.OnRegistered = func(realmName, deviceID string, at time.Time) {
+		calls = append(calls, registeredCall{realm: realmName, id: deviceID})
+	}
+
+	secret, err := svc.Register(ctx, "test", hwID, "")
+	if err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+	if len(secret) != 44 {
+		t.Errorf("secret length: got %d, want 44", len(secret))
+	}
+
+	if len(calls) != 1 {
+		t.Fatalf("OnRegistered calls: got %d, want 1", len(calls))
+	}
+	if calls[0].realm != "test" {
+		t.Errorf("realm: got %q, want test", calls[0].realm)
+	}
+	if calls[0].id != hwID {
+		t.Errorf("device_id: got %q, want %s", calls[0].id, hwID)
+	}
+
+	// After credentials request, re-registration is rejected — callback must not fire.
+	id, _ := deviceid.Parse(hwID)
+	if err := fs.SetDeviceCredentials(ctx, 1, id, "1", "aa", testIP); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.Register(ctx, "test", hwID, ""); !errors.Is(err, ErrAlreadyRegistered) {
+		t.Errorf("post-credentials re-register: got %v, want ErrAlreadyRegistered", err)
+	}
+	if len(calls) != 1 {
+		t.Errorf("OnRegistered after rejected re-register: got %d calls, want 1", len(calls))
+	}
+}
+
 func TestRegister(t *testing.T) {
 	ctx := context.Background()
 	svc, fs, _ := newServiceFixture(t, Config{})
