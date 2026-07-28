@@ -47,3 +47,4 @@ layer can actually do — read it before deciding whether a kind of task is wort
 | 2026-07-28 | issue-23 | done | 567s | a9481d0 |
 | 2026-07-28 | issue-20 | checked | 152s | c59a7eb |
 | 2026-07-28 | issue-14 | blocked | 156s | gates failed |
+| 2026-07-28 | issue-13 | checked | 136s | 4af2073 |

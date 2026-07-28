@@ -1,0 +1,53 @@
+code: 0cbb6c1d556190862db05a6865c7e338eba5ac8b
+at:  4af2073
+ran: 2026-07-28T03:50:46Z on DietPi in 136s
+
+
+> build · big-pickle
+
+→ Read .mule/MULE.md
+→ Read .mule/task.md
+✱ Glob "**/errorname.go" 1 match
+✱ Glob "**/errorname*" 2 matches
+
+$ gh issue view 13 --json title,body 2>&1 || echo "NO_GH"
+{"body":"`internal/engine/triggers/errorname.go` carries the astarte-dashboard v1.2.2 validated\n`error_name` set (15 names, the `nke` array in its bundle). Upstream `data_handler.ex` and\n`control_handler.ex` (astarte-platform source) emit additional error names not in that set:\n`missing_required_mapping`, `unset_on_datastream`, `purge_properties_error`,\n`key_agreement_transition_error`, `key_agreement_error`, `secret_hash_error`,\n`hash_ok_error`, `exchange_failed_error`, `unexpected_internal_message`. These are either\ninternal operational errors or key-agreement errors (a topic Astrate does not implement, see\nissue candidate \"keyagreement-topic\"), so the risk is low today.\n\n**Task** (readonly — report, change nothing): find the current astarte-dashboard release,\ngrep its bundle for the `nke` (or successor) validation array, and diff it against\n`upstreamErrorNames` in `internal/engine/triggers/errorname.go`. Report the diff in a comment\non this issue. If the Dashboard's set has grown, that is new information for a future\n(human-reviewed) change to `errorname.go` — do not edit the file yourself.\n\nFound by a cross-project survey comparing Astrate against upstream astarte-platform\n(`.mule/research/survey-2026-07-27.md`, source 1/4).","title":"audit-dashboard-error-names: compare errorname.go's upstreamErrorNames against the current astarte-dashboard bundle"}
+
+→ Read internal/engine/triggers/errorname.go
+◈ Parallel Web Search "astarte-dashboard github releases latest"
+I need to find the `nke` validation array in the astarte-dashboard source. Let me look at the dashboard's source code on GitHub.
+% WebFetch https://github.com/astarte-platform/astarte-dashboard
+◈ Parallel Web Search "astarte-dashboard "error_name" "nke" validation array site:github.com"
+✗ WebFetch https://api.github.com/search/code?q=repo:astarte-platform/astarte-dashboard+nke+error_name failed
+Error: StatusCode: non 2xx status code (401 GET https://api.github.com/search/code?q=repo:astarte-platform/astarte-dashboard+nke+error_name)
+The latest dashboard is v1.3.0. Let me search its source for the error name validation array.
+% WebFetch https://github.com/astarte-platform/astarte-dashboard/tree/master/src
+✗ WebFetch https://raw.githubusercontent.com/astarte-platform/astarte-dashboard/master/src/astarte-client/models/TriggerDeliveryPolicy.ts failed
+Error: StatusCode: non 2xx status code (404 GET https://raw.githubusercontent.com/astarte-platform/astarte-dashboard/master/src/astarte-client/models/TriggerDeliveryPolicy.ts)
+Let me search for the error name validation in the dashboard source. The `nke` array is likely in the trigger/event validation code.
+% WebFetch https://github.com/astarte-platform/astarte-dashboard/search?q=error_name
+Let me look at the dashboard source more carefully, especially around triggers and error names.
+% WebFetch https://github.com/astarte-platform/astarte-dashboard/tree/master/src/astarte-client
+% WebFetch https://github.com/astarte-platform/astarte-dashboard/tree/master/src/models
+Let me clone the dashboard repo to search it properly — the GitHub web UI is too slow for this.
+
+$ git clone --depth 1 https://github.com/astarte-platform/astarte-dashboard.git /tmp/astarte-dashboard 2>&1 | tail -5
+Cloning into '/tmp/astarte-dashboard'...
+
+$ rg -n "nke" /tmp/astarte-dashboard/src/ 2>&1 | head -30
+(no output)
+
+$ rg -n "error_name" /tmp/astarte-dashboard/src/ 2>&1 | head -30
+/tmp/astarte-dashboard/src/RegisterDevicePage.tsx:427:          err?.response?.data?.errors?.error_name?.[0] === 'device_registration_limit_reached';
+/tmp/astarte-dashboard/src/astarte-client/types/events/AstarteDeviceErrorEvent.ts:48:    error_name: DeviceErrorName;
+/tmp/astarte-dashboard/src/astarte-client/types/events/AstarteDeviceErrorEvent.ts:56:    error_name: yup.string().oneOf(deviceErrorNames).required(),
+/tmp/astarte-dashboard/src/astarte-client/types/events/AstarteDeviceErrorEvent.ts:69:    this.errorName = event.error_name;
+
+$ rg -n "deviceErrorNames" /tmp/astarte-dashboard/src/ 2>&1
+/tmp/astarte-dashboard/src/astarte-client/types/events/AstarteDeviceErrorEvent.ts:24:const deviceErrorNames = [
+/tmp/astarte-dashboard/src/astarte-client/types/events/AstarteDeviceErrorEvent.ts:42:type DeviceErrorName = (typeof deviceErrorNames)[number];
+/tmp/astarte-dashboard/src/astarte-client/types/events/AstarteDeviceErrorEvent.ts:56:    error_name: yup.string().oneOf(deviceErrorNames).required(),
+
+! permission requested: external_directory (/tmp/astarte-dashboard/src/astarte-client/types/events/*); auto-rejecting
+✗ Read /tmp/astarte-dashboard/src/astarte-client/types/events/AstarteDeviceErrorEvent.ts failed
+Error: The user rejected permission to use this specific tool call.
