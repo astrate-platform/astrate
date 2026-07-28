@@ -295,6 +295,7 @@ func mountAPIs(cfg config.Config, st *store.Store, e *engine.Engine, b *broker.B
 		Version:           version,
 		BcryptCost:        cfg.Pairing.BcryptCost,
 	})
+	pairer.OnRegistered = e.HandleDeviceRegistered
 	pairing.NewAPI(pairer, mw, pairing.APIConfig{
 		RegisterRate:     cfg.Pairing.RegisterRate,
 		RegisterBurst:    cfg.Pairing.RegisterBurst,

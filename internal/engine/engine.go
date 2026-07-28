@@ -280,6 +280,26 @@ func (e *Engine) handleLifecycle(ev broker.LifecycleEvent) {
 	}
 }
 
+// HandleDeviceRegistered is called by the pairing service after a successful
+// device registration. It fires device_registered triggers and publishes the
+// event on the live bus — the same path device_connected already uses.
+func (e *Engine) HandleDeviceRegistered(realmName string, hwID string, at time.Time) {
+	rs := e.schemas.realm(realmName)
+	if rs == nil {
+		return
+	}
+	id, err := deviceid.Parse(hwID)
+	if err != nil {
+		return
+	}
+	e.fireDevice(rs, id, at,
+		triggers.DeviceEvent{DeviceID: hwID, On: triggers.OnDeviceRegistered},
+		triggers.NewDeviceRegisteredEvent())
+	e.bus.Publish(stream.Event{
+		Kind: stream.KindDeviceRegistered, Realm: rs.name, DeviceID: hwID, Timestamp: at,
+	})
+}
+
 // eventValue renders a decoded payload value into its canonical
 // JSON-friendly form for trigger events and the live bus; nil stays nil
 // (property unset renders as JSON null, upstream parity).

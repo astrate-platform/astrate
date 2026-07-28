@@ -116,12 +116,19 @@ type Config struct {
 	BcryptCost int
 }
 
+// OnRegisteredFunc is called after a successful device registration so the
+// engine can emit a DeviceRegisteredEvent on the trigger bus. The callback
+// receives the realm name, encoded device ID, and the registration instant.
+type OnRegisteredFunc func(realmName string, deviceID string, at time.Time)
+
 // Service implements pairing flows A–C over a Store and the per-realm CA.
 type Service struct {
 	st     Store
 	sealer *store.KeySealer
 	cfg    Config
 	now    func() time.Time
+	// OnRegistered, when non-nil, is called after a successful registration.
+	OnRegistered OnRegisteredFunc
 }
 
 // New builds a pairing Service. The sealer opens realms' AES-GCM-sealed CA
@@ -207,6 +214,9 @@ func (s *Service) Register(ctx context.Context, realmName, hwID, initialFormat s
 		if err := s.st.SetPayloadFormatHint(ctx, realm.ID, id, initialFormat); err != nil {
 			return "", err
 		}
+	}
+	if s.OnRegistered != nil {
+		s.OnRegistered(realmName, hwID, time.Now())
 	}
 	return secret, nil
 }
