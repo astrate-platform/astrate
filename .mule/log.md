@@ -43,3 +43,4 @@ layer can actually do — read it before deciding whether a kind of task is wort
 | 2026-07-28 | issue-27 | blocked | 1157s | TIMEOUT after 1157s — task too big, split it |
 | 2026-07-28 | issue-26 | done | 731s | e250381 |
 | 2026-07-28 | issue-25 | done | 261s | ee59732 |
+| 2026-07-28 | issue-24 | blocked | 433s | touched a never-touch path |
