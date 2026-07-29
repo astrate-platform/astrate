@@ -61,9 +61,20 @@ triggers, go.mod). Do **not** commit those with pokemon-agent work.
 
 ## What's NOT done yet (next session scope)
 
-### P4 — ROM integration (user supplies Pokémon Red ROM)
-Full loop: pyboy + emulator agent + (optional) orchestrator + LLM.
-Drop `--insecure` only when using real mTLS certs.
+### P4 — ROM integration (ROM path known)
+**ROM (do not commit; keep outside the repo):**
+```
+/Users/atsetilam/Downloads/Pokemon - Red Version (UE)[!]/Pokemon Red.gb
+```
+(1 048 576 bytes, readable.) Full loop: pyboy + emulator agent + (optional)
+orchestrator + LLM. Drop `--insecure` only when using real mTLS certs.
+Example:
+```sh
+python -m emulator_agent.main \
+  --rom "/Users/atsetilam/Downloads/Pokemon - Red Version (UE)[!]/Pokemon Red.gb" \
+  --insecure --astrate-url http://localhost:8080 --realm test \
+  --device-id <device-id>
+```
 
 ### P5 — Optional MkDocs nav entry
 MkDocs `docs_dir` is `docs/site/`; example DESIGN lives under

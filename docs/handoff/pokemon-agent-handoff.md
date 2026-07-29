@@ -36,11 +36,18 @@ unless the user explicitly asks otherwise.
 
 Current task (pick the first that's still incomplete):
 
-  P4 — ROM integration (requires user to supply Pokémon Red ROM)
+  P4 — ROM integration (ROM path supplied by user — do NOT commit the ROM)
+       ROM path:
+         /Users/atsetilam/Downloads/Pokemon - Red Version (UE)[!]/Pokemon Red.gb
        Run full loop: pyboy + emulator agent (+ optional orchestrator + LLM).
        Follow TESTING.md T3 (and T4 if LLM key available).
        Prefer local Astrate: timescaledb compose + host binary insecure_dev_mode
        (docker compose --profile full build is broken: .dockerignore excludes docs/).
+       Example:
+         python -m emulator_agent.main \
+           --rom "/Users/atsetilam/Downloads/Pokemon - Red Version (UE)[!]/Pokemon Red.gb" \
+           --insecure --astrate-url http://localhost:8080 --realm test \
+           --device-id <device-id>
 
   P5 — Optional MkDocs nav for examples/pokemon-agent/docs/DESIGN.md
        MkDocs docs_dir is docs/site/; needs site page + mkdocs.yml (ask first).
