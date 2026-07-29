@@ -130,10 +130,10 @@ that exposes a direct API for reading/writing memory and injecting button presse
 | `$D362`  | Player X coordinate |
 | `$D361`  | Player Y coordinate |
 | `$D163`  | Number of Pokémon in party (0–6) |
-| `$D16B`–`$D196` | Party species IDs (one byte per slot) |
-| `$D16C`–`$D197` | Party current & max HP (two bytes each per slot) |
+| `$D164`–`$D169` | Party species IDs (one byte per slot; list at `$D16A` = `$FF`) |
+| `$D16B` + `n×44` | Party mon struct (`PARTYMON_STRUCT_LENGTH`); HP@+1, level@+33, maxHP@+34 |
 | `$D057`  | Battle type flag (`0` = overworld, `1` = wild, `2` = trainer) |
-| `$CF4B`  | Dialog box text buffer (16 bytes) |
+| `$CF4B`  | Dialog / string buffer (`wStringBuffer`, 20 bytes; not `$CC2A`) |
 
 **Core modules:**
 

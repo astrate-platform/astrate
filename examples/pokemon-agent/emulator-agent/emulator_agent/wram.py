@@ -17,23 +17,29 @@ PLAYER_Y          = 0xD361  # Player tile Y (row)
 PARTY_COUNT       = 0xD163  # Number of Pokémon in party (0–6)
 
 # Party species IDs: slot n → PARTY_SPECIES_BASE + n  (n = 0..5)
+# pret: wPartySpecies (list ends with $FF at D16A)
 PARTY_SPECIES_BASE = 0xD164
 
-# Party HP layout per slot (each entry is 0x2C bytes apart from D16B):
-#   current HP: 2 bytes big-endian at D16C + slot*44
-#   max HP:     2 bytes big-endian at D16E + slot*44
-#   level:      1 byte             at D18C + slot*44
+# Party mon structs: pret party_struct / PARTYMON_STRUCT_LENGTH = $2C (44).
+# Slot 0 base = wPartyMon1 = $D16B. Per-slot layout (macros/ram.asm):
+#   +0  Species (1)
+#   +1  HP current (2, big-endian)     → $D16C
+#   +3  BoxLevel (1)  — NOT max HP
+#   ...
+#   +33 Level (1)                      → $D18C
+#   +34 MaxHP (2, big-endian)          → $D18D
 PARTY_DATA_BASE    = 0xD16B
-PARTY_SLOT_SIZE    = 44          # 0x2C bytes per party entry
+PARTY_SLOT_SIZE    = 44          # 0x2C = PARTYMON_STRUCT_LENGTH
 
 # Offsets within each party slot (relative to PARTY_DATA_BASE + slot*PARTY_SLOT_SIZE)
-SLOT_CURRENT_HP_OFFSET = 1   # 2 bytes, big-endian
-SLOT_MAX_HP_OFFSET     = 3   # 2 bytes, big-endian
-SLOT_LEVEL_OFFSET      = 33  # 1 byte  (0x21 = 33)
+SLOT_CURRENT_HP_OFFSET = 1    # 2 bytes, big-endian
+SLOT_MAX_HP_OFFSET     = 34   # 2 bytes, big-endian (0x22) — was wrongly 3 (BoxLevel)
+SLOT_LEVEL_OFFSET      = 33   # 1 byte (0x21)
 
-BATTLE_TYPE        = 0xD057  # 0 = overworld, 1 = wild, 2 = trainer
-DIALOG_BUFFER      = 0xCC2A  # Dialog box text (terminated by 0x50 '@')
-DIALOG_LENGTH      = 20       # max chars to read
+BATTLE_TYPE        = 0xD057  # pret wIsInBattle: 0 overworld, 1 wild, 2 trainer
+# pret wStringBuffer (historical label wcf4b). NOT $CC2A (previous menu item id).
+DIALOG_BUFFER      = 0xCF4B
+DIALOG_LENGTH      = 20       # NAME_BUFFER_LENGTH; string terminator 0x50 '@'
 
 
 # ---------------------------------------------------------------------------
