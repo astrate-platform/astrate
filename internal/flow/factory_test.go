@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -14,7 +15,13 @@ import (
 )
 
 func TestRegistry_InstantiateLinear(t *testing.T) {
+	var mu sync.Mutex
 	var got []string
+	snapshot := func() []string {
+		mu.Lock()
+		defer mu.Unlock()
+		return append([]string(nil), got...)
+	}
 	reg := flow.NewRegistry()
 	reg.Register("source", func(name string, _ map[string]any, _ flow.Deps) (flow.Block, error) {
 		return flow.NewSourceBlock(name, func() ([]*flow.FlowMessage, error) {
@@ -23,13 +30,17 @@ func TestRegistry_InstantiateLinear(t *testing.T) {
 	})
 	reg.Register("transform", func(name string, _ map[string]any, _ flow.Deps) (flow.Block, error) {
 		return flow.NewTransformBlock(name, func(msg *flow.FlowMessage) ([]*flow.FlowMessage, error) {
+			mu.Lock()
 			got = append(got, name+":"+msg.Key)
+			mu.Unlock()
 			return []*flow.FlowMessage{msg}, nil
 		}), nil
 	})
 	reg.Register("sink", func(name string, _ map[string]any, _ flow.Deps) (flow.Block, error) {
 		return flow.NewSinkBlock(name, func(msg *flow.FlowMessage) error {
+			mu.Lock()
 			got = append(got, name+":"+msg.Key)
+			mu.Unlock()
 			return nil
 		}), nil
 	})
@@ -70,14 +81,16 @@ func TestRegistry_InstantiateLinear(t *testing.T) {
 	}
 	f.Router().Submit(&flow.FlowMessage{Key: "k1", Type: flow.TypeString, Data: "x"}, 1)
 	deadline := time.Now().Add(2 * time.Second)
+	var final []string
 	for time.Now().Before(deadline) {
-		if len(got) >= 2 {
+		final = snapshot()
+		if len(final) >= 2 {
 			break
 		}
 		time.Sleep(time.Millisecond)
 	}
-	if len(got) < 2 || got[0] != "mid:k1" || got[1] != "out:k1" {
-		t.Fatalf("got path %v, want [mid:k1 out:k1]", got)
+	if len(final) < 2 || final[0] != "mid:k1" || final[1] != "out:k1" {
+		t.Fatalf("got path %v, want [mid:k1 out:k1]", final)
 	}
 	stopCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
