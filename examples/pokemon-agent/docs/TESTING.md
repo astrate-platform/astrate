@@ -121,12 +121,15 @@ Or via Makefile from `examples/pokemon-agent/`:
 make run-emulator-rom DEVICE_ID="$DEVICE_ID" ROM="$ROM"
 ```
 
-Expected (verified 2026-07-29 on pyboy + insecure Astrate; intro skip added later):
+Expected (verified 2026-07-29 on pyboy + insecure Astrate; intro skip fixed session 10):
 - Agent loads ROM, connects MQTT `:1883`, publishes introspection
-- With default `--skip-intro`, logs show mashing A/START then
-  `Intro skip complete` once WRAM leaves cold-boot zeros (or timeout ~180 s)
-- Early samples may still show title zeros; after intro skip, coords/dialog/party
-  should become meaningful without a save-state
+- With default `--skip-intro`, logs show A/START + direction probes, then:
+  - `Intro: WRAM spawn preload at (3, 6) …` (Oak preloads Red's House — **not free yet**)
+  - `Intro skip complete — player moved (3, 6) → (x, y)` when a real tile step lands
+  - Or timeout ~180 s if movement never happens
+- Completing on non-zero WRAM alone is wrong (coords appear mid-Oak intro)
+- After intro skip, directional ControlCommands with `holdFrames≥16` change
+  `playerX`/`playerY` (Red's House 2F stairs ≈ increase X, decrease Y → (7,1))
 - Cold boot has empty party → no `PartyStatus` until in-game
 - Process CPU stays modest at default `--fps 60` (uncapped was ~full core)
 - ControlCommand from AppEngine is queued on MQTT thread and applied on the
@@ -190,7 +193,8 @@ Expected (verified 2026-07-29 with `opencode/big-pickle` + live T3):
 - Log: `LLM → <BUTTON> ×N (seq=…)` on each GameState turn
 - ControlCommand POST → HTTP 200; samples on AppEngine
 - Emulator log: non-`(local)` `Input: … (seq=N)` lines (intro inputs are local only)
-- Optional: GameState coords change when the map allows movement
+- After a correct intro skip: GameState `playerX`/`playerY` change under LLM
+  control (overworld holdFrames floored to 16 for directions)
 
 ### OpenAI-compatible HTTP alternative
 

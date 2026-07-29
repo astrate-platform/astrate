@@ -113,3 +113,45 @@ def test_looks_past_cold_boot():
         party=[], timestamp=0.0,
     )
     assert looks_past_cold_boot(moved) is True
+
+
+def test_intro_baseline_pos():
+    """Oak intro preloads Red's House coords — baseline is that spawn, not free play."""
+    from emulator_agent.main import intro_baseline_pos
+    from emulator_agent.state_decoder import GameState
+
+    cold = GameState(
+        map_id=0, map_name="Pallet Town", player_x=0, player_y=0,
+        in_battle=False, battle_type=0, dialog_text="", stasis=False,
+        party=[], timestamp=0.0,
+    )
+    assert intro_baseline_pos(cold) is None
+
+    # Typical Oak-intro preload (still no control)
+    preload = GameState(
+        map_id=38, map_name="Red's House 2F", player_x=3, player_y=6,
+        in_battle=False, battle_type=0, dialog_text="", stasis=False,
+        party=[], timestamp=0.0,
+    )
+    assert intro_baseline_pos(preload) == (3, 6)
+
+    stepped = GameState(
+        map_id=38, map_name="Red's House 2F", player_x=5, player_y=6,
+        in_battle=False, battle_type=0, dialog_text="", stasis=False,
+        party=[], timestamp=0.0,
+    )
+    assert intro_baseline_pos(stepped) == (5, 6)
+    # Completion condition used by main loop:
+    assert intro_baseline_pos(stepped) != intro_baseline_pos(preload)
+
+
+def test_is_actionable_dialog_filters_name_entry_residue():
+    from emulator_agent.state_decoder import is_actionable_dialog
+
+    assert is_actionable_dialog("") is False
+    assert is_actionable_dialog("ABBAAA") is False
+    assert is_actionable_dialog("RED") is False
+    assert is_actionable_dialog("AAAAAAA") is False
+    # Real dialog-ish lines survive
+    assert is_actionable_dialog("This is a rest") is True
+    assert is_actionable_dialog("It's full of") is True

@@ -133,14 +133,14 @@ that exposes a direct API for reading/writing memory and injecting button presse
 | `$D164`–`$D169` | Party species IDs (one byte per slot; list at `$D16A` = `$FF`) |
 | `$D16B` + `n×44` | Party mon struct (`PARTYMON_STRUCT_LENGTH`); HP@+1, level@+33, maxHP@+34 |
 | `$D057`  | Battle type flag (`0` = overworld, `1` = wild, `2` = trainer) |
-| `$CF4B`  | Dialog / string buffer (`wStringBuffer`, 20 bytes; not `$CC2A`) |
+| `$CF4B`  | String buffer (`wStringBuffer`, 20 bytes; not `$CC2A`). Published as `dialogText` only when `is_actionable_dialog()` passes — name-entry residue like `ABBAAA` is filtered out |
 
 **Core modules:**
 
 | Module | Responsibility |
 |---|---|
 | `emulator_agent/wram.py` | WRAM address constants and named read helpers |
-| `emulator_agent/state_decoder.py` | Converts raw bytes → structured `GameState` / `PartyStatus` dataclasses |
+| `emulator_agent/state_decoder.py` | Converts raw bytes → structured `GameState` / `PartyStatus`; filters `wStringBuffer` residue |
 | `emulator_agent/astrate_client.py` | MQTT client (paho-mqtt over mTLS); publishes telemetry; subscribes to `ControlCommand` |
 | `emulator_agent/input_executor.py` | Queues `ControlCommand` from MQTT; main loop drains + injects joypad; `sequenceId` dedup |
 | `emulator_agent/main.py` | asyncio main loop; owns every `pyboy.tick()`; intro auto-press; stasis; shutdown |
@@ -330,10 +330,17 @@ the MQTT `sequenceId` space.
 
 ### 5.3 Intro auto-press (default for ROM mode)
 
-`--skip-intro` (default on; `--no-skip-intro` to disable) mashes A/START while
-WRAM still looks like cold boot (all-zero coords, empty party, no dialog). Stops
-when `looks_past_cold_boot()` is true or after a timeout (~180 s). Preferred over
-save-state loading for local smoke.
+`--skip-intro` (default on; `--no-skip-intro` to disable) mashes A/START and
+interleaves directional probes (RIGHT/UP/LEFT/DOWN with longer holds).
+
+**Do not complete on non-zero WRAM alone.** Pokémon Red preloads Red's House 2F
+coords (often `(3,6)`) into WRAM during Oak's speech while the player still has
+no overworld control. Completing there leaves MQTT inputs "working" but position
+frozen mid-intro.
+
+Completion: record the first non-zero `(playerX, playerY)` as a baseline; stop
+auto-press when the player steps to a **different** tile (or after ~180 s
+timeout). Preferred over save-state loading for local smoke.
 
 ### 5.4 `sequenceId` deduplication
 

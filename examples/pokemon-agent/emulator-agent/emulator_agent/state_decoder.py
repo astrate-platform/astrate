@@ -75,6 +75,25 @@ def _decode_party(pyboy) -> list[PartyMember]:
     return members
 
 
+def is_actionable_dialog(text: str) -> bool:
+    """Return True if text looks like an on-screen dialog line worth advancing.
+
+    `$CF4B` is pret `wStringBuffer` — a general-purpose buffer, not a dedicated
+    dialog register. After name entry it often retains residue like ``ABBAAA``
+    or ``RED``. Publishing that as dialogText makes the LLM mash A forever and
+    blocks stasis (main loop treats any dialog as non-stationary).
+
+    Real dialog lines usually contain spaces or mixed-case words after charset
+    decode; name-entry residue is a short all-caps alpha run with no spaces.
+    """
+    t = (text or "").strip()
+    if not t:
+        return False
+    if " " not in t and t.isalpha() and t.isupper() and len(t) <= 10:
+        return False
+    return True
+
+
 def decode_state(pyboy) -> GameState:
     """Read WRAM and return a fully populated GameState.
 
@@ -83,6 +102,8 @@ def decode_state(pyboy) -> GameState:
     """
     map_id      = wram.read_byte(pyboy, wram.MAP_ID)
     battle_type = wram.read_byte(pyboy, wram.BATTLE_TYPE)
+    raw_dialog  = wram.read_text(pyboy, wram.DIALOG_BUFFER, wram.DIALOG_LENGTH)
+    dialog_text = raw_dialog if is_actionable_dialog(raw_dialog) else ""
     return GameState(
         map_id      = map_id,
         map_name    = wram.MAP_NAMES.get(map_id, f"Map 0x{map_id:02X}"),
@@ -90,7 +111,7 @@ def decode_state(pyboy) -> GameState:
         player_y    = wram.read_byte(pyboy, wram.PLAYER_Y),
         battle_type = battle_type,
         in_battle   = battle_type > 0,
-        dialog_text = wram.read_text(pyboy, wram.DIALOG_BUFFER, wram.DIALOG_LENGTH),
+        dialog_text = dialog_text,
         stasis      = False,  # set by caller
         party       = _decode_party(pyboy),
         timestamp   = time.time(),

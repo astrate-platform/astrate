@@ -1,46 +1,51 @@
-# Pokemon Agent — Session Memory (2026-07-29, session 9)
+# Pokemon Agent — Session Memory (2026-07-29, session 10)
 
 ## What happened this session
 
 ### Goal
-**Finish T4** — LLM orchestrator end-to-end with opencode/Big Pickle against live
-Astrate + T3 emulator.
+**Overworld movement smoke** — get player coords to change under LLM control
+after T4 bus path was proven (session 9 left player stuck at (3,6) stasis).
 
-### Results — T4 **PASS**
+### Results — movement smoke **PASS**
 
-Stack already healthy from session 8:
-- Astrate `/tmp/astrate` + TimescaleDB; device `HcLR8OkjSKat9ZAf8UolJg` connected
-- Emulator PID was live (MQTT ESTABLISHED, Red's House 2F after intro skip)
-- JWT `/tmp/pokemon-app-token.txt` still valid (`a_aea` + `a_ch` = `.*::.*`)
+Root causes of “inputs work but coords never change”:
 
-Orchestrator run:
-```sh
-POKEMON_OPENAI_MODEL=opencode/big-pickle
-POKEMON_LLM_BACKEND=opencode
-POKEMON_LLM_TIMEOUT_SECONDS=90
-# no API key
-python3 -m llm_orchestrator.main
-```
+1. **False intro-skip completion.** Pokémon Red preloads Red's House 2F WRAM
+   coords `(3,6)` during Oak's speech — long before free overworld control.
+   Old `looks_past_cold_boot()` treated that as “in game”, stopped auto-press,
+   and left the agent mid-intro. MQTT ControlCommands applied, but the player
+   could not walk.
+2. **False dialog from `wStringBuffer`.** `$CF4B` retains name-entry residue
+   (`ABBAAA`, `AAAAAAA`). That was published as `dialogText`, so the LLM only
+   pressed A (“advance dialog”) and stasis stayed false.
 
-Live evidence (2026-07-29 ~05:13–05:14):
-- `LLM backend=opencode model=opencode/big-pickle (no API key)`
-- WS connected GameState + PartyStatus
-- **8 turns**: `LLM → DOWN|LEFT|A|RIGHT|DOWN|UP|DOWN|LEFT` with seq 1–8
-- ControlCommand POST → **HTTP 200** each time
-- Emulator: non-local `Input: … (seq=N)` for all 8 (not only intro `(local)`)
-- AppEngine ControlCommand samples show seq 1–8
+Fixes (live-verified 2026-07-29 ~05:28–05:30):
 
-Coords stayed at `(3,6)` map 38 with `stasis=true` for the short run (Red's House
-2F layout / short holds may block visible movement). **Bus path is closed**;
-meaningful navigation is a later polish item, not a T4 gate.
+| Fix | Where |
+|---|---|
+| Intro completes only when position **leaves** first non-zero baseline | `emulator-agent/.../main.py` |
+| Direction probes in intro cycle (A/START + RIGHT/UP/LEFT/DOWN ×20f) | same |
+| `is_actionable_dialog()` filters short all-caps residue | `state_decoder.py` + orchestrator `context_builder.py` |
+| Directional `holdFrames` floored to **16** (Gen 1 tile step) | `action_translator.py` + system prompt |
+| No stasis while intro auto-press still running | `main.py` |
 
-### Code / docs committed this session
-Under `examples/pokemon-agent/` (+ handoff + `docs/site/pokemon-agent.md` via sync):
-1. `llm-orchestrator` opencode backend (from session 8, now E2E-proven) + unit tests
-2. `tests/test_llm_engine.py` — backend auto-select, NDJSON extract, JSON parse
-3. `docs/TESTING.md` T4 rewritten: JWT mint recipe + opencode + OpenAI alternative
-4. `docs/DESIGN.md` §3.4 / §5.5 backend note; site sync
-5. `llm-orchestrator/README.md` real content (was broken single-line)
+Live evidence (device `HcLR8OkjSKat9ZAf8UolJg`, opencode/big-pickle):
+
+- Intro: `spawn preload at (3, 6)` → `player moved (3, 6) → (4, 6)` (~76 s)
+- LLM turns: `RIGHT×16, RIGHT×16, UP×16, DOWN×16, RIGHT×16, UP×16, RIGHT×16` (seq 1–7)
+- Emulator: matching non-local `Input: … (seq=N)` lines
+- GameState path: `(3,6) → (4,6) → (5,6) → (5,5) → (6,5)` map 38, `dialogText=""`
+- Stairs target still ~(7,1); did not require leaving the house for this smoke
+
+### Code / docs changed this session
+Under `examples/pokemon-agent/` (+ handoff only outside that tree):
+
+1. `emulator-agent/emulator_agent/main.py` — intro baseline + dir probes + stasis gate
+2. `emulator-agent/emulator_agent/state_decoder.py` — `is_actionable_dialog`
+3. `llm-orchestrator/.../action_translator.py` — floor direction holds to 16
+4. `llm-orchestrator/.../context_builder.py` — holdFrames guidance + dialog filter + stairs hint
+5. Tests: intro baseline, dialog filter, action_translator, context_builder
+6. `docs/DESIGN.md`, `TESTING.md`, `README.md` — intro + dialog notes
 
 ### Branch
 `feat/pokemon-agent`
@@ -50,51 +55,44 @@ Do **not** commit those with pokemon-agent work.
 
 ### Prior sessions
 - Session 1: architecture, module tree, 10 ADRs
-- Session 2 (P0): App API stream/publish paths
-- Session 3 (P1/P2): unit tests; WRAM dialog `$CF4B`, maxHP@+34
-- Session 4 (P3): live smoke T1+T2 stub + `--insecure`
-- Session 5 (P4): ROM T3; 60 fps; dialog 0x00; stasis 15s
-- Session 6 (P5): MkDocs Examples → Pokémon Agent nav + `make sync`
-- Session 7: command queue + intro auto-press
-- Session 8: T4 partial (WS+JWT; Ollama failed; opencode code uncommitted)
-- **Session 9: T4 closed with Big Pickle**
+- Session 2–7: App API, tests, ROM T3, MkDocs, command queue, intro mash
+- Session 8: T4 partial
+- Session 9: T4 closed with Big Pickle (bus path; coords stuck)
+- **Session 10: overworld movement under LLM; intro + dialog bugs fixed**
 
 ---
 
 ## What's NOT done yet (next session scope)
 
-### Optional polish / next phases
-1. **Overworld movement smoke** — leave Red's House / get coords to change under
-   LLM control (stairs DOWN from 2F; longer holds; clear stasis).
-2. Fill remaining stub unit tests (`action_translator` is a pass; `context_builder`
-   still thin; richer `state_decoder` fixtures on emulator side).
-3. Mid-dialog `$CF4B` validation on real ROM after intro / with actual text boxes.
-4. Endurance / loop-detection demo (DESIGN P4–P5 table is aspirational).
+1. **Leave Red's House** — walk to stairs ~(7,1), warp to 1F / Pallet (longer LLM run or scripted guide).
+2. Mid-dialog `$CF4B` validation on **real** text boxes (filter may hide edge cases; better textbox flag later).
+3. Fill remaining thin unit tests / richer `state_decoder` fixtures.
+4. Endurance / loop-detection demo (DESIGN P4–P5 aspirational).
 5. Root `.dockerignore` `docs` → compose full image (out of scope unless asked).
 6. Do **not** re-introduce Ollama unless user asks.
+7. Optional: suppress publishing GameState heartbeats flooding LLM during long holds.
 
-### T4 is done — do not re-open unless regression.
+### T4 bus path + movement smoke are done — do not re-open unless regression.
 
 ## Risks and known issues
-1. ~~WebSocket path~~ **P0**. ~~Dialog/maxHP WRAM~~ **P2**. ~~Smoke T1/T2~~ **P3**.
-   ~~ROM T3~~ **P4**. ~~MkDocs nav~~ **P5**. ~~Command queue~~ **done**.
-   ~~Intro auto-press~~ **done**. ~~T4 LLM→ControlCommand~~ **done** (session 9).
+1. ~~WebSocket / JWT / T4 bus~~ **done**. ~~Intro false-complete~~ **fixed session 10**.
+   ~~Name-entry dialog residue A-mash~~ **fixed session 10**. ~~holdFrames=8 half-step~~ **floored to 16**.
 2. `paho-mqtt` 2.x `CallbackAPIVersion.VERSION2` required.
-3. ~~pyboy headless uncapped CPU~~ mitigated by default `--fps 60`.
-4. **App JWT for stream must use REST-style `a_ch` (`.*::.*`), not JOIN/WATCH.**
-5. Compose full build: `.dockerignore` has bare `docs` → missing swagger embed path.
-6. `astartectl appengine devices data-snapshot` panics on object datastream; use
+3. App JWT for stream must use REST-style `a_ch` (`.*::.*`), not JOIN/WATCH.
+4. Compose full build: `.dockerignore` has bare `docs` → missing swagger embed path.
+5. `astartectl appengine devices data-snapshot` panics on object datastream; use
    `get-samples` or REST `/…/GameState/state`.
-7. Unrelated WIP on same branch — leave alone.
-8. Cold-boot mapId 0 → “Pallet Town” is WRAM-zero coincidence until intro skip finishes.
-9. Site copy `docs/site/pokemon-agent.md` goes stale if DESIGN changes without `make sync`.
-10. Intro-skip can false-complete if dialog buffer is non-empty on title; timeout backstop.
-11. Emulator can orphan with MQTT CLOSED + high CPU; kill and restart; always log to a file.
-12. Default LLM timeout 5 s is too low for `opencode run` cold start — use ≥60.
-13. Big Pickle may refuse “play Pokémon” wording; engine frames as IoT fixture (keep that).
-14. opencode backend is subprocess-per-turn — slow vs HTTP; fine for smoke, not production.
-15. Short T4 run left player stuck at (3,6) stasis on Red's House 2F — path works;
-    navigation needs longer/more purposeful play.
+6. Unrelated WIP on same branch — leave alone.
+7. Cold-boot mapId 0 → “Pallet Town” is WRAM-zero coincidence until intro progresses.
+8. Site copy `docs/site/pokemon-agent.md` goes stale if DESIGN changes without `make sync`.
+9. Intro-skip timeout 180 s backstop; free play usually ~60–90 s with probes.
+10. Emulator can orphan with MQTT CLOSED + high CPU; kill and restart; always log to a file.
+11. Default LLM timeout 5 s is too low for `opencode run` cold start — use ≥60.
+12. Big Pickle may refuse “play Pokémon” wording; engine frames as IoT fixture (keep that).
+13. opencode backend is subprocess-per-turn — slow vs HTTP; fine for smoke, not production.
+14. `$CF4B` is **not** a dedicated dialog register — filter is heuristic; real mid-dialog
+    validation still open.
+15. PyBoy writes `Pokemon Red.gb.ram` next to the ROM; delete for a clean New Game if needed.
 
 ## Recipes (local smoke)
 
@@ -112,13 +110,15 @@ go build -o /tmp/astrate ./cmd/astrate && /tmp/astrate
 
 ### Emulator (T3)
 ```sh
-DEVICE_ID=$(cat /tmp/pokemon-device-id.txt)  # or register a new one
+DEVICE_ID=$(cat /tmp/pokemon-device-id.txt)
 ROM="/Users/atsetilam/Downloads/Pokemon - Red Version (UE)[!]/Pokemon Red.gb"
+# optional clean battery: rm -f "${ROM}.ram"
 cd examples/pokemon-agent/emulator-agent
 python3 -m emulator_agent.main \
   --rom "$ROM" --insecure --astrate-url http://localhost:8080 \
   --realm test --device-id "$DEVICE_ID" --fps 60 \
   > /tmp/pokemon-emulator.log 2>&1 &
+# Wait for: Intro skip complete — player moved (3, 6) → …
 ```
 
 ### Mint stream+publish JWT
@@ -136,7 +136,7 @@ print("ok", len(tok))
 PY
 ```
 
-### Orchestrator T4 (opencode)
+### Orchestrator (opencode)
 ```sh
 export POKEMON_ASTRATE_URL=http://localhost:8080
 export POKEMON_ASTRATE_REALM=test

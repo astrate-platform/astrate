@@ -11,6 +11,21 @@ AVAILABLE_ACTIONS_OVERWORLD = ["UP", "DOWN", "LEFT", "RIGHT", "A", "B", "START"]
 AVAILABLE_ACTIONS_BATTLE    = ["UP", "DOWN", "A", "B"]
 
 
+def is_actionable_dialog(text: str) -> bool:
+    """Filter wStringBuffer residue (name entry) that is not a real textbox.
+
+    Mirrors emulator_agent.state_decoder.is_actionable_dialog so the
+    orchestrator stays safe even if an older emulator build still publishes
+    raw buffer text.
+    """
+    t = (text or "").strip()
+    if not t:
+        return False
+    if " " not in t and t.isalpha() and t.isupper() and len(t) <= 10:
+        return False
+    return True
+
+
 def build_system_prompt() -> str:
     return """\
 You are an autonomous agent playing Pokémon Red on a Game Boy emulator.
@@ -23,17 +38,19 @@ OUTPUT FORMAT (respond with ONLY valid JSON, no explanation, no markdown):
 
 BUTTON must be one of: UP, DOWN, LEFT, RIGHT, A, B, START, SELECT, NONE
 holdFrames is how many frames to hold the button:
-  1  = single tap (menus, confirm)
-  8  = one tile step (overworld movement)
-  16 = two tile steps
+  1   = single tap (menus, confirm dialog)
+  16  = one tile step (overworld movement — Gen 1 walking needs ~16 frames)
+  32  = two tile steps
   1–4 = battle menu navigation
 
 RULES:
 - Progress the story: explore new areas, talk to NPCs, battle trainers, earn badges.
+- In overworld ALWAYS use holdFrames=16 (or 32) for UP/DOWN/LEFT/RIGHT — short holds fail.
 - In battle: UP/DOWN navigate the move menu; A confirms; B goes back.
 - If stasis=true you MUST choose a DIFFERENT direction from the last move or use A/B.
 - Avoid repeating the same action more than 3 times consecutively unless in a menu.
 - If dialog_text is non-empty, press A to advance it.
+- Starting in Red's House 2F: stairs down are toward the top-right (increase X, decrease Y).
 - NONE is a valid no-op when you need to wait (e.g., during animations).\
 """
 
@@ -72,9 +89,12 @@ def build_user_prompt(
 
     # --- Dialog ---
     dialog = state.get("dialogText", "").strip()
-    if dialog:
+    if dialog and is_actionable_dialog(dialog):
         lines.append(f'DIALOG: "{dialog}"')
         lines.append("  → Press A to advance dialog.")
+    elif dialog:
+        # Residue still present in older GameState samples — do not instruct A-mash.
+        lines.append("DIALOG: (none — buffer residue ignored)")
 
     # --- Party ---
     if party:

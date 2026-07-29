@@ -7,10 +7,10 @@ I'm working on the `feat/pokemon-agent` branch of ~/astrate — an autonomous Po
 agent that connects a Game Boy emulator (pyboy) to an LLM via the Astrate IoT platform.
 
 Before doing anything, read:
-  - ~/astrate/docs/handoff/pokemon-agent-memory.md   ← session 9; T4 PASS
+  - ~/astrate/docs/handoff/pokemon-agent-memory.md   ← session 10; movement smoke PASS
   - ~/astrate/examples/pokemon-agent/docs/DESIGN.md  ← architecture (v0.2)
   - ~/astrate/examples/pokemon-agent/docs/DECISIONS.md ← 10 ADRs
-  - ~/astrate/examples/pokemon-agent/docs/TESTING.md ← T0–T4 (JWT + opencode)
+  - ~/astrate/examples/pokemon-agent/docs/TESTING.md ← T0–T4 + intro/movement notes
 
 Branch: feat/pokemon-agent
 
@@ -25,11 +25,16 @@ Architecture (agreed, do NOT re-discuss):
   No AtomVM. No TCP bridge. Two services. Astrate is the bus.
   Local smoke uses --insecure (plaintext :1883); production uses mTLS :8883.
   Main loop owns every pyboy.tick(); MQTT only InputExecutor.enqueue().
-  Default --skip-intro mashes A/START past title (live-verified → Red's House 2F).
+  Intro skip: A/START + direction probes; completes when player MOVES off WRAM
+  spawn baseline (Oak preloads (3,6) — non-zero WRAM alone is NOT free play).
+  dialogText: filter wStringBuffer name-entry residue (is_actionable_dialog).
+  Direction holds floored to 16 frames (Gen 1 tile step).
   LLM: prefer opencode/big-pickle (no API key). Do NOT use Ollama unless asked.
 
 P0–P5 scaffolding DONE. Command queue + intro auto-press DONE.
 T4 DONE (session 9): WS + JWT + Big Pickle → ControlCommand → emulator Input (seq=N).
+Overworld movement smoke DONE (session 10): LLM RIGHT/UP/… ×16 moves coords
+  e.g. (3,6)→(4,6)→(5,6)→(5,5)→(6,5) on Red's House 2F.
 
 IMPORTANT: the branch working tree may contain unrelated WIP (pipelines, broker ACL,
 triggers). Only edit/commit files under examples/pokemon-agent/ and docs/handoff/
@@ -38,14 +43,13 @@ unless the user explicitly asks otherwise.
 
 Current task (pick one; primary suggestions):
 
-  1. Overworld movement smoke — get player coords to change under LLM control
-     (leave Red's House 2F via stairs; longer holds; clear stasis). Stack recipes
-     and JWT mint are in pokemon-agent-memory.md / TESTING.md T4.
+  1. Leave Red's House — longer LLM run (or light guidance) to stairs ~(7,1),
+     warp to 1F / Pallet Town (map change under LLM control).
 
-  2. Fill thin unit tests: action_translator (already has a pass stub — expand),
-     context_builder, emulator state_decoder fixtures.
+  2. Mid-dialog validation on real ROM text boxes (current filter is heuristic
+     on wStringBuffer; pret textbox flags would be more precise).
 
-  3. Mid-dialog $CF4B validation on real ROM once text boxes appear.
+  3. Fill thin unit tests / richer state_decoder fixtures.
 
   4. Longer unattended run / stasis-loop demo (DESIGN verification P4–P5).
 
@@ -63,6 +67,7 @@ Orchestrator (T4 recipe):
 
 ROM path (do NOT commit the ROM):
   /Users/atsetilam/Downloads/Pokemon - Red Version (UE)[!]/Pokemon Red.gb
+  Optional clean New Game: rm companion .ram next to the ROM.
 
 Local Astrate smoke:
   docker compose up -d timescaledb

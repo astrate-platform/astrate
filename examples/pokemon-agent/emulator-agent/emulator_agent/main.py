@@ -35,13 +35,28 @@ STASIS_SECONDS = 15.0
 HEARTBEAT_INTERVAL = 5.0  # seconds between forced GameState publishes
 DEFAULT_FPS = 60          # DESIGN §3.1; 0 = uncapped (high CPU)
 
-# Auto-press through title / Oak intro until WRAM looks "in game".
+# Auto-press through title / Oak intro until the player can actually move.
 # Prefer this over loading a save-state (session preference).
+#
+# IMPORTANT: Pokémon Red preloads Red's House 2F coords (typically 3,6) into
+# WRAM during Oak's speech — long before overworld control. Completing on
+# non-zero WRAM alone false-triggers and leaves the agent stuck mid-intro
+# with working MQTT inputs that never change position. Completion requires
+# a real tile move away from the first non-zero baseline position.
 SKIP_INTRO_MAX_SECONDS = 180.0
 SKIP_INTRO_INTERVAL_FRAMES = 20   # press when idle, every N frames
-SKIP_INTRO_HOLD_FRAMES = 4
-# Cycle: mostly A (advance text / confirm), occasional START (title menu)
-_SKIP_INTRO_BUTTONS = ("A", "A", "A", "START")
+SKIP_INTRO_HOLD_FRAMES = 4       # A / START taps
+SKIP_INTRO_DIR_HOLD_FRAMES = 20  # long enough to start a walking step
+# Cycle: mostly A (advance text / confirm names), START (title), and
+# directional probes so we detect the first free overworld step.
+_SKIP_INTRO_BUTTONS = (
+    "A", "A", "A", "START",
+    "A", "A", "RIGHT",
+    "A", "A", "UP",
+    "A", "A", "LEFT",
+    "A", "A", "DOWN",
+)
+_SKIP_INTRO_DIRECTIONS = frozenset({"UP", "DOWN", "LEFT", "RIGHT"})
 
 
 # ---------------------------------------------------------------------------
@@ -120,6 +135,10 @@ def looks_past_cold_boot(state: GameState) -> bool:
 
     Pallet Town's mapId is 0, so map alone is useless. Non-zero player coords,
     party, dialog, or battle mean the game has progressed past pure boot zeros.
+
+    NOTE: This is NOT sufficient for intro-skip completion. The Oak intro
+    preloads Red's House coords while the player still has no control — use
+    a baseline-position change (see main loop) to detect free overworld play.
     """
     return (
         state.player_x != 0
@@ -128,6 +147,13 @@ def looks_past_cold_boot(state: GameState) -> bool:
         or bool(state.dialog_text)
         or len(state.party) > 0
     )
+
+
+def intro_baseline_pos(state: GameState) -> Optional[tuple[int, int]]:
+    """Return (x, y) once WRAM shows a non-zero spawn preload, else None."""
+    if state.player_x == 0 and state.player_y == 0:
+        return None
+    return (state.player_x, state.player_y)
 
 
 # ---------------------------------------------------------------------------
@@ -171,6 +197,9 @@ async def run(config: AgentConfig) -> None:
     intro_done = not skip_intro
     intro_started_at = time.monotonic()
     intro_press_i = 0
+    # First non-zero (x,y) seen during intro (Oak preloads spawn here).
+    # Intro completes only when the player steps off this baseline.
+    intro_baseline: Optional[tuple[int, int]] = None
 
     def _shutdown(sig, frame):
         nonlocal running
@@ -186,8 +215,8 @@ async def run(config: AgentConfig) -> None:
         log.info("Emulator Agent running uncapped. Press Ctrl-C to stop.")
     if skip_intro:
         log.info(
-            "Intro skip ON — mashing A/START until past cold boot (max %.0fs). "
-            "Use --no-skip-intro to disable.",
+            "Intro skip ON — mashing A/START + direction probes until player "
+            "moves (max %.0fs). Use --no-skip-intro to disable.",
             SKIP_INTRO_MAX_SECONDS,
         )
 
@@ -199,14 +228,21 @@ async def run(config: AgentConfig) -> None:
                 if (now_intro - intro_started_at) >= SKIP_INTRO_MAX_SECONDS:
                     intro_done = True
                     log.warning(
-                        "Intro skip timed out after %.0fs — stopping auto-press.",
+                        "Intro skip timed out after %.0fs — stopping auto-press "
+                        "(baseline=%s). Player may still be mid-intro.",
                         SKIP_INTRO_MAX_SECONDS,
+                        intro_baseline,
                     )
                 elif frame_i % SKIP_INTRO_INTERVAL_FRAMES == 0:
                     button = _SKIP_INTRO_BUTTONS[
                         intro_press_i % len(_SKIP_INTRO_BUTTONS)
                     ]
-                    if executor.enqueue_local(button, SKIP_INTRO_HOLD_FRAMES):
+                    hold = (
+                        SKIP_INTRO_DIR_HOLD_FRAMES
+                        if button in _SKIP_INTRO_DIRECTIONS
+                        else SKIP_INTRO_HOLD_FRAMES
+                    )
+                    if executor.enqueue_local(button, hold):
                         intro_press_i += 1
 
             # MQTT/local presses applied here; main loop owns all ticks.
@@ -218,18 +254,30 @@ async def run(config: AgentConfig) -> None:
             raw = decode_state(pyboy)
             now = time.monotonic()
 
-            if not intro_done and looks_past_cold_boot(raw):
-                intro_done = True
-                log.info(
-                    "Intro skip complete — past cold boot "
-                    "(map=%s pos=(%d,%d) party=%d dialog=%r).",
-                    raw.map_name, raw.player_x, raw.player_y,
-                    len(raw.party), (raw.dialog_text[:20] if raw.dialog_text else ""),
-                )
+            if not intro_done:
+                pos = intro_baseline_pos(raw)
+                if pos is not None:
+                    if intro_baseline is None:
+                        intro_baseline = pos
+                        log.info(
+                            "Intro: WRAM spawn preload at %s map=%s — "
+                            "waiting for a real tile step (not free yet).",
+                            pos, raw.map_name,
+                        )
+                    elif pos != intro_baseline:
+                        intro_done = True
+                        log.info(
+                            "Intro skip complete — player moved %s → %s "
+                            "(map=%s party=%d).",
+                            intro_baseline, pos, raw.map_name, len(raw.party),
+                        )
 
             # ---- Stasis detection (time-based, overworld + no dialog) ----
+            # Skip while intro auto-press is still running — position is
+            # intentionally fixed during Oak speech / name entry.
             stationary = (
-                prev_state is not None
+                intro_done
+                and prev_state is not None
                 and not raw.in_battle
                 and not raw.dialog_text
                 and raw.player_x == prev_state.player_x
@@ -331,8 +379,9 @@ def _parse_args() -> AgentConfig:
         "--skip-intro",
         action=argparse.BooleanOptionalAction,
         default=True,
-        help="Mash A/START past title/intro until WRAM looks in-game "
-             "(default: on for ROM; ignored with --stub). Use --no-skip-intro to disable.",
+        help="Mash A/START + direction probes past title/intro until the "
+             "player actually moves (default: on for ROM; ignored with --stub). "
+             "Use --no-skip-intro to disable.",
     )
     args = p.parse_args()
     if args.fps < 0:
