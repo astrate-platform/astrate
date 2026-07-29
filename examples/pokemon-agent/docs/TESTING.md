@@ -132,30 +132,76 @@ Expected (verified 2026-07-29 on pyboy + insecure Astrate; intro skip added late
 - ControlCommand from AppEngine is queued on MQTT thread and applied on the
   main loop (no `pyboy.tick` from the paho callback)
 
-**T4 — LLM Orchestrator with stub**
+**T4 — LLM Orchestrator end-to-end (opencode / Big Pickle preferred)**
+
+Prerequisites: Astrate + T3 emulator running (device registered, intro skip done so
+GameState is non-zero). `opencode` on PATH for the free-model path.
+
+### Mint App JWT (stream + publish)
+
+Astrate’s live stream (`GET /astrate/v1/{realm}/socket`) authorizes with
+`ClaimChannels` using **REST** grammar (`METHOD::path`), **not** Phoenix
+`JOIN`/`WATCH`. `astartectl utils gen-jwt appengine channels` mints
+`a_ch: ["JOIN::.*","WATCH::.*"]` → **403** on the socket.
+
+Mint with REST-style claims (PyJWT + realm private key):
+
+```sh
+python3 - <<'PY'
+import jwt, time
+from pathlib import Path
+key = Path("deploy/devrealm/realm_private.pem").read_text()
+tok = jwt.encode(
+    {"a_aea": [".*::.*"], "a_ch": [".*::.*"], "exp": int(time.time()) + 8*3600},
+    key, algorithm="RS256",
+)
+Path("/tmp/pokemon-app-token.txt").write_text(tok)
+print("ok", len(tok))
+PY
+# Auth probe without WS upgrade: 426 = JWT accepted (Upgrade Required)
+curl -s -o /dev/null -w '%{http_code}\n' \
+  -H "Authorization: Bearer $(cat /tmp/pokemon-app-token.txt)" \
+  http://localhost:8080/astrate/v1/test/socket
+```
+
+### Run orchestrator — opencode / Big Pickle (no API key)
+
 ```sh
 cd examples/pokemon-agent/llm-orchestrator
 pip install -r requirements.txt
+
 export POKEMON_ASTRATE_URL=http://localhost:8080
 export POKEMON_ASTRATE_REALM=test
-export POKEMON_ASTRATE_DEVICE_ID=<device-id>
-export POKEMON_ASTRATE_APP_TOKEN=<jwt with a_ch + appengine>
-export POKEMON_OPENAI_API_KEY=<key>
-python -m llm_orchestrator.main
+export POKEMON_ASTRATE_DEVICE_ID=<device-id>   # e.g. cat /tmp/pokemon-device-id.txt
+export POKEMON_ASTRATE_APP_TOKEN="$(cat /tmp/pokemon-app-token.txt)"
+
+export POKEMON_OPENAI_MODEL=opencode/big-pickle
+export POKEMON_LLM_BACKEND=opencode   # or auto (auto selects opencode for opencode/* models)
+export POKEMON_LLM_TIMEOUT_SECONDS=60 # default 5s is too short for opencode cold start
+export POKEMON_LLM_MAX_RETRIES=2
+# no POKEMON_OPENAI_API_KEY needed for free opencode models
+
+python3 -m llm_orchestrator.main
 ```
-Expected: ControlCommand events visible in Astrate; if emulator agent is also running, character moves.
 
-**T4 notes — API key via Big Pickle / opencode (not wired yet)**
+Expected (verified 2026-07-29 with `opencode/big-pickle` + live T3):
+- Log: `LLM backend=opencode model=opencode/big-pickle (no API key)`
+- WebSocket connect for GameState + PartyStatus
+- Log: `LLM → <BUTTON> ×N (seq=…)` on each GameState turn
+- ControlCommand POST → HTTP 200; samples on AppEngine
+- Emulator log: non-`(local)` `Input: … (seq=N)` lines (intro inputs are local only)
+- Optional: GameState coords change when the map allows movement
 
-T4 was never run end-to-end in prior sessions (no `POKEMON_OPENAI_API_KEY` in
-the interactive environment). Preferred path for the next session that runs T4:
+### OpenAI-compatible HTTP alternative
 
-- Use **Big Pickle via opencode** (mule / solo-mule workflow) for the long-running
-  orchestrator + emulator smoke, rather than burning the strong-model session on
-  watching ticks.
-- Put the OpenAI-compatible key only in the environment of that process
-  (`POKEMON_OPENAI_API_KEY` or whatever `llm_orchestrator` settings read) —
-  do **not** commit keys or paste them into handoff files.
-- Emulator agent should already be on T3 (`--insecure`, ROM, default `--skip-intro`)
-  so the orchestrator sees non-zero game state after intro.
-- App JWT must include the **channels** claim (`a_ch`) for the live stream path.
+```sh
+export POKEMON_LLM_BACKEND=openai   # or auto with a non-opencode model
+export POKEMON_OPENAI_API_BASE=https://api.openai.com/v1
+export POKEMON_OPENAI_API_KEY=<key>
+export POKEMON_OPENAI_MODEL=gpt-4o
+export POKEMON_LLM_TIMEOUT_SECONDS=15
+python3 -m llm_orchestrator.main
+```
+
+Do **not** commit API keys. Prefer opencode free models for local smoke unless you
+need a paid HTTP provider.

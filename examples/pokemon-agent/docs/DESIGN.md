@@ -19,7 +19,7 @@ The system bridges low-level game emulator state with high-level AI reasoning th
 |---|---|
 | **Emulator Agent** | Runs pyboy in-process; reads WRAM every tick; publishes telemetry to Astrate via MQTT; receives and executes controller commands |
 | **Astrate Platform** | Wire-compatible Astarte IoT hub (this repo). Handles MQTT device pairing, interface schema enforcement, bidirectional data routing, and App API |
-| **LLM Orchestrator** | Subscribes to Astrate App API (WebSocket/SSE); assembles game context; calls an OpenAI-compatible LLM; dispatches controller commands back through Astrate |
+| **LLM Orchestrator** | Subscribes to Astrate App API (WebSocket/SSE); assembles game context; calls an LLM (OpenAI-compatible HTTP **or** `opencode run` / Big Pickle); dispatches controller commands back through Astrate |
 
 ```
 ┌──────────────────────────────────────────────────────────────────────┐
@@ -266,7 +266,7 @@ See §3.3 for full interface schemas.
 |---|---|
 | `llm_orchestrator/astrate_client.py` | Live stream client (`GET /astrate/v1/{realm}/socket?device_id=&interface=`) + AppEngine publish (`POST /appengine/v1/.../interfaces/.../{path}`); reconnects with exponential backoff |
 | `llm_orchestrator/context_builder.py` | Formats game state + party + dialog + action history into a structured LLM prompt |
-| `llm_orchestrator/llm_engine.py` | OpenAI-compatible async inference; JSON output validation; up to 3 retries; raises `LLMTimeoutError` on timeout |
+| `llm_orchestrator/llm_engine.py` | LLM inference: OpenAI-compatible HTTP **or** `opencode run` (Big Pickle / free models, no API key); JSON validation; retries; `LLMTimeoutError` |
 | `llm_orchestrator/action_translator.py` | Parses LLM JSON output; validates button names; assigns monotonically increasing `sequenceId` |
 | `llm_orchestrator/main.py` | asyncio supervisor; event fan-in (GameState + PartyStatus); on `LLMTimeoutError` sends NONE no-op command |
 
@@ -344,10 +344,15 @@ presses caused by MQTT redelivery or network latency spikes.
 
 ### 5.5 LLM timeout → no-op
 
-If the LLM does not respond within `LLM_TIMEOUT_SECONDS` (default: 5), the
-Orchestrator publishes a `ControlCommand` with `button="NONE"` and `holdFrames=0`.
-This keeps the Astrate command sequence contiguous and prevents the Emulator Agent
-from acting on a stale command.
+If the LLM does not respond within `LLM_TIMEOUT_SECONDS` (default: 5; use ≥60 for
+`opencode run` cold starts), the Orchestrator publishes a `ControlCommand` with
+`button="NONE"` and `holdFrames=0`. This keeps the Astrate command sequence
+contiguous and prevents the Emulator Agent from acting on a stale command.
+
+**Backends** (`POKEMON_LLM_BACKEND`: `auto` | `openai` | `opencode`):
+- `openai` — HTTP `/chat/completions` (`POKEMON_OPENAI_*`).
+- `opencode` — subprocess `opencode run --model … --format json` (no API key for free models).
+- `auto` — selects `opencode` when `POKEMON_OPENAI_MODEL` starts with `opencode/` or is `big-pickle`.
 
 ### 5.4 Reconnection
 

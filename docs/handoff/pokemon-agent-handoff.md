@@ -1,4 +1,4 @@
-# Handoff Prompt — Pokémon Agent Next Session (post queue + intro skip)
+# Handoff Prompt — Pokémon Agent Next Session
 
 Copy-paste this prompt into a new session to continue work on the Pokémon Red autonomous agent.
 
@@ -7,17 +7,17 @@ I'm working on the `feat/pokemon-agent` branch of ~/astrate — an autonomous Po
 agent that connects a Game Boy emulator (pyboy) to an LLM via the Astrate IoT platform.
 
 Before doing anything, read:
-  - ~/astrate/docs/handoff/pokemon-agent-memory.md   ← session summary + remaining work
-  - ~/astrate/examples/pokemon-agent/docs/DESIGN.md  ← architecture (v0.2; §5.2–5.4 queue/intro)
+  - ~/astrate/docs/handoff/pokemon-agent-memory.md   ← session 9; T4 PASS
+  - ~/astrate/examples/pokemon-agent/docs/DESIGN.md  ← architecture (v0.2)
   - ~/astrate/examples/pokemon-agent/docs/DECISIONS.md ← 10 ADRs
-  - ~/astrate/examples/pokemon-agent/docs/TESTING.md ← T0–T4 (T4 notes: Big Pickle / opencode)
+  - ~/astrate/examples/pokemon-agent/docs/TESTING.md ← T0–T4 (JWT + opencode)
 
 Branch: feat/pokemon-agent
 
 Code lives in:
   examples/pokemon-agent/
     emulator-agent/   — Python/pyboy/paho-mqtt service
-    llm-orchestrator/ — Python/aiohttp/httpx LLM service
+    llm-orchestrator/ — App API + LLM (OpenAI HTTP or opencode/Big Pickle)
     astrate-interfaces/ — 3 JSON interface definitions
 
 Architecture (agreed, do NOT re-discuss):
@@ -25,28 +25,41 @@ Architecture (agreed, do NOT re-discuss):
   No AtomVM. No TCP bridge. Two services. Astrate is the bus.
   Local smoke uses --insecure (plaintext :1883); production uses mTLS :8883.
   Main loop owns every pyboy.tick(); MQTT only InputExecutor.enqueue().
-  Default --skip-intro mashes A/START past title (not save-state).
+  Default --skip-intro mashes A/START past title (live-verified → Red's House 2F).
+  LLM: prefer opencode/big-pickle (no API key). Do NOT use Ollama unless asked.
 
-P0–P5 DONE (see memory). Also DONE this branch: command queue + intro auto-press.
+P0–P5 scaffolding DONE. Command queue + intro auto-press DONE.
+T4 DONE (session 9): WS + JWT + Big Pickle → ControlCommand → emulator Input (seq=N).
 
 IMPORTANT: the branch working tree may contain unrelated WIP (pipelines, broker ACL,
 triggers). Only edit/commit files under examples/pokemon-agent/ and docs/handoff/
 (plus docs/mkdocs.yml / docs/Makefile / docs/site/ when touching site docs)
 unless the user explicitly asks otherwise.
 
-Current task (pick what the user wants; numbered phases are complete):
+Current task (pick one; primary suggestions):
 
-  Preferred next:
-  - T4 LLM orchestrator end-to-end — run via **Big Pickle / opencode** (mule),
-    not a long interactive strong-model watch. Put POKEMON_OPENAI_API_KEY only
-    in that process env; never commit keys. App JWT needs channels claim a_ch.
-    Emulator: T3 ROM + --insecure + default --skip-intro first.
+  1. Overworld movement smoke — get player coords to change under LLM control
+     (leave Red's House 2F via stairs; longer holds; clear stasis). Stack recipes
+     and JWT mint are in pokemon-agent-memory.md / TESTING.md T4.
 
-  Also optional:
-  - Fill remaining pass unit tests (orchestrator action_translator / context_builder,
-    richer state_decoder fixtures)
-  - Live-validate intro skip + mid-dialog $CF4B after intro on real ROM
-  - After DESIGN edits: cd docs && make sync  (site/pokemon-agent.md)
+  2. Fill thin unit tests: action_translator (already has a pass stub — expand),
+     context_builder, emulator state_decoder fixtures.
+
+  3. Mid-dialog $CF4B validation on real ROM once text boxes appear.
+
+  4. Longer unattended run / stasis-loop demo (DESIGN verification P4–P5).
+
+JWT gotcha (do not forget):
+  Mint with a_ch REST grant — NOT astartectl channels JOIN/WATCH:
+    {"a_aea":[".*::.*"],"a_ch":[".*::.*"]}  signed with deploy/devrealm/realm_private.pem
+  (Astrate stream uses Authorizes REST grammar on ClaimChannels; JOIN/WATCH → 403.)
+
+Orchestrator (T4 recipe):
+  POKEMON_OPENAI_MODEL=opencode/big-pickle
+  POKEMON_LLM_BACKEND=opencode
+  POKEMON_LLM_TIMEOUT_SECONDS=60
+  POKEMON_ASTRATE_* as in memory
+  No POKEMON_OPENAI_API_KEY for free opencode models.
 
 ROM path (do NOT commit the ROM):
   /Users/atsetilam/Downloads/Pokemon - Red Version (UE)[!]/Pokemon Red.gb
