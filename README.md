@@ -70,8 +70,7 @@ Note that this is **not** an OSI-approved open source licence: the exclusion cla
 ## Trademarks
 
 "AtomVM" is a trademark/project of Davide Bettio ([github.com/bettio](https://github.com/bettio),
-[github.com/atomvm/AtomVM](https://github.com/atomvm/AtomVM)). "Clea", "Clea Astarte", "Clea
-Portal", "Clea Edgehog", "Clea OS", and other Clea-branded names mentioned in this project's
-documentation belong to SECO S.p.A. Mentions here are references made in the context of
-protocol/API compatibility or reimplementation, not claims of affiliation, endorsement, or
-ownership.
+[github.com/atomvm/AtomVM](https://github.com/atomvm/AtomVM)). "Clea Astarte" and other
+Clea-branded names mentioned in this project's documentation belong to SECO S.p.A. Mentions
+here are references made in the context of protocol/API compatibility, not claims of
+affiliation, endorsement, or ownership.
