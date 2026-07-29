@@ -62,6 +62,10 @@ func checkACL(base, topic string, write bool, ownership ownershipFn) bool {
 		if rest == "capabilities" || rest == "control/emptyCache" || rest == "control/producer/properties" {
 			return true
 		}
+		// control/keyAgreement (080-mqtt-v1-protocol.md:172-176) is deliberately
+		// unsupported: upstream itself documents the handshake as "reserved and
+		// routed correctly, but not yet implemented", so falling through to the
+		// deny path below matches upstream's own status rather than being a gap.
 		iface, path, found := strings.Cut(rest, "/")
 		if !found || path == "" { // data topics always carry a path (§3.3)
 			return false

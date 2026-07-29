@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/cbroglie/mustache"
 	"github.com/prometheus/client_golang/prometheus"
 )
 
@@ -33,6 +34,13 @@ type Action struct {
 	// Custom is the raw action object of a non-HTTP action, delivered
 	// through the Forwarder extension point; nil for HTTP actions.
 	Custom json.RawMessage
+	// Template is the Mustache body template (upstream "template"), set
+	// only when TemplateType == "mustache".
+	Template string
+	// TemplateType is the upstream "template_type" field. Only "mustache"
+	// is rendered; any other non-empty value is accepted but ignored (the
+	// default JSON envelope is sent), same as before this field existed.
+	TemplateType string
 }
 
 // httpAction is the upstream HTTP action JSON shape.
@@ -53,8 +61,8 @@ var httpMethods = map[string]bool{
 }
 
 // parseAction validates one action object. It returns the parsed action
-// plus the list of accepted-but-not-evaluated features (Mustache payload
-// templates: the default JSON envelope is sent instead).
+// plus the list of accepted-but-not-evaluated features (non-mustache
+// template_type values: the default JSON envelope is sent instead).
 func parseAction(raw json.RawMessage) (*Action, []string, error) {
 	if len(raw) == 0 {
 		return nil, nil, fmt.Errorf("missing action")
@@ -65,8 +73,8 @@ func parseAction(raw json.RawMessage) (*Action, []string, error) {
 	}
 
 	var unsupported []string
-	if h.Template != "" || h.TemplateType != "" {
-		unsupported = append(unsupported, "mustache payload template (default JSON envelope sent)")
+	if h.TemplateType != "" && h.TemplateType != "mustache" {
+		unsupported = append(unsupported, fmt.Sprintf("template_type %q (default JSON envelope sent)", h.TemplateType))
 	}
 
 	switch {
@@ -74,6 +82,7 @@ func parseAction(raw json.RawMessage) (*Action, []string, error) {
 		return &Action{
 			Method: http.MethodPost, URL: h.HTTPPostURL,
 			StaticHeaders: h.HTTPStaticHeaders, IgnoreSSLErrors: h.IgnoreSSLErrors,
+			Template: h.Template, TemplateType: h.TemplateType,
 		}, unsupported, nil
 	case h.HTTPURL != "":
 		if !httpMethods[h.HTTPMethod] {
@@ -84,6 +93,7 @@ func parseAction(raw json.RawMessage) (*Action, []string, error) {
 			// HTTP methods are case-sensitive uppercase tokens.
 			Method: strings.ToUpper(h.HTTPMethod), URL: h.HTTPURL,
 			StaticHeaders: h.HTTPStaticHeaders, IgnoreSSLErrors: h.IgnoreSSLErrors,
+			Template: h.Template, TemplateType: h.TemplateType,
 		}, unsupported, nil
 	default:
 		// Not an HTTP action (e.g. upstream AMQP): keep it verbatim for the
@@ -362,11 +372,49 @@ func (x *Executor) deliver(d Delivery) {
 		return
 	}
 
+	if d.Trigger.Action.TemplateType == "mustache" {
+		if rendered, err := renderMustache(d.Trigger.Action.Template, d.Realm, d.Event); err != nil {
+			x.log.Warn("mustache action template failed to render; sending default envelope",
+				"realm", d.Realm, "trigger", d.Trigger.Name, "err", err)
+		} else {
+			body = rendered
+		}
+	}
+
 	if d.Trigger.Action.Custom != nil {
 		x.forward(d, body)
 		return
 	}
 	x.webhook(d, body)
+}
+
+// renderMustache renders a "template_type": "mustache" action body
+// (060-triggers.md:516-543) with the realm/device/trigger/event fields
+// upstream documents. event fields (interface, path, value, ...) are
+// flattened in alongside the envelope fields rather than nested, matching
+// upstream's flat template namespace.
+func renderMustache(template, realm string, event SimpleEvent) ([]byte, error) {
+	ctx := map[string]any{
+		"realm":        realm,
+		"device_id":    event.DeviceID,
+		"timestamp":    event.Timestamp.UTC().Format(EventTimeLayout),
+		"trigger_name": event.TriggerName,
+	}
+	if raw, err := json.Marshal(event.Event); err == nil {
+		var fields map[string]any
+		if json.Unmarshal(raw, &fields) == nil {
+			for k, v := range fields {
+				ctx[k] = v
+			}
+		}
+	}
+	// forceRaw: HTML-escaping {{var}} would mangle JSON/text bodies, which is
+	// what these templates almost always render.
+	rendered, err := mustache.RenderRaw(template, true, ctx)
+	if err != nil {
+		return nil, err
+	}
+	return []byte(rendered), nil
 }
 
 // forward hands a non-HTTP action to the Forwarder extension point.
