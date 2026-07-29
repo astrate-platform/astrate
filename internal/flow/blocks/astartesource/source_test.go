@@ -1,6 +1,7 @@
 package astartesource
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -97,5 +98,56 @@ func TestSourceStopUnsubscribesCleanly(t *testing.T) {
 	msgs, err := src.Process(nil)
 	if err != nil || msgs != nil {
 		t.Errorf("Process after Stop = %v, %v, want nil, nil", msgs, err)
+	}
+}
+
+func TestSourceEmitBlocksUntilEvent(t *testing.T) {
+	bus := stream.New(nil)
+	src := New(bus, Config{Realm: "test"})
+	defer src.Stop()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	done := make(chan []*flow.FlowMessage, 1)
+	errc := make(chan error, 1)
+	go func() {
+		msgs, err := src.Emit(ctx)
+		if err != nil {
+			errc <- err
+			return
+		}
+		done <- msgs
+	}()
+
+	// Give Emit a moment to block before publishing.
+	time.Sleep(20 * time.Millisecond)
+	bus.Publish(stream.Event{
+		Kind: stream.KindIncomingData, Realm: "test", DeviceID: "d",
+		Interface: "com.ex.S", Path: "/v", Value: true, Timestamp: time.Now(),
+	})
+
+	select {
+	case err := <-errc:
+		t.Fatalf("Emit: %v", err)
+	case msgs := <-done:
+		if len(msgs) != 1 || msgs[0].Data != true {
+			t.Fatalf("Emit = %+v, want one boolean true", msgs)
+		}
+	case <-ctx.Done():
+		t.Fatal("Emit timed out waiting for published event")
+	}
+}
+
+func TestSourceEmitCancelled(t *testing.T) {
+	bus := stream.New(nil)
+	src := New(bus, Config{Realm: "test"})
+	defer src.Stop()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err := src.Emit(ctx)
+	if err == nil {
+		t.Fatal("Emit with cancelled context returned nil error")
 	}
 }

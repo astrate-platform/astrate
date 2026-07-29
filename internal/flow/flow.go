@@ -63,13 +63,18 @@ type FlowConfig struct {
 }
 
 // Flow is a running instance of a pipeline. It owns a Router that processes
-// messages through a BlockGraph and exposes status information.
+// messages through a BlockGraph, a source pump that feeds Source blocks into
+// the router, and exposes status information.
 type Flow struct {
 	id         string
 	pipelineID string
 	status     FlowStatus
 	router     *Router
 	graph      *BlockGraph
+
+	// cancelPump stops the source pump; pumpWG waits for it to exit.
+	cancelPump context.CancelFunc
+	pumpWG     sync.WaitGroup
 
 	mu      sync.RWMutex
 	created time.Time
@@ -162,6 +167,12 @@ func (m *Manager) StartFlow(ctx context.Context, cfg FlowConfig) (*Flow, error) 
 	f.router = NewRouter(graph, cfg.RouterCfg, cfg.Registerer)
 	f.router.Run(ctx)
 
+	// Pump Source blocks independently of the StartFlow caller's context so
+	// a short-lived ctx does not tear the pump down while the flow is running.
+	pumpCtx, cancel := context.WithCancel(context.Background())
+	f.cancelPump = cancel
+	f.startSourcePump(pumpCtx)
+
 	f.mu.Lock()
 	f.setStatus(FlowStatusRunning)
 	f.started = time.Now()
@@ -170,9 +181,61 @@ func (m *Manager) StartFlow(ctx context.Context, cfg FlowConfig) (*Flow, error) 
 	return f, nil
 }
 
-// StopFlow gracefully shuts down the flow identified by pipelineID. It
-// drains in-flight messages, releases resources, and transitions the status
-// to stopped.
+// sourceIdleBackoff is how long the pump waits after an empty Emit before
+// polling again. Blocking Sources (e.g. AstarteSource) never hit this on the
+// hot path; it only protects non-blocking SourceFunc adapters from spinning.
+const sourceIdleBackoff = 10 * time.Millisecond
+
+// startSourcePump launches one goroutine per Source block. Each goroutine
+// blocks in Emit until messages arrive (or the context is cancelled), then
+// submits them into the router for the remaining graph stages.
+func (f *Flow) startSourcePump(ctx context.Context) {
+	for _, src := range f.graph.Sources() {
+		src := src
+		f.pumpWG.Add(1)
+		go func() {
+			defer f.pumpWG.Done()
+			for {
+				msgs, err := src.Emit(ctx)
+				if err != nil {
+					// Context cancellation is the normal shutdown path.
+					if ctx.Err() != nil {
+						return
+					}
+					// Transient produce errors: log via router and keep polling.
+					if f.router != nil && f.router.log != nil {
+						f.router.log.Error("source emit error",
+							"source", src.Name(), "err", err)
+					}
+					continue
+				}
+				if ctx.Err() != nil {
+					return
+				}
+				if len(msgs) == 0 {
+					select {
+					case <-ctx.Done():
+						return
+					case <-time.After(sourceIdleBackoff):
+					}
+					continue
+				}
+				for _, msg := range msgs {
+					if msg == nil {
+						continue
+					}
+					// Live device data: QoS 0 matches the stream bus's
+					// never-backpressure-ingestion philosophy (§1.4).
+					f.router.Submit(msg, 0)
+				}
+			}
+		}()
+	}
+}
+
+// StopFlow gracefully shuts down the flow identified by pipelineID. It stops
+// the source pump, drains in-flight messages, calls Stop on every Stopper
+// block, and transitions the status to stopped.
 func (m *Manager) StopFlow(ctx context.Context, pipelineID string) error {
 	m.mu.RLock()
 	f, ok := m.flows[pipelineID]
@@ -182,8 +245,23 @@ func (m *Manager) StopFlow(ctx context.Context, pipelineID string) error {
 		return fmt.Errorf("%w: %s", ErrFlowNotFound, pipelineID)
 	}
 
+	// 1. Stop producing: cancel pump and wait for Emit loops to exit so no
+	//    new messages are submitted during drain.
+	if f.cancelPump != nil {
+		f.cancelPump()
+	}
+	f.pumpWG.Wait()
+
+	// 2. Drain in-flight lane work.
 	if err := f.router.Drain(ctx); err != nil {
 		return fmt.Errorf("flow drain %s: %w", pipelineID, err)
+	}
+
+	// 3. Release block resources (e.g. AstarteSource bus subscriptions).
+	for _, b := range f.graph.Blocks() {
+		if s, ok := b.(Stopper); ok {
+			s.Stop()
+		}
 	}
 
 	f.mu.Lock()

@@ -2,9 +2,13 @@
 // astarte_flow parity): a Source that subscribes to Astrate's existing live
 // event bus (internal/engine/stream) and converts device events into
 // FlowMessages, connecting device ingestion to operator-defined pipelines.
+//
+// Wiring (issue #37): the flow manager's source pump calls Emit; StopFlow
+// calls Stop to drop the bus subscription.
 package astartesource
 
 import (
+	"context"
 	"fmt"
 	"strconv"
 	"strings"
@@ -26,6 +30,8 @@ type Config struct {
 
 // Source is a Flow Source block backed by a stream.Bus subscription. The
 // zero value is not usable; construct with New.
+//
+// Source implements flow.Block, flow.Source, and flow.Stopper.
 type Source struct {
 	cfg    Config
 	ch     <-chan stream.Event
@@ -34,7 +40,8 @@ type Source struct {
 
 // New subscribes to bus for cfg.Realm/cfg.Interface and returns a Source
 // ready to be used as a flow.Block. Call Stop when the flow using it stops,
-// to release the subscription.
+// to release the subscription (Manager.StopFlow does this automatically when
+// the block is in the flow graph).
 func New(bus *stream.Bus, cfg Config) *Source {
 	ch, cancel := bus.Subscribe(cfg.Realm, stream.Filter{Interface: cfg.Interface}, 0)
 	return &Source{cfg: cfg, ch: ch, cancel: cancel}
@@ -43,11 +50,41 @@ func New(bus *stream.Bus, cfg Config) *Source {
 // Name implements flow.Block.
 func (s *Source) Name() string { return "astarte_source" }
 
-// Process implements flow.Block as a Source: it drains every event
-// currently buffered on the subscription (non-blocking) and converts each
-// to a FlowMessage. Called repeatedly by the router's polling loop.
+// Process implements flow.Block as a non-blocking drain of currently buffered
+// events. Prefer Emit for the live pump path (it waits for the next event).
 func (s *Source) Process(_ *flow.FlowMessage) ([]*flow.FlowMessage, error) {
+	return s.drain(false, nil)
+}
+
+// Emit implements flow.Source: it blocks until at least one accepted event is
+// available or ctx is cancelled, then drains any further buffered events.
+func (s *Source) Emit(ctx context.Context) ([]*flow.FlowMessage, error) {
+	return s.drain(true, ctx)
+}
+
+// drain converts bus events into FlowMessages. When block is true it waits
+// for the first accepted event (or ctx cancellation); otherwise it only
+// takes events already buffered.
+func (s *Source) drain(block bool, ctx context.Context) ([]*flow.FlowMessage, error) {
 	var out []*flow.FlowMessage
+
+	if block {
+		for len(out) == 0 {
+			select {
+			case <-ctx.Done():
+				return out, ctx.Err()
+			case ev, ok := <-s.ch:
+				if !ok {
+					return out, nil
+				}
+				if s.cfg.Path != "" && !strings.HasPrefix(ev.Path, s.cfg.Path) {
+					continue
+				}
+				out = append(out, toFlowMessage(&ev))
+			}
+		}
+	}
+
 	for {
 		select {
 		case ev, ok := <-s.ch:
@@ -64,8 +101,9 @@ func (s *Source) Process(_ *flow.FlowMessage) ([]*flow.FlowMessage, error) {
 	}
 }
 
-// Stop unsubscribes from the bus. Safe to call once; the underlying channel
-// is closed by the bus, after which Process returns cleanly with no events.
+// Stop implements flow.Stopper: unsubscribes from the bus. Safe to call once;
+// the underlying channel is closed by the bus, after which Process/Emit
+// return cleanly with no events.
 func (s *Source) Stop() {
 	s.cancel()
 }

@@ -12,12 +12,20 @@ Start every documentation session by reading:
 
 ## Current State
 
+### General project work (preferred start for non-docs sessions)
+
+- **`docs/handoff/session-2026-07-29-handoff.md`** — next-session prompt: #37 source
+  pump + milestones refresh done in tree (uncommitted); next Flow gaps are block
+  factory, process wiring, HTTP API; then Legion/#20 etc.
+
+### Documentation phases
+
 Latest completed phase: Phase 10 - Fix Observability Metrics + Add Cross-References.
 
 Latest files:
 
 - `docs/handoff/phase-10-memory.md` (Phase 10 completed)
-- `docs/handoff/phase-11-handoff.md` (contains the next-session prompt)
+- `docs/handoff/phase-11-handoff.md` (docs-only next-session prompt)
 - `docs/handoff/phase-9-memory.md`
 - `docs/handoff/phase-9-handoff.md`
 
@@ -26,9 +34,10 @@ Current status:
 - Docs on `main`: 22 narrative pages, Swagger UI, MkDocs config, GitHub Actions workflow, OpenAPI specs.
 - GitHub Pages enabled in repo Settings (source: GitHub Actions).
 - Live site: https://astrate-platform.github.io/astrate/
-- Code milestones M0-M9 are on `worktree-*` branches, not yet merged to `main`.
+- Platform code (M0–M9 lineage + Flow v2.0 pieces) is on `main` as of 2026-07-29;
+  handoff README previously claimed worktrees-only — outdated.
 
-Phase 11 plan (next):
+Phase 11 plan (docs, when chosen):
 
 - Review remaining narrative pages for accuracy against current source.
 - Create remaining pages from ROADMAP milestones if needed.
