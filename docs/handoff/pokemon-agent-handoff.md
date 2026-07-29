@@ -1,4 +1,4 @@
-# Handoff Prompt — Pokémon Agent Next Session (post-P3)
+# Handoff Prompt — Pokémon Agent Next Session (post-P4)
 
 Copy-paste this prompt into a new session to continue work on the Pokémon Red autonomous agent.
 
@@ -7,10 +7,10 @@ I'm working on the `feat/pokemon-agent` branch of ~/astrate — an autonomous Po
 agent that connects a Game Boy emulator (pyboy) to an LLM via the Astrate IoT platform.
 
 Before doing anything, read:
-  - ~/astrate/docs/handoff/pokemon-agent-memory.md   ← session summary, P0–P3 results, risks
+  - ~/astrate/docs/handoff/pokemon-agent-memory.md   ← session summary, P0–P4 results, risks
   - ~/astrate/examples/pokemon-agent/docs/DESIGN.md  ← architecture (v0.2)
   - ~/astrate/examples/pokemon-agent/docs/DECISIONS.md ← 10 ADRs
-  - ~/astrate/examples/pokemon-agent/docs/TESTING.md ← T0–T4 smoke steps (updated for --insecure)
+  - ~/astrate/examples/pokemon-agent/docs/TESTING.md ← T0–T4 smoke steps (updated for --insecure + T3 ROM)
 
 Branch: feat/pokemon-agent
 
@@ -29,6 +29,8 @@ P0 DONE: App API stream/publish paths (llm-orchestrator client).
 P1 DONE: unit tests green.
 P2 DONE: WRAM verified (DIALOG $CF4B, maxHP@+34).
 P3 DONE: live smoke T1+T2 — interfaces install, stub agent, GameState+PartyStatus in AppEngine.
+P4 DONE: ROM integration — pyboy + real ROM + insecure Astrate; 60 fps pacing; dialog 0x00;
+         stasis 15s; ControlCommand START delivered via AppEngine POST.
 
 IMPORTANT: the branch working tree may contain unrelated WIP (pipelines, broker ACL,
 triggers). Only edit/commit files under examples/pokemon-agent/ and docs/handoff/
@@ -36,21 +38,24 @@ unless the user explicitly asks otherwise.
 
 Current task (pick the first that's still incomplete):
 
-  P4 — ROM integration (ROM path supplied by user — do NOT commit the ROM)
-       ROM path:
-         /Users/atsetilam/Downloads/Pokemon - Red Version (UE)[!]/Pokemon Red.gb
-       Run full loop: pyboy + emulator agent (+ optional orchestrator + LLM).
-       Follow TESTING.md T3 (and T4 if LLM key available).
-       Prefer local Astrate: timescaledb compose + host binary insecure_dev_mode
-       (docker compose --profile full build is broken: .dockerignore excludes docs/).
-       Example:
-         python -m emulator_agent.main \
-           --rom "/Users/atsetilam/Downloads/Pokemon - Red Version (UE)[!]/Pokemon Red.gb" \
-           --insecure --astrate-url http://localhost:8080 --realm test \
-           --device-id <device-id>
-
   P5 — Optional MkDocs nav for examples/pokemon-agent/docs/DESIGN.md
        MkDocs docs_dir is docs/site/; needs site page + mkdocs.yml (ask first).
+
+  Optional (if user wants, not gated as P5):
+  - T4 LLM orchestrator when API key is available
+  - Save-state / skip title so map/party telemetry is real
+  - Queue ControlCommand ticks on the main loop (avoid MQTT-thread pyboy.tick race)
+  - Fill remaining pass unit tests
+
+ROM path (do NOT commit the ROM):
+  /Users/atsetilam/Downloads/Pokemon - Red Version (UE)[!]/Pokemon Red.gb
+
+Local Astrate smoke:
+  docker compose up -d timescaledb
+  ASTRATE_DATABASE_DSN=… ASTRATE_MQTT_INSECURE_DEV_MODE=true \
+    ASTRATE_REALM_NAME=test ASTRATE_REALM_JWT_PUBLIC_KEY_FILE=deploy/devrealm/realm_public.pem \
+    go build -o /tmp/astrate ./cmd/astrate && /tmp/astrate
+  (docker compose --profile full build is broken: .dockerignore excludes docs/)
 
 Rules:
   - Read source before changing anything.

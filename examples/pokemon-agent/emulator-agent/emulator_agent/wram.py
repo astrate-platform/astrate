@@ -246,13 +246,15 @@ def read_bytes(pyboy, addr: int, n: int) -> bytes:
 def read_text(pyboy, addr: int, n: int) -> str:
     """Decode n bytes of Game Boy character encoding into a Python string.
 
-    Stops early at the 0x50 string terminator.  Unknown bytes are rendered
-    as '?' to avoid crashes on garbled WRAM during emulator startup.
+    Stops early at the 0x50 string terminator ('@') or at a 0x00 padding
+    byte (common in zeroed / unused WRAM before the game writes a real
+    string). Unknown non-zero bytes are rendered as '?' so garbled dialog
+    does not crash the decoder.
     """
     chars: list[str] = []
     for i in range(n):
         val = pyboy.memory[addr + i]
-        if val == 0x50:
+        if val == 0x50 or val == 0x00:
             break
         chars.append(_CHARSET.get(val, "?"))
     return "".join(chars).strip()

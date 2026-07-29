@@ -28,6 +28,17 @@ run-emulator-stub:
 	cd emulator-agent && python -m emulator_agent.main --stub --insecure \
 	  --astrate-url $(ASTRATE_URL) --realm $(REALM) --device-id $(DEVICE_ID)
 
+# ROM is never committed. Example:
+#   make run-emulator-rom DEVICE_ID=… \
+#     ROM="/Users/…/Pokemon - Red Version (UE)[!]/Pokemon Red.gb"
+ROM ?=
+run-emulator-rom:
+	@test -n "$(DEVICE_ID)" || (echo "DEVICE_ID is required" && exit 1)
+	@test -n "$(ROM)" || (echo "ROM path is required (do not commit the ROM)" && exit 1)
+	cd emulator-agent && python -m emulator_agent.main \
+	  --rom "$(ROM)" --insecure \
+	  --astrate-url $(ASTRATE_URL) --realm $(REALM) --device-id $(DEVICE_ID)
+
 run-emulator-mtls:
 	cd emulator-agent && python -m emulator_agent.main --stub \
 	  --astrate-url $(ASTRATE_URL) --realm $(REALM) --device-id $(DEVICE_ID) \

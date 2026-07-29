@@ -145,12 +145,13 @@ that exposes a direct API for reading/writing memory and injecting button presse
 | `emulator_agent/input_executor.py` | Receives `ControlCommand`; deduplicates by `sequenceId`; calls pyboy joypad API |
 | `emulator_agent/main.py` | asyncio main loop; pyboy tick; stasis detection; shutdown handling |
 
-**Tick rate:** 60 fps pyboy tick; WRAM snapshot + publish on every *changed* state
-(position, battle flag, or dialog text changes), plus a heartbeat every 5 seconds.
+**Tick rate:** 60 fps pyboy tick (CLI `--fps`, default 60; `0` = uncapped); WRAM
+snapshot + publish on every *changed* state (position, battle flag, or dialog text
+changes), plus a heartbeat every 5 seconds.
 
-**Stasis detection:** If `playerX` and `playerY` remain unchanged for 15 consecutive
-changed-state evaluations while `inBattle = false` and no dialog is active, the agent
-publishes a `GameState` with `stasis=true` and logs a warning.
+**Stasis detection:** If `playerX` and `playerY` remain unchanged for **15 seconds**
+while `inBattle = false` and no dialog is active, the agent publishes a `GameState`
+with `stasis=true` and logs a warning (time-based so it stays correct at 60 fps).
 
 ### 3.2 Astrate Platform
 

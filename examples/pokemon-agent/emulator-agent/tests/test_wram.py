@@ -30,3 +30,24 @@ def test_dialog_buffer_is_cf4b_not_cc2a():
     assert wram.DIALOG_BUFFER == 0xCF4B
     assert wram.DIALOG_BUFFER != 0xCC2A
     assert wram.DIALOG_LENGTH == 20
+
+
+class _Mem:
+    """Minimal pyboy.memory stand-in for pure WRAM helper tests."""
+
+    def __init__(self, size: int = 0x10000) -> None:
+        self.memory = bytearray(size)
+
+
+def test_read_text_zeroed_buffer_is_empty():
+    """Title-screen / cold boot WRAM is zeros — must not become '????…'."""
+    m = _Mem()
+    assert wram.read_text(m, wram.DIALOG_BUFFER, wram.DIALOG_LENGTH) == ""
+
+
+def test_read_text_stops_at_terminator_and_decodes_charset():
+    m = _Mem()
+    # Gen I: H e l l o @
+    for i, b in enumerate((0x87, 0xA4, 0xAB, 0xAB, 0xAE, 0x50)):
+        m.memory[wram.DIALOG_BUFFER + i] = b
+    assert wram.read_text(m, wram.DIALOG_BUFFER, wram.DIALOG_LENGTH) == "Hello"

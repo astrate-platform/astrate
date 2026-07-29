@@ -96,16 +96,39 @@ Expected:
 Production mTLS (no `--insecure`): pass `--cert` / `--key` / `--ca` from Pairing
 credentials handshake; MQTT defaults to port 8883.
 
-**T3 — Full emulator loop**
+**T3 — Full emulator loop (real ROM)**
+
+ROM is **not** in the repo. Pass an absolute path you already own, e.g.:
+
 ```sh
+ROM="/path/to/Pokemon Red.gb"   # do not commit this file
+DEVICE_ID=<registered-device-id>
+
+cd examples/pokemon-agent/emulator-agent
 python -m emulator_agent.main \
-  --rom /path/to/pokemon_red.gb \
-  --insecure \   # drop when using real mTLS
+  --rom "$ROM" \
+  --insecure \
   --astrate-url http://localhost:8080 \
   --realm test \
-  --device-id <device-id>
+  --device-id "$DEVICE_ID"
+# optional: --fps 60 (default) | --fps 0 for uncapped (high CPU)
 ```
-Expected: telemetry flowing, visible via AppEngine as in T2.
+
+Or via Makefile from `examples/pokemon-agent/`:
+
+```sh
+make run-emulator-rom DEVICE_ID="$DEVICE_ID" ROM="$ROM"
+```
+
+Expected (verified 2026-07-29 on pyboy + insecure Astrate):
+- Agent loads ROM, connects MQTT `:1883`, publishes introspection
+- AppEngine `GameState /state` samples every ~5 s (heartbeat) while on title
+  screen: `mapId=0`, `mapName=Pallet Town` (zeroed WRAM), `dialogText=""`
+  (zeros no longer decode as `????…`), `playerX/Y=0`, `inBattle=false`
+- Cold boot has empty party → no `PartyStatus` until in-game
+- Process CPU stays modest at default `--fps 60` (uncapped was ~full core)
+- Meaningful map/party values require progressing past the title/intro
+  (or loading a save state — not automated yet)
 
 **T4 — LLM Orchestrator with stub**
 ```sh

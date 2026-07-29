@@ -22,4 +22,14 @@ astartectl pairing agent register "$DEVICE_ID" \
 make -C examples/pokemon-agent run-emulator-stub DEVICE_ID=$DEVICE_ID
 ```
 
+## Full emulator (T3)
+
+Supply a local Pokémon Red ROM path (never commit the ROM):
+
+```sh
+make -C examples/pokemon-agent run-emulator-rom \
+  DEVICE_ID=$DEVICE_ID \
+  ROM="/path/to/Pokemon Red.gb"
+```
+
 Architecture and ADRs: [docs/DESIGN.md](docs/DESIGN.md), [docs/DECISIONS.md](docs/DECISIONS.md).

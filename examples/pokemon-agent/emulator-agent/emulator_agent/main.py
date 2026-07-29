@@ -28,8 +28,12 @@ from .state_decoder import GameState, decode_state, party_differs, states_differ
 
 log = logging.getLogger(__name__)
 
-STASIS_THRESHOLD  = 15    # same position for N state-change events → stasis alert
+# Same map position for this long (overworld, no dialog) → stasis alert.
+# Time-based so it stays correct at 60 fps (frame counting of 15 was for
+# the pre-ROM stub loop and fired in 0.25 s at real tick rate).
+STASIS_SECONDS = 15.0
 HEARTBEAT_INTERVAL = 5.0  # seconds between forced GameState publishes
+DEFAULT_FPS = 60          # DESIGN §3.1; 0 = uncapped (high CPU)
 
 
 # ---------------------------------------------------------------------------
@@ -52,6 +56,8 @@ class AgentConfig:
     mqtt_port: Optional[int] = None
     # Skip mTLS and use plaintext :1883 (Astrate mqtt.insecure_dev_mode only)
     insecure: bool = False
+    # Target emulator ticks per second (0 = uncapped). Default 60.
+    fps: int = DEFAULT_FPS
 
 
 # ---------------------------------------------------------------------------
@@ -128,9 +134,12 @@ async def run(config: AgentConfig) -> None:
 
     # ----- Main loop state -----
     prev_state: Optional[GameState] = None
-    stasis_counter  = 0
+    stasis_since: Optional[float] = None
+    stasis_warned = False
     last_heartbeat  = time.monotonic()
     running         = True
+    frame_dt = (1.0 / config.fps) if config.fps > 0 else 0.0
+    next_frame_at = time.monotonic()
 
     def _shutdown(sig, frame):
         nonlocal running
@@ -140,7 +149,10 @@ async def run(config: AgentConfig) -> None:
     signal.signal(signal.SIGINT,  _shutdown)
     signal.signal(signal.SIGTERM, _shutdown)
 
-    log.info("Emulator Agent running. Press Ctrl-C to stop.")
+    if config.fps > 0:
+        log.info("Emulator Agent running at %d fps. Press Ctrl-C to stop.", config.fps)
+    else:
+        log.info("Emulator Agent running uncapped. Press Ctrl-C to stop.")
 
     try:
         while running:
@@ -149,24 +161,30 @@ async def run(config: AgentConfig) -> None:
             raw = decode_state(pyboy)
             now = time.monotonic()
 
-            # ---- Stasis detection ----
-            if (prev_state is not None
-                    and not raw.in_battle
-                    and not raw.dialog_text):
-                if (raw.player_x == prev_state.player_x
-                        and raw.player_y == prev_state.player_y):
-                    stasis_counter += 1
-                else:
-                    stasis_counter = 0
-            else:
-                stasis_counter = 0
-
-            state = dataclasses.replace(
-                raw, stasis=(stasis_counter >= STASIS_THRESHOLD)
+            # ---- Stasis detection (time-based, overworld + no dialog) ----
+            stationary = (
+                prev_state is not None
+                and not raw.in_battle
+                and not raw.dialog_text
+                and raw.player_x == prev_state.player_x
+                and raw.player_y == prev_state.player_y
             )
-            if stasis_counter == STASIS_THRESHOLD:
+            if stationary:
+                if stasis_since is None:
+                    stasis_since = now
+            else:
+                stasis_since = None
+                stasis_warned = False
+
+            in_stasis = (
+                stasis_since is not None
+                and (now - stasis_since) >= STASIS_SECONDS
+            )
+            state = dataclasses.replace(raw, stasis=in_stasis)
+            if in_stasis and not stasis_warned:
                 log.warning("Stasis detected at (%d,%d) — publishing alert.",
                             state.player_x, state.player_y)
+                stasis_warned = True
 
             # ---- Decide what to publish ----
             changed         = prev_state is None or states_differ(state, prev_state)
@@ -189,8 +207,19 @@ async def run(config: AgentConfig) -> None:
 
             prev_state = state
 
-            # Yield to the asyncio event loop so paho callbacks can run
-            await asyncio.sleep(0)
+            # Pace to target fps (DESIGN §3.1). Always yield so MQTT callbacks run.
+            if frame_dt > 0:
+                next_frame_at += frame_dt
+                delay = next_frame_at - time.monotonic()
+                if delay > 0:
+                    await asyncio.sleep(delay)
+                else:
+                    await asyncio.sleep(0)
+                    # Avoid spiral-of-death after a long stall (e.g. GC, MQTT).
+                    if delay < -0.25:
+                        next_frame_at = time.monotonic()
+            else:
+                await asyncio.sleep(0)
 
     finally:
         log.info("Disconnecting…")
@@ -230,7 +259,11 @@ def _parse_args() -> AgentConfig:
                    help="Log verbosity (default: INFO)")
     p.add_argument("--mqtt-port", type=int, default=None,
                    help="Override MQTT broker port (default: 8883 mTLS / 1883 --insecure)")
+    p.add_argument("--fps", type=int, default=DEFAULT_FPS,
+                   help=f"Emulator tick rate (default: {DEFAULT_FPS}; 0 = uncapped)")
     args = p.parse_args()
+    if args.fps < 0:
+        p.error("--fps must be >= 0")
     return AgentConfig(
         rom_path          = args.rom,
         astrate_url       = args.astrate_url,
@@ -243,6 +276,7 @@ def _parse_args() -> AgentConfig:
         log_level         = args.log_level,
         mqtt_port         = args.mqtt_port,
         insecure          = args.insecure,
+        fps               = args.fps,
     )
 
 
