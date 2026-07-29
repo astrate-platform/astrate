@@ -30,7 +30,10 @@ python -m emulator_agent.main \
   --key path/to/device.key \
   --ca path/to/ca.crt
 ```
-Expected: GameState events visible in Astrate App API at /v1/pokemon-dev/devices/<id>/interfaces/org.pokemon.emulator.GameState
+Expected: GameState events visible via AppEngine REST
+  GET /appengine/v1/pokemon-dev/devices/<id>/interfaces/org.pokemon.emulator.GameState
+or live stream
+  GET /astrate/v1/pokemon-dev/socket?device_id=<id>&interface=org.pokemon.emulator.GameState
 
 **T3 — Full emulator loop**
 ```sh

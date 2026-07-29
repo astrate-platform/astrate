@@ -4,12 +4,16 @@ Astrate App API client for the LLM Orchestrator.
 Uses aiohttp for WebSocket streaming and httpx for REST publishing.
 Reconnects automatically with exponential backoff on disconnect.
 
-App API endpoint conventions (Astrate = wire-compatible with Astarte):
-  Stream: GET  /v1/{realm}/devices/{device_id}/interfaces/{interface}  (WebSocket upgrade)
-  Publish: POST /v1/{realm}/devices/{device_id}/interfaces/{interface}{path}
+App API endpoint conventions (verified against Astrate source):
+  Stream:  GET  /astrate/v1/{realm}/socket?device_id=&interface=   (WebSocket or SSE)
+  Publish: POST /appengine/v1/{realm}/devices/{device_id}/interfaces/{interface}/{path}
 
-References:
-  https://docs.astarte-platform.org/astarte/latest/050-query_astarte.html
+Wire event shape (internal/appengine/stream/ws.go wireEvent):
+  {"event": "incoming_data", "realm": "...", "device_id": "...",
+   "interface": "...", "path": "...", "value": ..., "timestamp": "..."}
+
+Note: this is Astrate-native (docs/DESIGN.md §1.1 deviation from Astarte Phoenix
+Channels). Do not use /v1/... without the /astrate or /appengine prefix.
 """
 
 from __future__ import annotations
@@ -20,6 +24,7 @@ import logging
 import random
 from collections.abc import AsyncIterator
 from typing import Optional
+from urllib.parse import urlencode
 
 import aiohttp
 import httpx
@@ -35,6 +40,15 @@ def _backoff(attempt: int) -> float:
     raw = min(_BACKOFF_BASE * (2 ** attempt), _BACKOFF_MAX)
     jitter = raw * _BACKOFF_JITTER * (random.random() * 2 - 1)
     return raw + jitter
+
+
+def _ws_base(http_base: str) -> str:
+    """Convert http(s) base URL to ws(s) for the live socket."""
+    if http_base.startswith("https://"):
+        return "wss://" + http_base[len("https://"):]
+    if http_base.startswith("http://"):
+        return "ws://" + http_base[len("http://"):]
+    return http_base
 
 
 class AstrateAppClient:
@@ -62,21 +76,23 @@ class AstrateAppClient:
         self,
         interface: str,
     ) -> AsyncIterator[dict]:
-        """Yield parsed event dicts from Astrate's App API WebSocket stream.
+        """Yield parsed event dicts from Astrate's live WebSocket stream.
 
-        Astrate streams events as JSON lines over a WebSocket connection.
-        Each message has the shape:
-          {"interface": "org.pokemon.emulator.GameState",
-           "path": "/state",
-           "value": {...},
-           "timestamp": "..."}
+        Endpoint (Astrate-native, not Astarte Channels):
+          GET /astrate/v1/{realm}/socket?device_id={id}&interface={name}
+
+        Auth: Bearer JWT with a_ch claim (RequireRealm ClaimChannels).
+
+        Each message is a wireEvent JSON object:
+          {"event": "incoming_data", "realm": "...", "device_id": "...",
+           "interface": "...", "path": "...", "value": ..., "timestamp": "..."}
 
         Reconnects automatically with exponential backoff on disconnect.
         """
+        query = urlencode({"device_id": self._device, "interface": interface})
         url = (
-            f"{self._base}/v1/{self._realm}"
-            f"/devices/{self._device}/interfaces/{interface}"
-        ).replace("http://", "ws://").replace("https://", "wss://")
+            f"{_ws_base(self._base)}/astrate/v1/{self._realm}/socket?{query}"
+        )
 
         attempt = 0
         while True:
@@ -110,16 +126,25 @@ class AstrateAppClient:
         path: str,
         payload: dict,
     ) -> None:
-        """POST a server-owned ControlCommand value via Astrate App API.
+        """POST a server-owned ControlCommand value via Astrate AppEngine API.
+
+        Endpoint:
+          POST /appengine/v1/{realm}/devices/{device}/interfaces/
+               org.pokemon.emulator.ControlCommand{path}
+
+        Body envelope: {"data": <payload>}  (Astarte DecodeData shape).
 
         Args:
             path:    Endpoint path, e.g. "/command"
-            payload: The `v` value object, e.g. {"button": "UP", "holdFrames": 8, "sequenceId": 1}
+            payload: The value object, e.g. {"button": "UP", "holdFrames": 8, "sequenceId": 1}
         """
+        # path is interface-relative ("/command"); strip leading slash for URL join safety
+        # then re-join so we always produce .../ControlCommand/command
+        rel = path if path.startswith("/") else f"/{path}"
         url = (
-            f"{self._base}/v1/{self._realm}"
+            f"{self._base}/appengine/v1/{self._realm}"
             f"/devices/{self._device}"
-            f"/interfaces/org.pokemon.emulator.ControlCommand{path}"
+            f"/interfaces/org.pokemon.emulator.ControlCommand{rel}"
         )
         body = {"data": payload}
         try:

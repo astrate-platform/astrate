@@ -263,7 +263,7 @@ See §3.3 for full interface schemas.
 
 | Module | Responsibility |
 |---|---|
-| `llm_orchestrator/astrate_client.py` | WebSocket/SSE client for Astrate App API; reconnects with exponential backoff; publishes `ControlCommand` via HTTP POST |
+| `llm_orchestrator/astrate_client.py` | Live stream client (`GET /astrate/v1/{realm}/socket?device_id=&interface=`) + AppEngine publish (`POST /appengine/v1/.../interfaces/.../{path}`); reconnects with exponential backoff |
 | `llm_orchestrator/context_builder.py` | Formats game state + party + dialog + action history into a structured LLM prompt |
 | `llm_orchestrator/llm_engine.py` | OpenAI-compatible async inference; JSON output validation; up to 3 retries; raises `LLMTimeoutError` on timeout |
 | `llm_orchestrator/action_translator.py` | Parses LLM JSON output; validates button names; assigns monotonically increasing `sequenceId` |
