@@ -27,16 +27,29 @@ same wire-visible behaviour and operator-facing concepts (pipelines, blocks, nat
 containerised blocks) — not a port of the Elixir implementation. See
 `.mule/recipes/astarte-upstream.md`'s rule: port the idea, restated in Go, never the code.
 
-Status: **in progress** (not DONE). Runtime, factory, catalog (incl. filter/map), process
+Status: **DONE** (2026-07-29). Runtime, factory, catalog (incl. filter/map), process
 wiring, and `/flow/v1` API are on `main`. **Parity audit** + **product decisions**
 recorded 2026-07-29 (`docs/handoff/flow-parity-audit-2026-07-29.md`,
 `docs/handoff/flow-v2-decisions-2026-07-29.md`).
 
-**Design A implemented (local):** durable flows + auto_restart (#41); named
-multi-instance + config (#40) — migration `000009`, store, `${config.*}`, API,
-boot rehydrate. Containers PoC→MVP (#43) → Design B
-`docs/handoff/flow-design-b-container-block-2026-07-29.md` (accept then code).
+**Design A + B landed on `main`** (commit `89145e6`, 2026-07-29): durable flows +
+auto_restart (**#41 closed**); named multi-instance + config (**#40 closed**) —
+migration `000009`, store, `${config.*}`, API, boot rehydrate. Container block
+PoC→MVP (**#43 closed**) — registered in the catalog, usable inside stored
+pipelines/named flows; see `docs/handoff/flow-design-b-container-block-2026-07-29.md`.
+Blocks discovery (**#39 closed**).
 **Not a v2.0 gate:** native Lua / MQTT blocks.
+
+**#42 closed 2026-07-29** (rehydrate edge cases). Triaged all seven candidates against a
+live e2e Docker smoke test of #43: one real bug found and fixed on `main`
+(`801fc48` — `Registry.Instantiate` leaked an already-started Docker container when a
+later block's constructor failed mid-pipeline-build; mutation-tested regression added);
+two candidates ("one flow fails at boot, others still start"; "pipeline deleted while
+flows reference it") were already correct by design, no code change needed; three
+("hot-reload a running pipeline" #44, "partial restart of failed blocks" #45, "update a
+running flow's config" #46) split into their own demand-driven backlog issues per the
+explicit v2.0 decisions doc; multi-process/HA managers stay out of scope indefinitely
+(single-process design throughout).
 
 ### Landed (on main as of 2026-07-29)
 
@@ -57,20 +70,19 @@ boot rehydrate. Containers PoC→MVP (#43) → Design B
 | Process wiring | `cmd/astrate/main.go` | bus + Manager; **boot rehydrate** before listen; shutdown marks stopped |
 | Operator HTTP API | `internal/flowapi` | pipelines + named durable `/flows` (a_rma) |
 
-### Remaining gaps (file / keep as `milestone-2.0` issues)
+### Closed gaps (all of them — v2.0 is DONE)
 
-Work these roughly in order.
-
-1. **~~Design A: durable + named multi-instance~~** — **implemented** (#40+#41).
-   Edge follow-ups: **#42**. Close issues after commit/smoke.
-2. **Design B (draft) + implement after accept: container block** — **#43**. Doc:
+1. **~~Design A: durable + named multi-instance~~** — **implemented, #40+#41 closed.**
+2. **~~Design B: container block~~** — **implemented (PoC→MVP), #43 closed.** Doc:
    `docs/handoff/flow-design-b-container-block-2026-07-29.md`. PoC transport: HTTP
    (not AMQP).
-3. **~~Blocks discovery API~~** — **#39** implemented (local; close after land):
-   `GET /flow/v1/{realm}/blocks` + `.../blocks/{type}`.
+3. **~~Blocks discovery API~~** — **implemented, #39 closed.**
 4. **~~Parity audit + product decisions~~** — **done** 2026-07-29.
    Docs: `flow-parity-audit-2026-07-29.md`, `flow-v2-decisions-2026-07-29.md`.
-5. **Still out of v2.0 gate (demand-driven):** native Lua/JSONPath blocks; native
+5. **~~Rehydrate edge cases~~** — **#42 closed 2026-07-29.** One real bug fixed
+   (`Registry.Instantiate` container-leak on partial pipeline build, `801fc48`); rest
+   already correct or split into #44/#45/#46 (demand-driven, no milestone).
+6. **Still out of v2.0 gate (demand-driven):** native Lua/JSONPath blocks; native
    MQTT/Modbus/HTTP poll I/O; full pipeline DSL; `a_f` path wire-compat without a
    client; `http_sink` unless a client needs it.
 
