@@ -12,7 +12,7 @@ it exists because there are now enough of them that "how do I..." needs one answ
 grep through three skill files.
 
 This is the reference implementation of the dashboard/router pattern catalogued in the
-system-wide `workflow-scaffold` skill — read that first if instantiating something like this
+system-wide `scaffold` skill — read that first if instantiating something like this
 for a different project.
 
 **When invoked, do two things, in order:**

@@ -17,7 +17,7 @@ origin/mule/research:.mule/research/survey-2026-07-27.md`) — and the resulting
 **#12–#19** plus four entries in `.mule/for-giulio.md` on `main`.
 
 This is the reference implementation of the triage-inbox pattern catalogued in the
-system-wide `workflow-scaffold` skill — read that first if instantiating something like this
+system-wide `scaffold` skill — read that first if instantiating something like this
 for a different unattended job.
 
 ## Steps
