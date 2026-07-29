@@ -1,4 +1,4 @@
-# Handoff Prompt — Pokémon Agent Next Session (post-P4)
+# Handoff Prompt — Pokémon Agent Next Session (post-P5)
 
 Copy-paste this prompt into a new session to continue work on the Pokémon Red autonomous agent.
 
@@ -7,7 +7,7 @@ I'm working on the `feat/pokemon-agent` branch of ~/astrate — an autonomous Po
 agent that connects a Game Boy emulator (pyboy) to an LLM via the Astrate IoT platform.
 
 Before doing anything, read:
-  - ~/astrate/docs/handoff/pokemon-agent-memory.md   ← session summary, P0–P4 results, risks
+  - ~/astrate/docs/handoff/pokemon-agent-memory.md   ← session summary, P0–P5 results, risks
   - ~/astrate/examples/pokemon-agent/docs/DESIGN.md  ← architecture (v0.2)
   - ~/astrate/examples/pokemon-agent/docs/DECISIONS.md ← 10 ADRs
   - ~/astrate/examples/pokemon-agent/docs/TESTING.md ← T0–T4 smoke steps (updated for --insecure + T3 ROM)
@@ -31,17 +31,17 @@ P2 DONE: WRAM verified (DIALOG $CF4B, maxHP@+34).
 P3 DONE: live smoke T1+T2 — interfaces install, stub agent, GameState+PartyStatus in AppEngine.
 P4 DONE: ROM integration — pyboy + real ROM + insecure Astrate; 60 fps pacing; dialog 0x00;
          stasis 15s; ControlCommand START delivered via AppEngine POST.
+P5 DONE: MkDocs Examples → Pokémon Agent nav; docs/Makefile sync copies DESIGN →
+         docs/site/pokemon-agent.md; index.md link. Run `cd docs && make sync` after DESIGN edits.
 
 IMPORTANT: the branch working tree may contain unrelated WIP (pipelines, broker ACL,
 triggers). Only edit/commit files under examples/pokemon-agent/ and docs/handoff/
+(plus docs/mkdocs.yml / docs/Makefile / docs/site/ when touching site docs)
 unless the user explicitly asks otherwise.
 
-Current task (pick the first that's still incomplete):
+Current task (pick the first the user wants; all numbered P0–P5 are complete):
 
-  P5 — Optional MkDocs nav for examples/pokemon-agent/docs/DESIGN.md
-       MkDocs docs_dir is docs/site/; needs site page + mkdocs.yml (ask first).
-
-  Optional (if user wants, not gated as P5):
+  Optional:
   - T4 LLM orchestrator when API key is available
   - Save-state / skip title so map/party telemetry is real
   - Queue ControlCommand ticks on the main loop (avoid MQTT-thread pyboy.tick race)

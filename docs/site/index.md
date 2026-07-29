@@ -42,3 +42,7 @@ Astrate is a spiritual fork of the [Astarte IoT Platform](https://github.com/ast
 - [Implementation roadmap](ROADMAP.md) -- milestone plan (Phase 2)
 - [OpenAPI specifications](api/) -- REST API specs
 - [API Explorer](swagger.md) -- interactive API docs
+
+## Examples
+
+- [Pokémon Agent](pokemon-agent.md) -- autonomous Game Boy + LLM agent via Astrate (emulator MQTT + App API orchestrator)
