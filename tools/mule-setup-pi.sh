@@ -217,14 +217,18 @@ ok "daily survey timer installed and enabled (~03:00, +/- 10min)"
 # opencode has its own skill loader (scans **/SKILL.md under configured directories) that
 # reads the exact same file format as Claude Code — same required `name`/`description`
 # frontmatter, same "one folder per skill" layout. So the skills written for Claude Code
-# (~/.claude/skills on the Mac: astrate-workflow, mule-triage) are usable from an interactive
+# (~/.claude/skills on the Mac: astrate-dashboard, mule-triage) are usable from an interactive
 # `opencode` session on the Pi too, without copying prose into a second, divergent file.
 #
-# NEVER commit these into the repo: astrate-workflow's body names the Pi's and Legion's LAN
-# addresses and root/atsetilam usernames, the exact information .mule/hosts is kept out of
-# git for. They travel by scp, like .mule/hosts, into a location outside any git working tree.
+# NEVER commit these into the repo: historically astrate-dashboard's body named the Pi's and
+# Legion's LAN addresses directly, the exact information .mule/hosts is kept out of git for.
+# That's fixed now (LAN IPs replaced with $MULE_PI_SSH/$MULE_LEGION_SSH sourced from
+# .mule/hosts, see RESTRUCTURING.md in agent-skills) — the skill's prose is safe to commit
+# today, but this scp-and-never-commit deploy step hasn't been retired to match yet (deferred:
+# touching the Pi's live setup needs asking Giulio first). Still travels by scp, like
+# .mule/hosts, into a location outside any git working tree.
 LOCAL_SKILLS="$HOME/.claude/skills"
-SKILL_NAMES="astrate-workflow mule-triage"
+SKILL_NAMES="astrate-dashboard mule-triage"
 
 # jq merge helper: add path to config.skills.paths if not already present, preserving
 # everything else in the file (the Pi's opencode.jsonc already carries its provider config).
@@ -234,7 +238,7 @@ jq_add_skill_path() {
     && mv "$tmp" "$file"
 }
 
-if [ -d "$LOCAL_SKILLS/astrate-workflow" ]; then
+if [ -d "$LOCAL_SKILLS/astrate-dashboard" ]; then
   [ "$MODE" = check ] || {
     # 6a. the Mac's own opencode: point straight at ~/.claude/skills, no copy, one source of truth.
     MAC_OC_CONFIG="$HOME/.config/opencode/opencode.jsonc"
@@ -269,7 +273,7 @@ EOS
     ok "Pi's opencode config points at ~/.claude-skills"
   }
 else
-  bad "no $LOCAL_SKILLS/astrate-workflow here — skipping the skills step (run this from the Mac that has them)"
+  bad "no $LOCAL_SKILLS/astrate-dashboard here — skipping the skills step (run this from the Mac that has them)"
 fi
 
 cat <<EOF
@@ -287,7 +291,7 @@ cat <<EOF
     git fetch origin mule/research && git log origin/mule/research  # read what it wrote
 
     ssh $PI                                                  # then just: opencode
-                                                               # /astrate-workflow, /mule-triage work there too now
+                                                               # /astrate-dashboard, /mule-triage work there too now
 
   The mule does nothing at all until there are approved tasks in .mule/todo.md or issues
   labelled 'mule' — an idle mule is the correct mule. The daily survey runs
