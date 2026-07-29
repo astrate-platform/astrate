@@ -67,21 +67,6 @@ func TestFlowStatus_Transitions(t *testing.T) {
 			},
 			wantFinal: FlowStatusStopped,
 		},
-		{
-			name: "creating -> failed (nil block)",
-			initialise: func(t *testing.T) *Flow {
-				mgr := NewManager()
-				f, err := mgr.StartFlow(t.Context(), FlowConfig{
-					PipelineID: "trans-3",
-					Blocks:     []Block{nil},
-				})
-				if err == nil {
-					t.Fatal("expected error for nil block")
-				}
-				return f
-			},
-			wantFinal: FlowStatusFailed,
-		},
 	}
 
 	for _, tt := range tests {
@@ -95,6 +80,20 @@ func TestFlowStatus_Transitions(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("construction failure leaves no flow", func(t *testing.T) {
+		mgr := NewManager()
+		f, err := mgr.StartFlow(t.Context(), FlowConfig{
+			PipelineID: "trans-3",
+			Blocks:     []Block{nil},
+		})
+		if err == nil {
+			t.Fatal("expected error for nil block")
+		}
+		if f != nil {
+			t.Fatal("expected nil flow on construction failure")
+		}
+	})
 }
 
 func TestFlow_TimestampsSet(t *testing.T) {
@@ -147,17 +146,20 @@ func TestFlow_StatusAfterStop(t *testing.T) {
 	}
 }
 
-func TestFlow_FailedStatusTimestamps(t *testing.T) {
+func TestFlow_ConstructionFailureNoMapEntry(t *testing.T) {
 	mgr := NewManager()
-	f, _ := mgr.StartFlow(t.Context(), FlowConfig{
+	f, err := mgr.StartFlow(t.Context(), FlowConfig{
 		PipelineID: "fail-ts",
 		Blocks:     []Block{nil},
 	})
-	if f == nil {
-		t.Fatal("expected non-nil flow on failure")
+	if err == nil {
+		t.Fatal("expected construction error")
 	}
-	if f.CreatedAt().IsZero() {
-		t.Error("CreatedAt is zero on failed flow")
+	if f != nil {
+		t.Fatal("expected nil flow on construction failure")
+	}
+	if _, err := mgr.GetFlowStatus("fail-ts"); err == nil {
+		t.Fatal("expected ErrFlowNotFound for unregistered instance")
 	}
 }
 

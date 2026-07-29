@@ -30,10 +30,14 @@ Java/Android, Elixir) pointed at Astrate's Pairing API URL must register, obtain
 connect over mutual TLS, exchange introspection/properties/datastreams, and receive server-owned
 data — without a single line of SDK code changed.
 
-**Non-goals (v1):** Astarte Flow, the Kubernetes operator, Cassandra migration tooling, the
-Dashboard UI (the API is compatible, so the upstream dashboard *may* work later, but it is not a
-v1 acceptance criterion), and Astarte Channels' full Phoenix-socket protocol (we provide a simpler
+**Non-goals (v1):** the Kubernetes operator, Cassandra migration tooling, the Dashboard UI (the
+API is compatible, so the upstream dashboard *may* work later, but it is not a v1 acceptance
+criterion), and Astarte Channels' full Phoenix-socket protocol (we provide a simpler
 WebSocket/SSE live stream; see §1.4).
+
+**Astarte Flow** was a v1 non-goal; it is **in scope for milestone v2.0** (pipelines, named
+flows, durable rehydrate, container blocks). See `.mule/milestones.md` and
+`docs/handoff/flow-v2-decisions-2026-07-29.md`.
 
 ---
 
@@ -57,7 +61,7 @@ testable), not at the network boundary.
 | **Housekeeping API** | Realm lifecycle (create/delete realms, instance admin) | `internal/housekeeping` | Realms become rows + `search_path`-free schema-qualified tables (§2.1). Creating a realm is a transaction, not a Cassandra keyspace provision. |
 | **Trigger Engine** | Executes trigger actions (HTTP webhooks, AMQP messages) | `internal/engine/triggers` | HTTP webhook actions with retry/backoff; AMQP action replaced by optional NATS/HTTP forwarding (extension point). |
 | **Astarte Channels** | Phoenix WebSocket rooms for live data | `internal/appengine/stream` | Simplified WebSocket + SSE endpoint fed by the engine's fan-out bus. Not wire-compatible with Phoenix sockets in v1 (documented deviation). |
-| **Astarte Flow** | Dataflow processing framework | — | Out of scope. Triggers + the live stream socket cover the common cases. |
+| **Astarte Flow** | Dataflow processing framework | `internal/flow`, `internal/flowapi`, `internal/flow/blocks` | **v2.0 milestone.** Operator surface `/flow/v1/{realm}/…` (pipelines, flows, blocks). Built-in catalog + planned durable named flows and container blocks. Capability parity, not an Elixir port. |
 | **astartectl / Dashboard** | Tooling/UI | — | API-compatible by construction; `astartectl` should largely work against Astrate. Verified in Phase 2 test plan. |
 
 ### 1.2 Process architecture

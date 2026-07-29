@@ -202,8 +202,11 @@ func TestDefaultCatalog_AstarteSourceToNullSink(t *testing.T) {
 	src.Stop()
 }
 
-func TestFlowPipelineID(t *testing.T) {
-	if got := flow.FlowPipelineID("acme", "sensors"); got != "acme/sensors" {
-		t.Errorf("FlowPipelineID = %q", got)
+func TestFlowInstanceID(t *testing.T) {
+	if got := flow.FlowInstanceID("acme", "sensors"); got != "acme/sensors" {
+		t.Errorf("FlowInstanceID = %q", got)
+	}
+	if flow.FlowPipelineID("acme", "sensors") != flow.FlowInstanceID("acme", "sensors") {
+		t.Error("FlowPipelineID should alias FlowInstanceID")
 	}
 }

@@ -28,8 +28,15 @@ containerised blocks) — not a port of the Elixir implementation. See
 `.mule/recipes/astarte-upstream.md`'s rule: port the idea, restated in Go, never the code.
 
 Status: **in progress** (not DONE). Runtime, factory, catalog (incl. filter/map), process
-wiring, and `/flow/v1` API are on `main`. Remaining: flows-table decision + parity audit.
-Refreshed 2026-07-29.
+wiring, and `/flow/v1` API are on `main`. **Parity audit** + **product decisions**
+recorded 2026-07-29 (`docs/handoff/flow-parity-audit-2026-07-29.md`,
+`docs/handoff/flow-v2-decisions-2026-07-29.md`).
+
+**Design A implemented (local):** durable flows + auto_restart (#41); named
+multi-instance + config (#40) — migration `000009`, store, `${config.*}`, API,
+boot rehydrate. Containers PoC→MVP (#43) → Design B
+`docs/handoff/flow-design-b-container-block-2026-07-29.md` (accept then code).
+**Not a v2.0 gate:** native Lua / MQTT blocks.
 
 ### Landed (on main as of 2026-07-29)
 
@@ -43,24 +50,29 @@ Refreshed 2026-07-29.
 | Source pump + Stop on teardown | `internal/flow/flow.go` (#37) | pumps `Source.Emit` → router; `Stopper.Stop` after drain |
 | AstarteSource block | `internal/flow/blocks/astartesource` | bus → FlowMessage (#27) |
 | Pipeline store + migration | `internal/store/pipelines.go`, `000008_pipelines` | realm-scoped DAG JSON (#24) |
+| Durable flows store + migration | `internal/store/flows.go`, `000009_flows` | named multi-instance + auto_restart (#40+#41) |
+| Config substitution | `internal/flow/substitute.go` | `${config.key}` in block config strings |
 | Block factory + instantiate | `internal/flow/factory.go` | `Registry`, `ParseDefinition`, topo order → `[]Block` |
 | Built-in catalog | `internal/flow/blocks/catalog.go` + `transform.go` | `astarte_source`, `filter`, `map`, `null_sink`, `log_sink` |
-| Process wiring | `cmd/astrate/main.go` | shared `e.Bus()` + `flow.Manager`; shutdown drains flows |
-| Operator HTTP API | `internal/flowapi` | `/flow/v1/{realm}/pipelines` + `/flows` (a_rma) |
+| Process wiring | `cmd/astrate/main.go` | bus + Manager; **boot rehydrate** before listen; shutdown marks stopped |
+| Operator HTTP API | `internal/flowapi` | pipelines + named durable `/flows` (a_rma) |
 
 ### Remaining gaps (file / keep as `milestone-2.0` issues)
 
-Work these roughly in order. Escalate design questions to `.mule/for-giulio.md` rather than
-guessing wire shape.
+Work these roughly in order.
 
-1. **Flow runtime persistence (optional / decide)** — issue-25 sketched a `flows` table
-   (`000009`); only `pipelines` landed. Decide whether running-flow records need durable
-   status or in-memory manager is enough for v2.0.
-2. **Parity audit** — walk astarte_flow's operator-visible concepts (pipelines, blocks,
-   flows, container blocks) against what Astrate exposes; file residual gaps or escalate
-   "won't do for v2.0" decisions. Match upstream HTTP paths only if a real client needs them
-   (current surface is Astrate-native `/flow/v1/...`). Containerised blocks later unless a
-   client needs them for parity.
+1. **~~Design A: durable + named multi-instance~~** — **implemented** (#40+#41).
+   Edge follow-ups: **#42**. Close issues after commit/smoke.
+2. **Design B (draft) + implement after accept: container block** — **#43**. Doc:
+   `docs/handoff/flow-design-b-container-block-2026-07-29.md`. PoC transport: HTTP
+   (not AMQP).
+3. **~~Blocks discovery API~~** — **#39** implemented (local; close after land):
+   `GET /flow/v1/{realm}/blocks` + `.../blocks/{type}`.
+4. **~~Parity audit + product decisions~~** — **done** 2026-07-29.
+   Docs: `flow-parity-audit-2026-07-29.md`, `flow-v2-decisions-2026-07-29.md`.
+5. **Still out of v2.0 gate (demand-driven):** native Lua/JSONPath blocks; native
+   MQTT/Modbus/HTTP poll I/O; full pipeline DSL; `a_f` path wire-compat without a
+   client; `http_sink` unless a client needs it.
 
 ### Explicitly out of this milestone (tracked elsewhere)
 

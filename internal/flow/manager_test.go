@@ -101,10 +101,9 @@ func TestManager_StopFlowDrainsAndReleases(t *testing.T) {
 	}
 }
 
-// TestManager_FailedInitSetsStatusFailed verifies that a graph
-// construction failure (nil block) results in status failed and that both
-// the flow and error are returned.
-func TestManager_FailedInitSetsStatusFailed(t *testing.T) {
+// TestManager_FailedInitLeavesNoMapEntry verifies that a graph construction
+// failure (nil block) returns an error and does not register the instance.
+func TestManager_FailedInitLeavesNoMapEntry(t *testing.T) {
 	mgr := NewManager()
 
 	f, err := mgr.StartFlow(context.Background(), FlowConfig{
@@ -114,19 +113,25 @@ func TestManager_FailedInitSetsStatusFailed(t *testing.T) {
 	if err == nil {
 		t.Fatal("StartFlow with nil block should return error")
 	}
-	if f == nil {
-		t.Fatal("StartFlow should return flow even on failure")
-	}
-	if got := f.Status(); got != FlowStatusFailed {
-		t.Fatalf("status = %v, want failed", got)
+	if f != nil {
+		t.Fatal("StartFlow should not return a flow on construction failure")
 	}
 
-	got, err := mgr.GetFlowStatus("pipe-3")
-	if err != nil {
-		t.Fatalf("GetFlowStatus: %v", err)
+	if _, err := mgr.GetFlowStatus("pipe-3"); !errors.Is(err, ErrFlowNotFound) {
+		t.Fatalf("GetFlowStatus = %v, want ErrFlowNotFound", err)
 	}
-	if got != FlowStatusFailed {
-		t.Fatalf("GetFlowStatus = %v, want failed", got)
+	// Retry should not hit ErrFlowExists.
+	sink := NewSinkBlock("s", func(*FlowMessage) error { return nil })
+	f2, err := mgr.StartFlow(context.Background(), FlowConfig{
+		PipelineID: "pipe-3",
+		Blocks:     []Block{sink},
+	})
+	if err != nil {
+		t.Fatalf("retry StartFlow: %v", err)
+	}
+	t.Cleanup(func() { _ = mgr.StopFlow(context.Background(), "pipe-3") })
+	if f2.Status() != FlowStatusRunning {
+		t.Fatalf("status = %v", f2.Status())
 	}
 }
 

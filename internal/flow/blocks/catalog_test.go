@@ -15,12 +15,20 @@ func TestDefaultRegistry_Types(t *testing.T) {
 		blocks.TypeAstarteSource,
 		blocks.TypeFilter,
 		blocks.TypeMap,
+		blocks.TypeContainer,
 		blocks.TypeLogSink,
 		blocks.TypeNullSink,
 	} {
 		if !reg.Has(want) {
 			t.Errorf("missing %q", want)
 		}
+		if _, ok := blocks.LookupInfo(want); !ok {
+			t.Errorf("LookupInfo missing docs for %q", want)
+		}
+	}
+	infos := blocks.InfoForTypes(reg.Types())
+	if len(infos) != len(reg.Types()) {
+		t.Fatalf("InfoForTypes len %d, types %d", len(infos), len(reg.Types()))
 	}
 }
 

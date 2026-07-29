@@ -1,5 +1,5 @@
 // Package flowapi is the operator-facing Flow surface: realm-scoped pipeline
-// CRUD (store) and start/stop/status for running flows (flow.Manager).
+// CRUD (store) and named durable flow lifecycle (store + flow.Manager).
 // Paths are Astrate-native (/flow/v1/...) until a real upstream client forces
 // wire-compatible routes (milestone v2.0 gap 3).
 package flowapi
@@ -14,13 +14,14 @@ import (
 
 	"github.com/astrate-platform/astrate/internal/engine/stream"
 	"github.com/astrate-platform/astrate/internal/flow"
+	"github.com/astrate-platform/astrate/internal/flow/blocks"
 	"github.com/astrate-platform/astrate/internal/store"
 )
 
 // ErrValidation marks a well-formed request that fails pipeline/block rules.
 var ErrValidation = errors.New("flowapi: validation failed")
 
-// Service implements pipeline CRUD and flow lifecycle over store + Manager.
+// Service implements pipeline CRUD and durable flow lifecycle over store + Manager.
 type Service struct {
 	st  *store.Store
 	mgr *flow.Manager
@@ -50,15 +51,29 @@ type PipelineView struct {
 	UpdatedAt  time.Time       `json:"updated_at"`
 }
 
-// FlowView is the operator JSON shape for one running (or registered) flow.
+// FlowView is the operator JSON shape for one durable flow (merged with live
+// status when the instance is running in the Manager).
 type FlowView struct {
-	ID         string `json:"id"`
-	Pipeline   string `json:"pipeline"`
-	Realm      string `json:"realm"`
-	Status     string `json:"status"`
-	CreatedAt  string `json:"created_at,omitempty"`
-	StartedAt  string `json:"started_at,omitempty"`
-	StoppedAt  string `json:"stopped_at,omitempty"`
+	Name         string          `json:"name"`
+	Pipeline     string          `json:"pipeline"`
+	Realm        string          `json:"realm"`
+	Config       json.RawMessage `json:"config"`
+	AutoRestart  bool            `json:"auto_restart"`
+	Status       string          `json:"status"`
+	ErrorMessage *string         `json:"error_message"`
+	RuntimeID    string          `json:"runtime_id,omitempty"`
+	CreatedAt    time.Time       `json:"created_at"`
+	UpdatedAt    time.Time       `json:"updated_at"`
+	StartedAt    *time.Time      `json:"started_at"`
+	StoppedAt    *time.Time      `json:"stopped_at"`
+}
+
+// CreateFlowRequest is the POST /flows body after defaults are applied.
+type CreateFlowRequest struct {
+	Name        string
+	Pipeline    string
+	Config      json.RawMessage
+	AutoRestart bool
 }
 
 func (s *Service) realmID(ctx context.Context, realm string) (int16, error) {
@@ -172,69 +187,238 @@ func (s *Service) checkBlockTypes(definition []byte) error {
 	return nil
 }
 
-// StartFlow loads a stored pipeline, instantiates blocks, and starts it.
-func (s *Service) StartFlow(ctx context.Context, realm, pipelineName string) (*FlowView, error) {
+// CreateAndStartFlow inserts a durable flow row and starts it (single start path).
+func (s *Service) CreateAndStartFlow(ctx context.Context, realm string, req CreateFlowRequest) (*FlowView, error) {
+	if req.Name == "" {
+		return nil, fmt.Errorf("%w: flow name is required", ErrValidation)
+	}
+	if req.Pipeline == "" {
+		return nil, fmt.Errorf("%w: pipeline is required", ErrValidation)
+	}
+	config := req.Config
+	if len(config) == 0 {
+		config = json.RawMessage(`{}`)
+	}
+	// Validate config is a JSON object before insert.
+	var cfgMap map[string]any
+	if err := json.Unmarshal(config, &cfgMap); err != nil {
+		return nil, fmt.Errorf("%w: config must be a JSON object: %v", ErrValidation, err)
+	}
+	if cfgMap == nil {
+		cfgMap = map[string]any{}
+	}
+
 	id, err := s.realmID(ctx, realm)
 	if err != nil {
 		return nil, err
 	}
-	stored, err := s.st.GetPipeline(ctx, id, pipelineName)
+	row, err := s.st.CreateFlow(ctx, id, req.Name, req.Pipeline, []byte(config), req.AutoRestart)
 	if err != nil {
 		return nil, err
 	}
-	p, err := flow.ParseDefinition(pipelineName, pipelineName, stored.Definition)
-	if err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrValidation, err)
-	}
-	blks, err := s.reg.Instantiate(p, flow.Deps{Bus: s.bus, Realm: realm})
-	if err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrValidation, err)
-	}
-	pipeID := flow.FlowPipelineID(realm, pipelineName)
-	f, err := s.mgr.StartFlow(ctx, flow.FlowConfig{
-		PipelineID: pipeID,
-		Blocks:     blks,
-	})
-	if err != nil {
-		return nil, err
-	}
-	s.log.Info("flow started", "realm", realm, "pipeline", pipelineName, "flow_id", f.ID())
-	return toFlowView(f, realm, pipelineName), nil
+	return s.startFlowInstance(ctx, realm, id, row.Name, row.PipelineName, cfgMap)
 }
 
-// StopFlow stops a running flow for the realm/pipeline pair.
-func (s *Service) StopFlow(ctx context.Context, realm, pipelineName string) error {
-	pipeID := flow.FlowPipelineID(realm, pipelineName)
-	if err := s.mgr.StopFlow(ctx, pipeID); err != nil {
+// RehydrateAutoRestart starts every durable flow with auto_restart=true.
+// Individual failures are logged and recorded as status=failed; boot continues.
+// Returns an error only if listing rows fails.
+func (s *Service) RehydrateAutoRestart(ctx context.Context) error {
+	rows, err := s.st.ListAutoRestartFlows(ctx)
+	if err != nil {
 		return err
 	}
-	s.log.Info("flow stopped", "realm", realm, "pipeline", pipelineName)
+	for _, row := range rows {
+		var cfgMap map[string]any
+		if err := json.Unmarshal(row.Config, &cfgMap); err != nil {
+			msg := fmt.Sprintf("invalid stored config: %v", err)
+			s.log.Error("flow rehydrate failed", "realm", row.RealmName, "name", row.Name, "error", msg)
+			_ = s.st.UpdateFlowRuntime(ctx, row.RealmID, row.Name, "failed", &msg, nil, nil)
+			continue
+		}
+		if cfgMap == nil {
+			cfgMap = map[string]any{}
+		}
+		if _, err := s.startFlowInstance(ctx, row.RealmName, row.RealmID, row.Name, row.PipelineName, cfgMap); err != nil {
+			s.log.Error("flow rehydrate failed", "realm", row.RealmName, "name", row.Name, "error", err)
+			// startFlowInstance already marked failed when row exists
+			continue
+		}
+		s.log.Info("flow rehydrated", "realm", row.RealmName, "name", row.Name, "pipeline", row.PipelineName)
+	}
 	return nil
 }
 
-// GetFlow returns status for one realm-scoped pipeline instance.
-func (s *Service) GetFlow(realm, pipelineName string) (*FlowView, error) {
-	pipeID := flow.FlowPipelineID(realm, pipelineName)
-	for _, f := range s.mgr.ListFlows() {
-		if f.PipelineID() == pipeID {
-			return toFlowView(f, realm, pipelineName), nil
-		}
+// startFlowInstance is the single start path for POST create and boot rehydrate.
+// The durable row must already exist (CreateAndStartFlow inserts first).
+func (s *Service) startFlowInstance(ctx context.Context, realm string, realmID int16, name, pipelineName string, config map[string]any) (*FlowView, error) {
+	markFailed := func(err error) {
+		msg := err.Error()
+		_ = s.st.UpdateFlowRuntime(ctx, realmID, name, "failed", &msg, nil, nil)
 	}
-	return nil, fmt.Errorf("%w: flow %q", store.ErrNotFound, pipelineName)
+
+	stored, err := s.st.GetPipeline(ctx, realmID, pipelineName)
+	if err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			err = fmt.Errorf("%w: pipeline %q not found", ErrValidation, pipelineName)
+		}
+		markFailed(err)
+		return nil, err
+	}
+
+	def, err := flow.SubstituteConfig(stored.Definition, config)
+	if err != nil {
+		err = fmt.Errorf("%w: %v", ErrValidation, err)
+		markFailed(err)
+		return nil, err
+	}
+	if err := s.checkBlockTypes(def); err != nil {
+		markFailed(err)
+		return nil, err
+	}
+	p, err := flow.ParseDefinition(pipelineName, pipelineName, def)
+	if err != nil {
+		err = fmt.Errorf("%w: %v", ErrValidation, err)
+		markFailed(err)
+		return nil, err
+	}
+	blks, err := s.reg.Instantiate(p, flow.Deps{Bus: s.bus, Realm: realm, FlowName: name})
+	if err != nil {
+		err = fmt.Errorf("%w: %v", ErrValidation, err)
+		markFailed(err)
+		return nil, err
+	}
+
+	instanceID := flow.FlowInstanceID(realm, name)
+	// Creating status while building live graph (optional observation).
+	_ = s.st.UpdateFlowRuntime(ctx, realmID, name, "creating", nil, nil, nil)
+
+	f, err := s.mgr.StartFlow(ctx, flow.FlowConfig{
+		PipelineID: instanceID,
+		Blocks:     blks,
+	})
+	if err != nil {
+		// Already live (e.g. double rehydrate): do not overwrite status with failed.
+		if !errors.Is(err, flow.ErrFlowExists) {
+			markFailed(err)
+		}
+		return nil, err
+	}
+
+	now := time.Now().UTC()
+	if err := s.st.UpdateFlowRuntime(ctx, realmID, name, "running", nil, &now, nil); err != nil {
+		s.log.Error("flow started but failed to persist runtime", "realm", realm, "name", name, "error", err)
+	}
+	s.log.Info("flow started", "realm", realm, "name", name, "pipeline", pipelineName, "runtime_id", f.ID())
+
+	row, err := s.st.GetFlow(ctx, realmID, name)
+	if err != nil {
+		// Live is up; synthesize view from memory + known fields.
+		return mergeFlowView(realm, &store.Flow{
+			Name: name, PipelineName: pipelineName, Config: mustJSON(config),
+			AutoRestart: true, Status: "running", StartedAt: &now,
+			CreatedAt: now, UpdatedAt: now,
+		}, f), nil
+	}
+	return mergeFlowView(realm, row, f), nil
 }
 
-// ListFlows returns running flows for a realm (pipeline name prefix match).
-func (s *Service) ListFlows(realm string) []FlowView {
-	prefix := realm + "/"
-	out := make([]FlowView, 0)
+// DeleteFlow stops a live instance if present, unregisters it, and deletes
+// the durable row.
+func (s *Service) DeleteFlow(ctx context.Context, realm, name string) error {
+	id, err := s.realmID(ctx, realm)
+	if err != nil {
+		return err
+	}
+	instanceID := flow.FlowInstanceID(realm, name)
+	if err := s.mgr.StopFlow(ctx, instanceID); err != nil && !errors.Is(err, flow.ErrFlowNotFound) {
+		return err
+	}
+	s.mgr.UnregisterFlow(instanceID)
+
+	if err := s.st.DeleteFlow(ctx, id, name); err != nil {
+		return err
+	}
+	s.log.Info("flow deleted", "realm", realm, "name", name)
+	return nil
+}
+
+// GetFlow returns one durable flow by name, merged with live status.
+func (s *Service) GetFlow(ctx context.Context, realm, name string) (*FlowView, error) {
+	id, err := s.realmID(ctx, realm)
+	if err != nil {
+		return nil, err
+	}
+	row, err := s.st.GetFlow(ctx, id, name)
+	if err != nil {
+		return nil, err
+	}
+	return mergeFlowView(realm, row, s.liveFlow(realm, name)), nil
+}
+
+// ListFlows returns durable flows for a realm (including stopped/failed),
+// merged with live Manager status when running.
+func (s *Service) ListFlows(ctx context.Context, realm string) ([]FlowView, error) {
+	id, err := s.realmID(ctx, realm)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := s.st.ListFlows(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]FlowView, 0, len(rows))
+	for i := range rows {
+		out = append(out, *mergeFlowView(realm, &rows[i], s.liveFlow(realm, rows[i].Name)))
+	}
+	return out, nil
+}
+
+// MarkRunningFlowsStopped best-effort sets durable status to stopped for
+// instances that were running (clean process shutdown).
+func (s *Service) MarkRunningFlowsStopped(ctx context.Context) {
+	now := time.Now().UTC()
 	for _, f := range s.mgr.ListFlows() {
-		pid := f.PipelineID()
-		if len(pid) > len(prefix) && pid[:len(prefix)] == prefix {
-			name := pid[len(prefix):]
-			out = append(out, *toFlowView(f, realm, name))
+		if f.Status() != flow.FlowStatusRunning && f.Status() != flow.FlowStatusStopped {
+			continue
+		}
+		realm, name, ok := splitInstanceID(f.PipelineID())
+		if !ok {
+			continue
+		}
+		id, err := s.realmID(ctx, realm)
+		if err != nil {
+			continue
+		}
+		_ = s.st.UpdateFlowRuntime(ctx, id, name, "stopped", nil, nil, &now)
+	}
+}
+
+func (s *Service) liveFlow(realm, name string) *flow.Flow {
+	instanceID := flow.FlowInstanceID(realm, name)
+	for _, f := range s.mgr.ListFlows() {
+		if f.PipelineID() == instanceID {
+			return f
 		}
 	}
-	return out
+	return nil
+}
+
+// ListBlocks returns operator docs for every registered block type.
+// Realm is accepted for path symmetry with other Flow routes; the catalog is process-global.
+func (s *Service) ListBlocks(_ string) []blocks.Info {
+	return blocks.InfoForTypes(s.reg.Types())
+}
+
+// GetBlock returns operator docs for one registered type, or ErrNotFound.
+func (s *Service) GetBlock(_, blockType string) (*blocks.Info, error) {
+	if !s.reg.Has(blockType) {
+		return nil, fmt.Errorf("%w: block type %q", store.ErrNotFound, blockType)
+	}
+	if info, ok := blocks.LookupInfo(blockType); ok {
+		return &info, nil
+	}
+	stub := blocks.Info{Type: blockType, Role: blocks.RoleTransform, Summary: "registered block (no built-in docs)"}
+	return &stub, nil
 }
 
 func toPipelineView(p *store.Pipeline) *PipelineView {
@@ -246,21 +430,55 @@ func toPipelineView(p *store.Pipeline) *PipelineView {
 	}
 }
 
-func toFlowView(f *flow.Flow, realm, pipelineName string) *FlowView {
+func mergeFlowView(realm string, row *store.Flow, live *flow.Flow) *FlowView {
+	cfg := json.RawMessage(row.Config)
+	if len(cfg) == 0 {
+		cfg = json.RawMessage(`{}`)
+	}
 	v := &FlowView{
-		ID:       f.ID(),
-		Pipeline: pipelineName,
-		Realm:    realm,
-		Status:   f.Status().String(),
+		Name:         row.Name,
+		Pipeline:     row.PipelineName,
+		Realm:        realm,
+		Config:       cfg,
+		AutoRestart:  row.AutoRestart,
+		Status:       row.Status,
+		ErrorMessage: row.ErrorMessage,
+		CreatedAt:    row.CreatedAt,
+		UpdatedAt:    row.UpdatedAt,
+		StartedAt:    row.StartedAt,
+		StoppedAt:    row.StoppedAt,
 	}
-	if t := f.CreatedAt(); !t.IsZero() {
-		v.CreatedAt = t.UTC().Format(time.RFC3339Nano)
-	}
-	if t := f.StartedAt(); !t.IsZero() {
-		v.StartedAt = t.UTC().Format(time.RFC3339Nano)
-	}
-	if t := f.StoppedAt(); !t.IsZero() {
-		v.StoppedAt = t.UTC().Format(time.RFC3339Nano)
+	if live != nil {
+		v.RuntimeID = live.ID()
+		v.Status = live.Status().String()
+		if t := live.StartedAt(); !t.IsZero() {
+			st := t.UTC()
+			v.StartedAt = &st
+		}
+		if t := live.StoppedAt(); !t.IsZero() {
+			st := t.UTC()
+			v.StoppedAt = &st
+		}
 	}
 	return v
+}
+
+func mustJSON(m map[string]any) []byte {
+	b, err := json.Marshal(m)
+	if err != nil {
+		return []byte("{}")
+	}
+	return b
+}
+
+func splitInstanceID(id string) (realm, name string, ok bool) {
+	for i := 0; i < len(id); i++ {
+		if id[i] == '/' {
+			if i == 0 || i == len(id)-1 {
+				return "", "", false
+			}
+			return id[:i], id[i+1:], true
+		}
+	}
+	return "", "", false
 }

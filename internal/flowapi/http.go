@@ -39,6 +39,9 @@ func (a *API) Mount(mux *http.ServeMux) {
 	mux.Handle("POST /flow/v1/{realm}/flows", h(a.startFlow))
 	mux.Handle("GET /flow/v1/{realm}/flows/{name}", h(a.getFlow))
 	mux.Handle("DELETE /flow/v1/{realm}/flows/{name}", h(a.stopFlow))
+
+	mux.Handle("GET /flow/v1/{realm}/blocks", h(a.listBlocks))
+	mux.Handle("GET /flow/v1/{realm}/blocks/{type}", h(a.getBlock))
 }
 
 type createPipelineBody struct {
@@ -46,8 +49,12 @@ type createPipelineBody struct {
 	Definition json.RawMessage `json:"definition"`
 }
 
+// startFlowBody is POST /flows: named multi-instance + optional config.
 type startFlowBody struct {
-	Pipeline string `json:"pipeline"`
+	Name        string          `json:"name"`
+	Pipeline    string          `json:"pipeline"`
+	Config      json.RawMessage `json:"config"`
+	AutoRestart *bool           `json:"auto_restart"`
 }
 
 func (a *API) listPipelines(w http.ResponseWriter, r *http.Request) {
@@ -107,7 +114,12 @@ func (a *API) deletePipeline(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *API) listFlows(w http.ResponseWriter, r *http.Request) {
-	_ = astarteapi.WriteData(w, http.StatusOK, a.svc.ListFlows(r.PathValue("realm")))
+	list, err := a.svc.ListFlows(r.Context(), r.PathValue("realm"))
+	if err != nil {
+		a.writeError(w, err)
+		return
+	}
+	_ = astarteapi.WriteData(w, http.StatusOK, list)
 }
 
 func (a *API) startFlow(w http.ResponseWriter, r *http.Request) {
@@ -116,11 +128,20 @@ func (a *API) startFlow(w http.ResponseWriter, r *http.Request) {
 		_ = astarteapi.WriteBadRequest(w)
 		return
 	}
-	if body.Pipeline == "" {
+	if body.Name == "" || body.Pipeline == "" {
 		_ = astarteapi.WriteBadRequest(w)
 		return
 	}
-	view, err := a.svc.StartFlow(r.Context(), r.PathValue("realm"), body.Pipeline)
+	autoRestart := true
+	if body.AutoRestart != nil {
+		autoRestart = *body.AutoRestart
+	}
+	view, err := a.svc.CreateAndStartFlow(r.Context(), r.PathValue("realm"), CreateFlowRequest{
+		Name:        body.Name,
+		Pipeline:    body.Pipeline,
+		Config:      body.Config,
+		AutoRestart: autoRestart,
+	})
 	if err != nil {
 		a.writeError(w, err)
 		return
@@ -129,7 +150,7 @@ func (a *API) startFlow(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *API) getFlow(w http.ResponseWriter, r *http.Request) {
-	view, err := a.svc.GetFlow(r.PathValue("realm"), r.PathValue("name"))
+	view, err := a.svc.GetFlow(r.Context(), r.PathValue("realm"), r.PathValue("name"))
 	if err != nil {
 		a.writeError(w, err)
 		return
@@ -138,11 +159,24 @@ func (a *API) getFlow(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *API) stopFlow(w http.ResponseWriter, r *http.Request) {
-	if err := a.svc.StopFlow(r.Context(), r.PathValue("realm"), r.PathValue("name")); err != nil {
+	if err := a.svc.DeleteFlow(r.Context(), r.PathValue("realm"), r.PathValue("name")); err != nil {
 		a.writeError(w, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (a *API) listBlocks(w http.ResponseWriter, r *http.Request) {
+	_ = astarteapi.WriteData(w, http.StatusOK, a.svc.ListBlocks(r.PathValue("realm")))
+}
+
+func (a *API) getBlock(w http.ResponseWriter, r *http.Request) {
+	view, err := a.svc.GetBlock(r.PathValue("realm"), r.PathValue("type"))
+	if err != nil {
+		a.writeError(w, err)
+		return
+	}
+	_ = astarteapi.WriteData(w, http.StatusOK, view)
 }
 
 func (a *API) writeError(w http.ResponseWriter, err error) {

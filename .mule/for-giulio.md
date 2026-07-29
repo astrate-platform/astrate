@@ -10,12 +10,16 @@ line once you have dealt with it — this file is a queue, not a log.
 
 ---
 
-- **Flow v2.0: durable `flows` table vs in-memory only?** Pipelines already persist
-  (`000008_pipelines`); running instances live only in `flow.Manager`. Issue-25 sketched
-  `000009_flows`. Decide for v2.0: (a) keep in-memory (restart loses running flows;
-  restart re-create via API is enough), or (b) durable status/config so process restart
-  can rehydrate or at least report last-known state. Escalated from milestone gap 1
-  (2026-07-29). Do not implement until decided.
+- ~~**Flow v2.0: named multi-instance flows + pipeline config?**~~ — **decided
+  2026-07-29: (b) named multi-instance + config.** Design then implement (#40).
+  Doc: `docs/handoff/flow-v2-decisions-2026-07-29.md`.
+- ~~**Flow v2.0: durable `flows` table vs in-memory only?**~~ — **decided
+  2026-07-29: (b) durable records; `auto_restart` default true, optional never;
+  process rehydrates on boot; fail loudly on bad pipeline/start.** Filed #41;
+  edge-case follow-ups #42. Same design package as #40.
+- ~~**Flow v2.0: containers in scope?**~~ — **decided 2026-07-29: yes, phased
+  PoC → MVP (#43).** Native Lua/MQTT blocks are *not* a v2.0 gate (containers cover
+  custom logic). Doc: `docs/handoff/flow-v2-decisions-2026-07-29.md`.
 - ~~`device_deletion_started`/`device_deletion_finished` trigger events are not emitted~~ —
   **decided 2026-07-27: emit both, back-to-back, around the synchronous delete.** Filed as
   issue #21 (`mule`). (Cross-project survey, 2026-07-27,

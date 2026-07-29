@@ -148,15 +148,21 @@ func run(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 
 	handler, hkSvc, err := mountAPIs(cfg, st, e, b, sealer, metrics, flowSvc, log)
 	if err != nil {
-		shutdown(nil, b, flowMgr, e, log)
+		shutdown(nil, b, flowSvc, e, log)
 		return err
 	}
 
 	if cfg.Realm.Name != "" {
 		if err := autoProvisionRealm(ctx, st, hkSvc, cfg, log); err != nil {
-			shutdown(nil, b, flowMgr, e, log)
+			shutdown(nil, b, flowSvc, e, log)
 			return err
 		}
+	}
+
+	// Rehydrate durable auto_restart flows before accepting traffic (Design A / #41).
+	if err := flowSvc.RehydrateAutoRestart(ctx); err != nil {
+		shutdown(nil, b, flowSvc, e, log)
+		return fmt.Errorf("flow rehydrate: %w", err)
 	}
 
 	srv := &http.Server{Addr: cfg.HTTP.Addr, Handler: handler, ReadHeaderTimeout: 10 * time.Second}
@@ -174,11 +180,11 @@ func run(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	case <-ctx.Done():
 		log.Info("shutdown signal received")
 	case err := <-serveErr:
-		shutdown(nil, b, flowMgr, e, log)
+		shutdown(nil, b, flowSvc, e, log)
 		return fmt.Errorf("http server: %w", err)
 	}
 
-	shutdown(srv, b, flowMgr, e, log)
+	shutdown(srv, b, flowSvc, e, log)
 	<-serveErr // ListenAndServe returns http.ErrServerClosed after Shutdown
 	return nil
 }
@@ -401,9 +407,9 @@ func autoProvisionRealm(ctx context.Context, st *store.Store, hk *housekeeping.S
 }
 
 // shutdown drains the stack in the §5.3 order. srv may be nil on a startup
-// error before the HTTP server began serving. flowMgr may be nil when Flow
+// error before the HTTP server began serving. flowSvc may be nil when Flow
 // was never wired (should not happen in run).
-func shutdown(srv *http.Server, b *broker.Broker, flowMgr *flow.Manager, e *engine.Engine, log *slog.Logger) {
+func shutdown(srv *http.Server, b *broker.Broker, flowSvc *flowapi.Service, e *engine.Engine, log *slog.Logger) {
 	sctx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 	defer cancel()
 
@@ -417,11 +423,12 @@ func shutdown(srv *http.Server, b *broker.Broker, flowMgr *flow.Manager, e *engi
 	if err := b.Close(); err != nil {
 		log.Warn("broker close", "error", err)
 	}
-	if flowMgr != nil {
+	if flowSvc != nil {
 		log.Info("stopping flows")
-		if err := flowMgr.Shutdown(sctx); err != nil {
+		if err := flowSvc.Manager().Shutdown(sctx); err != nil {
 			log.Warn("flow shutdown", "error", err)
 		}
+		flowSvc.MarkRunningFlowsStopped(sctx)
 	}
 	drainEngine(e, log)
 	log.Info("shutdown complete")

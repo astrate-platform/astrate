@@ -9,6 +9,7 @@ import (
 
 	"github.com/astrate-platform/astrate/internal/flow"
 	"github.com/astrate-platform/astrate/internal/flow/blocks/astartesource"
+	"github.com/astrate-platform/astrate/internal/flow/blocks/container"
 )
 
 // Well-known block_type strings stored in pipeline definitions.
@@ -16,17 +17,21 @@ const (
 	TypeAstarteSource = "astarte_source"
 	TypeNullSink      = "null_sink"
 	TypeLogSink       = "log_sink"
+	// TypeContainer is the Docker-backed custom processing block (Design B / #43).
+	TypeContainer = container.Type
 	// TypeFilter and TypeMap are declared in transform.go.
 )
 
 // DefaultRegistry returns a registry with the minimum useful built-in set:
-// AstarteSource (bus → FlowMessage), filter/map transforms, and null/log sinks
-// so operators can compose a complete source→transform→sink pipeline.
+// AstarteSource (bus → FlowMessage), filter/map transforms, container (custom
+// image via local Docker HTTP bridge), and null/log sinks so operators can
+// compose a complete source→transform→sink pipeline.
 func DefaultRegistry() *flow.Registry {
 	r := flow.NewRegistry()
 	r.Register(TypeAstarteSource, AstarteSource)
 	r.Register(TypeFilter, Filter)
 	r.Register(TypeMap, Map)
+	r.Register(TypeContainer, container.Constructor)
 	r.Register(TypeNullSink, NullSink)
 	r.Register(TypeLogSink, LogSink)
 	return r

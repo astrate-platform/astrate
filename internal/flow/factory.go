@@ -21,6 +21,9 @@ type Deps struct {
 	// Realm is the tenant the pipeline runs for; sources may default to it
 	// when their config omits realm.
 	Realm string
+	// FlowName is the durable/named flow instance name (optional). Used by
+	// container labels and similar operator metadata.
+	FlowName string
 }
 
 // Constructor builds one Block from a pipeline node. name is the pipeline
@@ -188,8 +191,14 @@ func ParseDefinition(id, name string, definition []byte) (*Pipeline, error) {
 	return p, nil
 }
 
-// FlowPipelineID builds the Manager key for a realm-scoped stored pipeline.
-// Different realms may reuse the same pipeline name.
-func FlowPipelineID(realm, pipelineName string) string {
-	return realm + "/" + pipelineName
+// FlowInstanceID builds the Manager map key for a named flow instance
+// (realm + "/" + flowName). Different flows may share one pipeline name.
+func FlowInstanceID(realm, flowName string) string {
+	return realm + "/" + flowName
+}
+
+// FlowPipelineID is a legacy alias for FlowInstanceID. Prefer FlowInstanceID;
+// the map key is the flow instance name, not the pipeline name.
+func FlowPipelineID(realm, name string) string {
+	return FlowInstanceID(realm, name)
 }

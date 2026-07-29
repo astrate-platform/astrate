@@ -42,8 +42,8 @@ func (s FlowStatus) String() string {
 
 var (
 	// ErrFlowExists is returned by StartFlow when a flow with the same
-	// pipeline ID is already registered.
-	ErrFlowExists = errors.New("flow: pipeline already running")
+	// instance key is already registered.
+	ErrFlowExists = errors.New("flow: already running")
 	// ErrFlowNotFound is returned when a flow ID does not match any
 	// registered flow.
 	ErrFlowNotFound = errors.New("flow: not found")
@@ -51,7 +51,8 @@ var (
 
 // FlowConfig holds the parameters needed to instantiate a running flow.
 type FlowConfig struct {
-	// PipelineID is the unique identifier for the pipeline this flow runs.
+	// PipelineID is the Manager map key for this instance (realm/flowName).
+	// Historical field name; value is FlowInstanceID, not the pipeline recipe name.
 	PipelineID string
 	// Blocks is the ordered list of blocks forming the processing graph.
 	Blocks []Block
@@ -136,10 +137,10 @@ func NewManager() *Manager {
 	return &Manager{flows: make(map[string]*Flow)}
 }
 
-// StartFlow instantiates a pipeline into a running Flow. The flow is
-// created with status creating, the block graph and router are built, and
-// on success the status transitions to running. If graph construction fails
-// the status is set to failed and both the flow and the error are returned.
+// StartFlow instantiates a pipeline into a running Flow. The block graph is
+// built before the flow is registered so construction failures leave no map
+// entry (durable layer records status=failed separately). On success the
+// status transitions to running.
 func (m *Manager) StartFlow(ctx context.Context, cfg FlowConfig) (*Flow, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -148,23 +149,23 @@ func (m *Manager) StartFlow(ctx context.Context, cfg FlowConfig) (*Flow, error) 
 		return nil, fmt.Errorf("%w: %s", ErrFlowExists, cfg.PipelineID)
 	}
 
+	// Build graph before insert so a bad config never occupies the instance key.
+	graph, err := NewBlockGraph(cfg.Blocks...)
+	if err != nil {
+		return nil, err
+	}
+
 	m.seq++
 	f := &Flow{
 		id:         fmt.Sprintf("flow-%d", m.seq),
 		pipelineID: cfg.PipelineID,
 		status:     FlowStatusCreating,
 		created:    time.Now(),
+		graph:      graph,
+		router:     NewRouter(graph, cfg.RouterCfg, cfg.Registerer),
 	}
 	m.flows[cfg.PipelineID] = f
 
-	graph, err := NewBlockGraph(cfg.Blocks...)
-	if err != nil {
-		f.setStatus(FlowStatusFailed)
-		return f, err
-	}
-
-	f.graph = graph
-	f.router = NewRouter(graph, cfg.RouterCfg, cfg.Registerer)
 	f.router.Run(ctx)
 
 	// Pump Source blocks independently of the StartFlow caller's context so
@@ -179,6 +180,14 @@ func (m *Manager) StartFlow(ctx context.Context, cfg FlowConfig) (*Flow, error) 
 	f.mu.Unlock()
 
 	return f, nil
+}
+
+// UnregisterFlow removes an instance key from the manager map. Call after
+// StopFlow when deleting a durable row so the name can be reused.
+func (m *Manager) UnregisterFlow(instanceID string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	delete(m.flows, instanceID)
 }
 
 // sourceIdleBackoff is how long the pump waits after an empty Emit before

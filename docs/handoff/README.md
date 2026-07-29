@@ -1,6 +1,10 @@
 # Documentation Handoff Index
 
-This directory contains local handoff files for AI-assisted documentation work.
+This directory contains local handoff files for AI-assisted documentation work. This
+convention (dated handoff files + an index pointing at the current one, each ending with a
+next-session prompt) is the reference implementation of the system-wide **session handoff**
+pattern catalogued in `scaffold` (`~/agent-skills`) — nothing to change here, just noting it in
+case this shape needs adapting for a different project later.
 
 Start every documentation session by reading:
 
@@ -15,11 +19,14 @@ Start every documentation session by reading:
 ### General project work (preferred start for non-docs sessions)
 
 - **`docs/handoff/session-2026-07-29-flow-factory-handoff.md`** — **primary next-session
-  prompt for product work.** Flow v2.0 is **mostly wired**:
-  - **On `main`:** runtime, source pump, AstarteSource, pipeline store, **block factory**,
-    catalog (`astarte_source` / `filter` / `map` / sinks), process wiring, `/flow/v1` API,
-    pokemon example (#38).
-  - **Still open:** flows-table decision (for-giulio), parity audit; Legion/#20, mule items.
+  prompt for product work.** Flow v2.0:
+  - **On `main`:** runtime, factory, filter/map catalog, `/flow/v1`, pokemon (#38).
+  - **Decisions settled** (`flow-v2-decisions-2026-07-29.md`): durable + auto_restart
+    (#41), named multi-instance (#40), containers PoC→MVP (#43).
+  - **Design drafts written** (await Giulio accept):
+    - Design A: `flow-design-a-named-durable-flows-2026-07-29.md` (#40+#41)
+    - Design B: `flow-design-b-container-block-2026-07-29.md` (#43; code after A)
+  - Parity audit: `flow-parity-audit-2026-07-29.md`. #39 discovery local.
   - Local commits may be **ahead of origin** — push only with confirmation.
 
 - `docs/handoff/session-2026-07-29-handoff.md` — older (source pump only); superseded
