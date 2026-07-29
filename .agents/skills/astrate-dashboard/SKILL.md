@@ -1,9 +1,9 @@
 ---
-name: astrate-workflow
+name: astrate-dashboard
 description: Discoverability map and live-status dashboard for everything automated (or semi-automated) across the astrate dev workflow — Mac, the Raspberry Pi (mule + daily survey timers), and the Legion Go (upstream Astarte + benchmarks). Use when Giulio asks "cosa posso fare", "cosa gira", "cosa è automatizzato", "dashboard", "stato del workflow", "cosa c'è per me", "come lancio X", "help astrate", or seems unsure which command/skill covers something he wants to do or check.
 ---
 
-# Astrate workflow map
+# Astrate dashboard
 
 This is a **router, not a worker**: it tells you (and Giulio) what exists, where it runs, how
 to trigger it, and whose turn it is — then hands off to the real skill/command, or runs the
