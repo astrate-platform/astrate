@@ -97,14 +97,27 @@ func (r *Registry) Instantiate(p *Pipeline, deps Deps) ([]Block, error) {
 		}
 		b, err := ctor(name, node.Config, deps)
 		if err != nil {
+			stopAll(out)
 			return nil, fmt.Errorf("flow: construct %q (%s): %w", name, node.BlockType, err)
 		}
 		if b == nil {
+			stopAll(out)
 			return nil, fmt.Errorf("flow: construct %q (%s) returned nil block", name, node.BlockType)
 		}
 		out = append(out, b)
 	}
 	return out, nil
+}
+
+// stopAll calls Stop on every block in blocks that implements Stopper, so a
+// partially-built pipeline does not leak resources already acquired by
+// earlier blocks (e.g. a container block's running Docker container).
+func stopAll(blocks []Block) {
+	for _, b := range blocks {
+		if s, ok := b.(Stopper); ok {
+			s.Stop()
+		}
+	}
 }
 
 // topoOrder returns block names in topological order (Kahn). Validate must

@@ -136,6 +136,55 @@ func TestRegistry_ConstructorError(t *testing.T) {
 	}
 }
 
+// stoppableBlock is a Block + Stopper whose Stop() records that it was called.
+type stoppableBlock struct {
+	name    string
+	stopped *int
+}
+
+func (b *stoppableBlock) Name() string { return b.name }
+func (b *stoppableBlock) Process(msg *flow.FlowMessage) ([]*flow.FlowMessage, error) {
+	return []*flow.FlowMessage{msg}, nil
+}
+func (b *stoppableBlock) Stop() { *b.stopped++ }
+
+func TestRegistry_InstantiateStopsAlreadyBuiltBlocksOnFailure(t *testing.T) {
+	var stoppedA, stoppedB int
+	reg := flow.NewRegistry()
+	reg.Register("stoppable-a", func(name string, _ map[string]any, _ flow.Deps) (flow.Block, error) {
+		return &stoppableBlock{name: name, stopped: &stoppedA}, nil
+	})
+	reg.Register("stoppable-b", func(name string, _ map[string]any, _ flow.Deps) (flow.Block, error) {
+		return &stoppableBlock{name: name, stopped: &stoppedB}, nil
+	})
+	reg.Register("bad", func(string, map[string]any, flow.Deps) (flow.Block, error) {
+		return nil, errors.New("boom")
+	})
+
+	p := &flow.Pipeline{
+		ID: "x",
+		Blocks: []flow.PipelineNode{
+			{Name: "a", BlockType: "stoppable-a"},
+			{Name: "b", BlockType: "stoppable-b"},
+			{Name: "c", BlockType: "bad"},
+		},
+		Connections: []flow.Connection{{From: "a", To: "b"}, {From: "b", To: "c"}},
+	}
+	blocksList, err := reg.Instantiate(p, flow.Deps{})
+	if err == nil {
+		t.Fatal("Instantiate: want error, got nil")
+	}
+	if len(blocksList) != 0 {
+		t.Fatalf("blocksList = %v, want empty", blocksList)
+	}
+	if stoppedA != 1 {
+		t.Errorf("stoppedA = %d, want 1", stoppedA)
+	}
+	if stoppedB != 1 {
+		t.Errorf("stoppedB = %d, want 1", stoppedB)
+	}
+}
+
 func TestParseDefinition(t *testing.T) {
 	raw := []byte(`{
 		"blocks": [
