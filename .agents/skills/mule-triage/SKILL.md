@@ -16,6 +16,10 @@ to `mule/research` itself (not `main` — read them with `git show
 origin/mule/research:.mule/research/survey-2026-07-27.md`) — and the resulting issues
 **#12–#19** plus four entries in `.mule/for-giulio.md` on `main`.
 
+This is the reference implementation of the triage-inbox pattern catalogued in the
+system-wide `workflow-scaffold` skill — read that first if instantiating something like this
+for a different unattended job.
+
 ## Steps
 
 1. `cd` to the astrate repo, then `git fetch origin mule/research`.

@@ -11,6 +11,10 @@ cheap read-only status checks itself. It does not replace `mule`, `trickle`, or 
 it exists because there are now enough of them that "how do I..." needs one answer, not a
 grep through three skill files.
 
+This is the reference implementation of the dashboard/router pattern catalogued in the
+system-wide `workflow-scaffold` skill — read that first if instantiating something like this
+for a different project.
+
 **When invoked, do two things, in order:**
 
 1. Run the live-status checks below (they're all cheap and read-only) and show a compact
