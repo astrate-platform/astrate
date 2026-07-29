@@ -22,5 +22,14 @@ class OrchestratorConfig(BaseSettings):
     llm_timeout_seconds: float = 5.0
     llm_max_retries: int = 3
 
+    # "llm" = always call the LLM (default).
+    # "light" = deterministic early-game path (Red's House → stairs/exit) without
+    #           opencode; still publishes ControlCommands via Astrate.
+    # "auto" = light guide when it has a suggestion, else LLM.
+    guidance: str = "llm"
+
+    # Minimum seconds between turns (debounce GameState flood). 0 = every event.
+    turn_cooldown_seconds: float = 1.5
+
     action_history_len: int = 5
     stasis_threshold: int = 15

@@ -10,6 +10,22 @@ from __future__ import annotations
 AVAILABLE_ACTIONS_OVERWORLD = ["UP", "DOWN", "LEFT", "RIGHT", "A", "B", "START"]
 AVAILABLE_ACTIONS_BATTLE    = ["UP", "DOWN", "A", "B"]
 
+# pret map ids (see emulator_agent.wram.MAP_NAMES)
+MAP_REDS_HOUSE_1F = 0x25  # 37
+MAP_REDS_HOUSE_2F = 0x26  # 38
+
+
+def _is_reds_house_2f(map_name: str, map_id) -> bool:
+    if map_id == MAP_REDS_HOUSE_2F:
+        return True
+    return "red's house 2f" in (map_name or "").lower()
+
+
+def _is_reds_house_1f(map_name: str, map_id) -> bool:
+    if map_id == MAP_REDS_HOUSE_1F:
+        return True
+    return "red's house 1f" in (map_name or "").lower()
+
 
 def is_actionable_dialog(text: str) -> bool:
     """Filter wStringBuffer residue (name entry) that is not a real textbox.
@@ -50,7 +66,9 @@ RULES:
 - If stasis=true you MUST choose a DIFFERENT direction from the last move or use A/B.
 - Avoid repeating the same action more than 3 times consecutively unless in a menu.
 - If dialog_text is non-empty, press A to advance it.
-- Starting in Red's House 2F: stairs down are toward the top-right (increase X, decrease Y).
+- Starting in Red's House 2F (map 38): stairs down are at tile (7,1) — top-right.
+  Path: increase X toward 7, then decrease Y toward 1. Step on (7,1) to warp to 1F.
+- After warping to Red's House 1F, leave through the south door to Pallet Town.
 - NONE is a valid no-op when you need to wait (e.g., during animations).\
 """
 
@@ -73,8 +91,40 @@ def build_user_prompt(
 
     # --- Location ---
     map_name = state.get("mapName", "Unknown")
+    map_id   = state.get("mapId")
     x, y     = state.get("playerX", "?"), state.get("playerY", "?")
-    lines.append(f"LOCATION: {map_name}  (tile X={x}, Y={y})")
+    loc = f"LOCATION: {map_name}  (tile X={x}, Y={y})"
+    if map_id is not None:
+        loc += f"  mapId={map_id}"
+    lines.append(loc)
+
+    # Navigation goal for early game (leave Red's House under LLM control).
+    if _is_reds_house_2f(map_name, map_id) and isinstance(x, int) and isinstance(y, int):
+        goal_x, goal_y = 7, 1
+        dx, dy = goal_x - x, goal_y - y
+        hints: list[str] = []
+        if dx > 0:
+            hints.append(f"RIGHT×{dx}")
+        elif dx < 0:
+            hints.append(f"LEFT×{-dx}")
+        if dy < 0:
+            hints.append(f"UP×{-dy}")
+        elif dy > 0:
+            hints.append(f"DOWN×{dy}")
+        if dx == 0 and dy == 0:
+            lines.append(
+                "GOAL: On stairs tile (7,1) — keep stepping UP or RIGHT to trigger warp to 1F."
+            )
+        else:
+            lines.append(
+                f"GOAL: Reach stairs at (7,1) to leave 2F "
+                f"(ΔX={dx:+d}, ΔY={dy:+d}). Prefer: {' then '.join(hints)}."
+            )
+    elif _is_reds_house_1f(map_name, map_id):
+        lines.append(
+            "GOAL: Leave Red's House 1F via the south door (increase Y / walk DOWN) "
+            "into Pallet Town."
+        )
 
     # --- Battle state ---
     in_battle    = state.get("inBattle", False)

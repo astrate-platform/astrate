@@ -68,3 +68,37 @@ def test_user_prompt_stasis_warning():
     )
     assert "STASIS" in prompt
     assert "RIGHT" in prompt
+
+
+def test_user_prompt_reds_house_2f_goal_to_stairs():
+    state = {
+        "mapName": "Red's House 2F",
+        "mapId": 38,
+        "playerX": 3,
+        "playerY": 6,
+        "inBattle": False,
+        "battleType": 0,
+        "dialogText": "",
+        "stasis": False,
+    }
+    prompt = build_user_prompt(state, party=[], action_history=[], stasis=False)
+    assert "GOAL: Reach stairs at (7,1)" in prompt
+    assert "RIGHT" in prompt
+    assert "UP" in prompt
+    assert "mapId=38" in prompt
+
+
+def test_user_prompt_reds_house_1f_goal_exit():
+    state = {
+        "mapName": "Red's House 1F",
+        "mapId": 37,
+        "playerX": 7,
+        "playerY": 1,
+        "inBattle": False,
+        "battleType": 0,
+        "dialogText": "",
+        "stasis": False,
+    }
+    prompt = build_user_prompt(state, party=[], action_history=[], stasis=False)
+    assert "Pallet Town" in prompt
+    assert "GOAL:" in prompt

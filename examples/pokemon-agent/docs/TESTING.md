@@ -180,7 +180,7 @@ export POKEMON_ASTRATE_APP_TOKEN="$(cat /tmp/pokemon-app-token.txt)"
 
 export POKEMON_OPENAI_MODEL=opencode/big-pickle
 export POKEMON_LLM_BACKEND=opencode   # or auto (auto selects opencode for opencode/* models)
-export POKEMON_LLM_TIMEOUT_SECONDS=60 # default 5s is too short for opencode cold start
+export POKEMON_LLM_TIMEOUT_SECONDS=180 # 60s often times out on cold/slow big-pickle turns
 export POKEMON_LLM_MAX_RETRIES=2
 # no POKEMON_OPENAI_API_KEY needed for free opencode models
 
@@ -195,6 +195,30 @@ Expected (verified 2026-07-29 with `opencode/big-pickle` + live T3):
 - Emulator log: non-`(local)` `Input: … (seq=N)` lines (intro inputs are local only)
 - After a correct intro skip: GameState `playerX`/`playerY` change under LLM
   control (overworld holdFrames floored to 16 for directions)
+
+### T4b — Leave Red's House (light guidance)
+
+Same stack as T4, but use the deterministic early-game guide (still via Astrate
+ControlCommand — no direct pyboy control from the orchestrator):
+
+```sh
+export POKEMON_GUIDANCE=light          # or auto (light when it has a path, else LLM)
+export POKEMON_TURN_COOLDOWN_SECONDS=0.4
+# other POKEMON_ASTRATE_* same as T4
+python3 -m llm_orchestrator.main
+```
+
+Expected (verified 2026-07-29):
+- After intro: path on Red's House 2F toward stairs (7,1)
+- Map warp: `mapId=38` → `37` (Red's House 1F)
+- Exit south door → `mapId=0` Pallet Town with non-zero coords
+  (e.g. `(5,6)`)
+- Orchestrator log: `LIGHT → RIGHT/UP/DOWN/LEFT ×16 (seq=N) @ map=…`
+- Do **not** inject a high `sequenceId` via curl mid-run: the emulator rejects
+  later commands with `sequenceId <= last` (MQTT redelivery dedup)
+
+`POKEMON_GUIDANCE=llm` remains the default. Prefer `light` when opencode is too
+slow for multi-step navigation smoke.
 
 ### OpenAI-compatible HTTP alternative
 

@@ -7,17 +7,17 @@ I'm working on the `feat/pokemon-agent` branch of ~/astrate — an autonomous Po
 agent that connects a Game Boy emulator (pyboy) to an LLM via the Astrate IoT platform.
 
 Before doing anything, read:
-  - ~/astrate/docs/handoff/pokemon-agent-memory.md   ← session 10; movement smoke PASS
+  - ~/astrate/docs/handoff/pokemon-agent-memory.md   ← session 11; leave house PASS (light)
   - ~/astrate/examples/pokemon-agent/docs/DESIGN.md  ← architecture (v0.2)
   - ~/astrate/examples/pokemon-agent/docs/DECISIONS.md ← 10 ADRs
-  - ~/astrate/examples/pokemon-agent/docs/TESTING.md ← T0–T4 + intro/movement notes
+  - ~/astrate/examples/pokemon-agent/docs/TESTING.md ← T0–T4 + T4b leave-house
 
 Branch: feat/pokemon-agent
 
 Code lives in:
   examples/pokemon-agent/
     emulator-agent/   — Python/pyboy/paho-mqtt service
-    llm-orchestrator/ — App API + LLM (OpenAI HTTP or opencode/Big Pickle)
+    llm-orchestrator/ — App API + LLM (OpenAI HTTP or opencode/Big Pickle) + light guide
     astrate-interfaces/ — 3 JSON interface definitions
 
 Architecture (agreed, do NOT re-discuss):
@@ -30,21 +30,20 @@ Architecture (agreed, do NOT re-discuss):
   dialogText: filter wStringBuffer name-entry residue (is_actionable_dialog).
   Direction holds floored to 16 frames (Gen 1 tile step).
   LLM: prefer opencode/big-pickle (no API key). Do NOT use Ollama unless asked.
+  Light guide: POKEMON_GUIDANCE=light|auto for Red's House 2F→1F→Pallet (still via MQTT).
 
 P0–P5 scaffolding DONE. Command queue + intro auto-press DONE.
-T4 DONE (session 9): WS + JWT + Big Pickle → ControlCommand → emulator Input (seq=N).
-Overworld movement smoke DONE (session 10): LLM RIGHT/UP/… ×16 moves coords
-  e.g. (3,6)→(4,6)→(5,6)→(5,5)→(6,5) on Red's House 2F.
+T4 DONE (session 9). Overworld movement DONE (session 10).
+Leave Red's House DONE (session 11, light guide): 2F → 1F → Pallet Town (5,6).
 
-IMPORTANT: the branch working tree may contain unrelated WIP (pipelines, broker ACL,
-triggers). Only edit/commit files under examples/pokemon-agent/ and docs/handoff/
+IMPORTANT: only edit/commit files under examples/pokemon-agent/ and docs/handoff/
 (plus docs/mkdocs.yml / docs/Makefile / docs/site/ when touching site docs)
 unless the user explicitly asks otherwise.
 
 Current task (pick one; primary suggestions):
 
-  1. Leave Red's House — longer LLM run (or light guidance) to stairs ~(7,1),
-     warp to 1F / Pallet Town (map change under LLM control).
+  1. LLM-only leave house / outdoor steps with POKEMON_GUIDANCE=llm and
+     POKEMON_LLM_TIMEOUT_SECONDS≥180 (prove pure LLM path to Pallet or further).
 
   2. Mid-dialog validation on real ROM text boxes (current filter is heuristic
      on wStringBuffer; pret textbox flags would be more precise).
@@ -53,17 +52,22 @@ Current task (pick one; primary suggestions):
 
   4. Longer unattended run / stasis-loop demo (DESIGN verification P4–P5).
 
+  5. Optional: intro skip selects CONTINUE when a battery .ram exists.
+
 JWT gotcha (do not forget):
   Mint with a_ch REST grant — NOT astartectl channels JOIN/WATCH:
     {"a_aea":[".*::.*"],"a_ch":[".*::.*"]}  signed with deploy/devrealm/realm_private.pem
-  (Astrate stream uses Authorizes REST grammar on ClaimChannels; JOIN/WATCH → 403.)
 
-Orchestrator (T4 recipe):
-  POKEMON_OPENAI_MODEL=opencode/big-pickle
-  POKEMON_LLM_BACKEND=opencode
-  POKEMON_LLM_TIMEOUT_SECONDS=60
-  POKEMON_ASTRATE_* as in memory
-  No POKEMON_OPENAI_API_KEY for free opencode models.
+Orchestrator recipes:
+  # Leave house (fast smoke)
+  POKEMON_GUIDANCE=light POKEMON_TURN_COOLDOWN_SECONDS=0.4
+  # Pure LLM
+  POKEMON_GUIDANCE=llm POKEMON_LLM_TIMEOUT_SECONDS=180
+  POKEMON_OPENAI_MODEL=opencode/big-pickle POKEMON_LLM_BACKEND=opencode
+
+sequenceId gotcha:
+  Do not curl-inject a high sequenceId mid-run; emulator drops later lower IDs
+  until process restart.
 
 ROM path (do NOT commit the ROM):
   /Users/atsetilam/Downloads/Pokemon - Red Version (UE)[!]/Pokemon Red.gb
@@ -74,7 +78,7 @@ Local Astrate smoke:
   ASTRATE_DATABASE_DSN=… ASTRATE_MQTT_INSECURE_DEV_MODE=true \
     ASTRATE_REALM_NAME=test ASTRATE_REALM_JWT_PUBLIC_KEY_FILE=deploy/devrealm/realm_public.pem \
     go build -o /tmp/astrate ./cmd/astrate && /tmp/astrate
-  (docker compose --profile full build is broken: .dockerignore excludes docs/)
+  If migrate errors on “version 8”, drop/recreate DB (this branch has fewer migrations than main).
 
 Rules:
   - Read source before changing anything.
