@@ -1,0 +1,1 @@
+pyboy>=2.0\npaho-mqtt>=2.0\n

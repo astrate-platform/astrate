@@ -1,0 +1,13 @@
+{
+  "interface_name": "org.pokemon.emulator.ControlCommand",
+  "version_major": 1,
+  "version_minor": 0,
+  "type": "datastream",
+  "ownership": "server",
+  "aggregation": "object",
+  "mappings": [
+    { "endpoint": "/command/button",     "type": "string"  },
+    { "endpoint": "/command/holdFrames", "type": "integer" },
+    { "endpoint": "/command/sequenceId", "type": "integer" }
+  ]
+}

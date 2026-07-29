@@ -1,0 +1,18 @@
+{
+  "interface_name": "org.pokemon.emulator.GameState",
+  "version_major": 1,
+  "version_minor": 0,
+  "type": "datastream",
+  "ownership": "device",
+  "aggregation": "object",
+  "mappings": [
+    { "endpoint": "/state/mapId",      "type": "integer" },
+    { "endpoint": "/state/mapName",    "type": "string"  },
+    { "endpoint": "/state/playerX",    "type": "integer" },
+    { "endpoint": "/state/playerY",    "type": "integer" },
+    { "endpoint": "/state/inBattle",   "type": "boolean" },
+    { "endpoint": "/state/battleType", "type": "integer" },
+    { "endpoint": "/state/dialogText", "type": "string"  },
+    { "endpoint": "/state/stasis",     "type": "boolean" }
+  ]
+}

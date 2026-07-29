@@ -62,3 +62,5 @@ nav:
   - Migration from Astarte: migration-from-astarte.md
   - API Explorer: swagger.md
   - Quickstart: quickstart.md
+  - Examples:
+    - Pokémon Agent: pokemon-agent.md

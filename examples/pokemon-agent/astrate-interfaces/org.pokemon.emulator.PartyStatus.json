@@ -1,0 +1,15 @@
+{
+  "interface_name": "org.pokemon.emulator.PartyStatus",
+  "version_major": 1,
+  "version_minor": 0,
+  "type": "datastream",
+  "ownership": "device",
+  "aggregation": "individual",
+  "mappings": [
+    { "endpoint": "/%{slotIndex}/name",      "type": "string"  },
+    { "endpoint": "/%{slotIndex}/speciesId", "type": "integer" },
+    { "endpoint": "/%{slotIndex}/currentHp", "type": "integer" },
+    { "endpoint": "/%{slotIndex}/maxHp",     "type": "integer" },
+    { "endpoint": "/%{slotIndex}/level",     "type": "integer" }
+  ]
+}
