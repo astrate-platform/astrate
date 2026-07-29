@@ -129,13 +129,13 @@ func TestParseAction(t *testing.T) {
 		}
 	})
 
-	t.Run("mustache template noted as unsupported, default envelope still sent", func(t *testing.T) {
+	t.Run("mustache template parsed and not marked unsupported", func(t *testing.T) {
 		a, unsupported, err := parseAction([]byte(
 			`{"http_url":"https://x","http_method":"post","template":"{{ value }}","template_type":"mustache"}`))
 		if err != nil {
 			t.Fatal(err)
 		}
-		if a.URL == "" || len(unsupported) != 1 {
+		if a.URL == "" || a.Template != "{{ value }}" || len(unsupported) != 0 {
 			t.Errorf("action=%+v unsupported=%v", a, unsupported)
 		}
 	})
@@ -196,6 +196,73 @@ func TestWebhookDelivered(t *testing.T) {
 	wantBody, _ := json.Marshal(d.Event)
 	if string(gotBody) != string(wantBody) {
 		t.Errorf("body = %s, want %s", gotBody, wantBody)
+	}
+}
+
+// TestWebhookMustacheTemplateRendered: a mustache action renders the body
+// from realm/device/trigger/event fields instead of the default envelope.
+func TestWebhookMustacheTemplateRendered(t *testing.T) {
+	var gotBody []byte
+	done := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotBody, _ = io.ReadAll(r.Body)
+		w.WriteHeader(http.StatusNoContent)
+		close(done)
+	}))
+	defer srv.Close()
+
+	x := newTestExecutor(t, ExecutorConfig{Workers: 1})
+	d := testDelivery(&Action{
+		Method: http.MethodPost, URL: srv.URL,
+		Template:     "{{realm}}/{{device_id}}/{{interface}}{{path}}={{value}}",
+		TemplateType: "mustache",
+	})
+	x.Enqueue(d)
+
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("webhook never received")
+	}
+	eventually(t, 1, func() float64 { return outcome(x, outcomeDelivered) })
+
+	const want = "testrealm/f0VMRgIBAQAAAAAAAAAAAA/com.ex.Sensors/v=1"
+	if string(gotBody) != want {
+		t.Errorf("body = %s, want %s", gotBody, want)
+	}
+}
+
+// TestWebhookMustacheTemplateMalformedFallsBack: an unclosed tag fails to
+// render and the delivery falls back to the default JSON envelope rather
+// than crashing the dispatcher.
+func TestWebhookMustacheTemplateMalformedFallsBack(t *testing.T) {
+	var gotBody []byte
+	done := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotBody, _ = io.ReadAll(r.Body)
+		w.WriteHeader(http.StatusNoContent)
+		close(done)
+	}))
+	defer srv.Close()
+
+	x := newTestExecutor(t, ExecutorConfig{Workers: 1})
+	d := testDelivery(&Action{
+		Method: http.MethodPost, URL: srv.URL,
+		Template:     "{{unclosed",
+		TemplateType: "mustache",
+	})
+	x.Enqueue(d)
+
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("webhook never received")
+	}
+	eventually(t, 1, func() float64 { return outcome(x, outcomeDelivered) })
+
+	wantBody, _ := json.Marshal(d.Event)
+	if string(gotBody) != string(wantBody) {
+		t.Errorf("body = %s, want default envelope %s", gotBody, wantBody)
 	}
 }
 

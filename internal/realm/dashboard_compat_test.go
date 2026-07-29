@@ -86,6 +86,16 @@ func TestDashboardCompat(t *testing.T) {
 		disc := &fakeDisconnecter{}
 		r.svc.WithDisconnecter(disc)
 
+		// Issue #21: deletion lifecycle events fire back-to-back around the
+		// synchronous store delete (started before, finished after).
+		var lifecycle []string
+		r.svc.OnDeletionStart = func(realmName, deviceID string, _ time.Time) {
+			lifecycle = append(lifecycle, "start:"+realmName+"/"+deviceID)
+		}
+		r.svc.OnDeletionFinish = func(realmName, deviceID string, _ time.Time) {
+			lifecycle = append(lifecycle, "finish:"+realmName+"/"+deviceID)
+		}
+
 		dev, err := deviceid.Random()
 		if err != nil {
 			t.Fatal(err)
@@ -115,6 +125,13 @@ func TestDashboardCompat(t *testing.T) {
 		if len(disc.kicked) != 1 || disc.kicked[0] != r.realm+"/"+dev.String() {
 			t.Errorf("kick calls = %v", disc.kicked)
 		}
+		wantLife := []string{
+			"start:" + r.realm + "/" + dev.String(),
+			"finish:" + r.realm + "/" + dev.String(),
+		}
+		if len(lifecycle) != 2 || lifecycle[0] != wantLife[0] || lifecycle[1] != wantLife[1] {
+			t.Errorf("deletion lifecycle = %v, want %v", lifecycle, wantLife)
+		}
 		if _, err := r.st.GetDevice(ctx, r.realmID, dev); err == nil {
 			t.Error("device row survived the delete")
 		}
@@ -123,6 +140,8 @@ func TestDashboardCompat(t *testing.T) {
 			t.Errorf("data survived the delete: %d rows, err %v", len(rows), err)
 		}
 		// Unknown and malformed IDs → the upstream device 404 envelope.
+		// Not-found delete still emits start+finish (lifecycle always closes).
+		lifecycle = nil
 		for _, path := range []string{"/devices/" + dev.String(), "/devices/not-an-id"} {
 			rec := r.req(t, http.MethodDelete, path, "", r.rmaToken)
 			if rec.Code != http.StatusNotFound {
@@ -131,6 +150,11 @@ func TestDashboardCompat(t *testing.T) {
 			if body := rec.Body.String(); body != `{"errors":{"detail":"Device not found"}}` {
 				t.Errorf("DELETE %s body = %s", path, body)
 			}
+		}
+		// Second delete of the known (now gone) device: parse OK → start+finish.
+		// Malformed ID never reaches the emit path.
+		if len(lifecycle) != 2 || lifecycle[0] != wantLife[0] || lifecycle[1] != wantLife[1] {
+			t.Errorf("not-found deletion lifecycle = %v, want %v", lifecycle, wantLife)
 		}
 	})
 }

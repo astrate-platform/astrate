@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"log/slog"
 	"sort"
+	"time"
 
 	"github.com/astrate-platform/astrate/internal/engine/triggers"
 	"github.com/astrate-platform/astrate/internal/store"
@@ -45,12 +46,20 @@ type Disconnecter interface {
 	DisconnectDevice(realm string, id deviceid.ID)
 }
 
+// OnDeletionFunc is called around a synchronous device delete so the engine
+// can emit device_deletion_started / device_deletion_finished (issue #21).
+// The callback receives the realm name, encoded device ID, and the instant.
+type OnDeletionFunc func(realmName, deviceID string, at time.Time)
+
 // Service implements the Realm Management business logic over the store.
 type Service struct {
 	st   *store.Store
 	inv  Invalidator
 	disc Disconnecter
-	log  *slog.Logger
+	// OnDeletionStart / OnDeletionFinish bookend DeleteDevice (nil-safe).
+	OnDeletionStart  OnDeletionFunc
+	OnDeletionFinish OnDeletionFunc
+	log              *slog.Logger
 }
 
 // NewService builds the service. inv may be nil (e.g. management-only
@@ -72,7 +81,11 @@ func (s *Service) WithDisconnecter(d Disconnecter) *Service {
 // DeleteDevice synchronously removes a device and all its data (upstream
 // starts an async deletion with a transient deletion_in_progress state;
 // Astrate is single-process and deletes in one transaction —
-// docs/COMPATIBILITY.md).
+// docs/COMPATIBILITY.md). Emits device_deletion_started immediately before
+// the store delete and device_deletion_finished immediately after (issue
+// #21: back-to-back around the sync path so imported trigger configs still
+// fire). finished is emitted even when the store delete fails, so a started
+// lifecycle always closes.
 func (s *Service) DeleteDevice(ctx context.Context, realm, deviceID string) error {
 	rid, err := s.realmID(ctx, realm)
 	if err != nil {
@@ -85,7 +98,15 @@ func (s *Service) DeleteDevice(ctx context.Context, realm, deviceID string) erro
 	if s.disc != nil {
 		s.disc.DisconnectDevice(realm, id)
 	}
-	return s.st.DeleteDevice(ctx, rid, id)
+	at := time.Now().UTC()
+	if s.OnDeletionStart != nil {
+		s.OnDeletionStart(realm, deviceID, at)
+	}
+	err = s.st.DeleteDevice(ctx, rid, id)
+	if s.OnDeletionFinish != nil {
+		s.OnDeletionFinish(realm, deviceID, time.Now().UTC())
+	}
+	return err
 }
 
 // realmID resolves a realm name to its id; an unknown realm surfaces

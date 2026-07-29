@@ -242,6 +242,21 @@ func TestMatchDevice(t *testing.T) {
 			ev: DeviceEvent{DeviceID: "x", On: OnDeviceConnected}, want: true},
 		{name: "connected ignores disconnects", trigger: connected,
 			ev: DeviceEvent{DeviceID: "x", On: OnDeviceDisconnected}, want: false},
+		{name: "deletion_started matches its on", trigger: compile(t, `{
+			"name": "del", "action": {"http_post_url": "https://x"},
+			"simple_triggers": [{"type": "device_trigger", "on": "device_deletion_started"}]
+		}`),
+			ev: DeviceEvent{DeviceID: "x", On: OnDeviceDeletionStarted}, want: true},
+		{name: "deletion_finished matches its on", trigger: compile(t, `{
+			"name": "del", "action": {"http_post_url": "https://x"},
+			"simple_triggers": [{"type": "device_trigger", "on": "device_deletion_finished"}]
+		}`),
+			ev: DeviceEvent{DeviceID: "x", On: OnDeviceDeletionFinished}, want: true},
+		{name: "deletion_started ignores finished", trigger: compile(t, `{
+			"name": "del", "action": {"http_post_url": "https://x"},
+			"simple_triggers": [{"type": "device_trigger", "on": "device_deletion_started"}]
+		}`),
+			ev: DeviceEvent{DeviceID: "x", On: OnDeviceDeletionFinished}, want: false},
 		{name: "device filter matches", trigger: oneDevice,
 			ev: DeviceEvent{DeviceID: "f0VMRgIBAQAAAAAAAAAAAA", On: OnDeviceDisconnected}, want: true},
 		{name: "device filter rejects others", trigger: oneDevice,
@@ -394,8 +409,20 @@ func TestCompileActions(t *testing.T) {
 			"template_type": "mustache", "template": "{{ value }}"},
 		"simple_triggers": [{"type": "device_trigger", "on": "device_connected"}]
 	}`)
-	if len(templated.Unsupported) == 0 {
-		t.Error("mustache template accepted silently")
+	if len(templated.Unsupported) != 0 {
+		t.Errorf("mustache template should render, not be marked unsupported: %v", templated.Unsupported)
+	}
+	if templated.Action.Template != "{{ value }}" {
+		t.Errorf("template not carried through: %+v", templated.Action)
+	}
+
+	unknownTemplate := compile(t, `{
+		"action": {"http_url": "https://example.com", "http_method": "post",
+			"template_type": "jinja2", "template": "{{ value }}"},
+		"simple_triggers": [{"type": "device_trigger", "on": "device_connected"}]
+	}`)
+	if len(unknownTemplate.Unsupported) == 0 {
+		t.Error("non-mustache template_type accepted silently")
 	}
 
 	headers := compile(t, `{

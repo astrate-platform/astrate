@@ -38,6 +38,8 @@ func TestEventGoldens(t *testing.T) {
 		{name: "device_connected.json", body: NewDeviceConnectedEvent("203.0.113.89")},
 		{name: "device_registered.json", body: NewDeviceRegisteredEvent()},
 		{name: "device_disconnected.json", body: NewDeviceDisconnectedEvent()},
+		{name: "device_deletion_started.json", body: NewDeviceDeletionStartedEvent()},
+		{name: "device_deletion_finished.json", body: NewDeviceDeletionFinishedEvent()},
 		{name: "device_error.json", body: NewDeviceErrorEvent(
 			"interface_not_in_introspection", map[string]string{"detail": "no introspected interface matches x"})},
 		{name: "device_error_no_metadata.json", body: NewDeviceErrorEvent("empty_cache_error", nil)},

@@ -1,6 +1,7 @@
 package flow
 
 import (
+	"context"
 	"fmt"
 )
 
@@ -9,8 +10,7 @@ import (
 // sequentially per message); external concurrency safety is the Router's job.
 //
 // Three roles exist:
-//   - Source: produces messages from external events (Process receives nil, may
-//     return multiple messages).
+//   - Source: produces messages from external events (see the Source interface).
 //   - Transform: consumes one message and emits zero or more transformed messages.
 //   - Sink: consumes messages for external output (return value is ignored).
 type Block interface {
@@ -20,6 +20,24 @@ type Block interface {
 	Process(msg *FlowMessage) ([]*FlowMessage, error)
 	// Name returns a human-readable label for metrics and logging.
 	Name() string
+}
+
+// Source is a Block that produces messages from an external system without an
+// input message. The flow source pump calls Emit on every Source in the graph
+// and submits the results into the router; BlockGraph.Run skips Source stages
+// so a submitted message is not re-consumed by the producer.
+type Source interface {
+	Block
+	// Emit returns newly available messages. Implementations may block until
+	// at least one message is ready or ctx is cancelled.
+	Emit(ctx context.Context) ([]*FlowMessage, error)
+}
+
+// Stopper is optionally implemented by Blocks that own resources (bus
+// subscriptions, goroutines, file handles). Manager.StopFlow calls Stop on
+// every Stopper after the source pump exits and the router drains.
+type Stopper interface {
+	Stop()
 }
 
 // SourceFunc is a function that produces messages from external events. It
@@ -34,7 +52,7 @@ type TransformFunc func(msg *FlowMessage) ([]*FlowMessage, error)
 // by the pipeline.
 type SinkFunc func(msg *FlowMessage) error
 
-// sourceBlock adapts a SourceFunc to the Block interface.
+// sourceBlock adapts a SourceFunc to the Block and Source interfaces.
 type sourceBlock struct {
 	fn   SourceFunc
 	name string
@@ -44,9 +62,13 @@ func (s *sourceBlock) Process(_ *FlowMessage) ([]*FlowMessage, error) {
 	return s.fn()
 }
 
+func (s *sourceBlock) Emit(_ context.Context) ([]*FlowMessage, error) {
+	return s.fn()
+}
+
 func (s *sourceBlock) Name() string { return s.name }
 
-// NewSourceBlock wraps fn as a Block with the given name.
+// NewSourceBlock wraps fn as a Source Block with the given name.
 func NewSourceBlock(name string, fn SourceFunc) Block {
 	return &sourceBlock{fn: fn, name: name}
 }

@@ -99,6 +99,7 @@ choices are pinned here so Phase 3 never has to re-litigate them.
 | TOML config | `github.com/BurntSushi/toml` | §5.1 |
 | Test containers | `github.com/testcontainers/testcontainers-go` (+ postgres module), image `timescale/timescaledb:latest-pg16` | §5.4 parity with production image |
 | Test MQTT client | `github.com/eclipse/paho.mqtt.golang` (test-only) | Same client family the official Go SDK uses |
+| Mustache templates | `github.com/cbroglie/mustache` | Pure Go, zero transitive deps; renders `template_type: "mustache"` trigger HTTP action bodies (`060-triggers.md:516-543`) — additive, internal to action-dispatch, doesn't touch the wire protocol or SDK surface (Giulio, 2026-07-27) |
 
 ### 1.2 Files
 

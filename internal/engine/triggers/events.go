@@ -111,6 +111,28 @@ func NewDeviceDisconnectedEvent() DeviceDisconnectedEvent {
 	return DeviceDisconnectedEvent{Type: OnDeviceDisconnected}
 }
 
+// DeviceDeletionStartedEvent is the device_deletion_started event body.
+type DeviceDeletionStartedEvent struct {
+	// Type is always "device_deletion_started".
+	Type string `json:"type"`
+}
+
+// NewDeviceDeletionStartedEvent builds a device_deletion_started event body.
+func NewDeviceDeletionStartedEvent() DeviceDeletionStartedEvent {
+	return DeviceDeletionStartedEvent{Type: OnDeviceDeletionStarted}
+}
+
+// DeviceDeletionFinishedEvent is the device_deletion_finished event body.
+type DeviceDeletionFinishedEvent struct {
+	// Type is always "device_deletion_finished".
+	Type string `json:"type"`
+}
+
+// NewDeviceDeletionFinishedEvent builds a device_deletion_finished event body.
+func NewDeviceDeletionFinishedEvent() DeviceDeletionFinishedEvent {
+	return DeviceDeletionFinishedEvent{Type: OnDeviceDeletionFinished}
+}
+
 // DeviceErrorEvent is the device_error event body.
 type DeviceErrorEvent struct {
 	// Type is always "device_error".
