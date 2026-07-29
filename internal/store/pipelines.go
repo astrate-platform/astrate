@@ -57,6 +57,9 @@ func validatePipelineGraph(definition []byte) error {
 		if b.Name == "" {
 			return fmt.Errorf("store: pipeline has a block with empty name")
 		}
+		if names[b.Name] {
+			return fmt.Errorf("store: pipeline has duplicate block name %q", b.Name)
+		}
 		names[b.Name] = true
 	}
 

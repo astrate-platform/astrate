@@ -36,3 +36,14 @@ func TestValidatePipelineGraph_InvalidBlockRef(t *testing.T) {
 		t.Errorf("validatePipelineGraph(invalid ref) = %v, want a non-cyclic error", err)
 	}
 }
+
+func TestValidatePipelineGraph_DuplicateBlockName(t *testing.T) {
+	def := []byte(`{
+		"blocks": [{"name": "a"}, {"name": "a"}],
+		"connections": []
+	}`)
+	err := validatePipelineGraph(def)
+	if err == nil || errors.Is(err, ErrPipelineCyclic) {
+		t.Errorf("validatePipelineGraph(duplicate name) = %v, want a non-cyclic error", err)
+	}
+}
