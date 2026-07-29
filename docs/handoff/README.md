@@ -15,14 +15,12 @@ Start every documentation session by reading:
 ### General project work (preferred start for non-docs sessions)
 
 - **`docs/handoff/session-2026-07-29-flow-factory-handoff.md`** — **primary next-session
-  prompt for product work.** Flow v2.0 is **partially done**:
-  - **On `main` (committed):** source pump / Stop on teardown (#37 lineage), pipeline
-    store, AstarteSource, runtime core through PR merges up to `bb67a95` (+ pokemon #38).
-  - **In the worktree (uncommitted after stash pop 2026-07-29):** block factory,
-    built-in catalog (`astarte_source` / `null_sink` / `log_sink`), `cmd/astrate`
-    wiring, `internal/flowapi` (`/flow/v1/...`). Do **not** discard; commit when ready.
-  - **Still open after that WIP lands:** transform block(s), flows-table decision,
-    parity audit; Legion/#20, mule items, etc.
+  prompt for product work.** Flow v2.0 is **mostly wired**:
+  - **On `main`:** runtime, source pump, AstarteSource, pipeline store, **block factory**,
+    catalog (`astarte_source` / `filter` / `map` / sinks), process wiring, `/flow/v1` API,
+    pokemon example (#38).
+  - **Still open:** flows-table decision (for-giulio), parity audit; Legion/#20, mule items.
+  - Local commits may be **ahead of origin** — push only with confirmation.
 
 - `docs/handoff/session-2026-07-29-handoff.md` — older (source pump only); superseded
   for “what next” by the flow-factory handoff.
@@ -54,8 +52,8 @@ Current status:
 - Docs on `main`: 22 narrative pages, Swagger UI, MkDocs config, GitHub Actions workflow, OpenAPI specs.
 - GitHub Pages enabled in repo Settings (source: GitHub Actions).
 - Live site: https://astrate-platform.github.io/astrate/
-- Platform code (M0–M9 lineage + Flow v2.0 pieces through source pump) is on `main`;
-  factory/API catalog work is local uncommitted WIP (see flow-factory handoff).
+- Platform code (M0–M9 lineage + Flow v2.0 through factory/catalog/API/transforms) is on
+  `main` (may need push; see flow-factory handoff).
 
 Phase 11 plan (docs, when chosen):
 

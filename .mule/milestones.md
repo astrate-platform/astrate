@@ -27,10 +27,11 @@ same wire-visible behaviour and operator-facing concepts (pipelines, blocks, nat
 containerised blocks) — not a port of the Elixir implementation. See
 `.mule/recipes/astarte-upstream.md`'s rule: port the idea, restated in Go, never the code.
 
-Status: **in progress** (not DONE). Core runtime pieces are on `main`; operator-facing
-wiring and a usable block catalog are still open. Refreshed 2026-07-29.
+Status: **in progress** (not DONE). Runtime, factory, catalog (incl. filter/map), process
+wiring, and `/flow/v1` API are on `main`. Remaining: flows-table decision + parity audit.
+Refreshed 2026-07-29.
 
-### Landed (on main as of 2026-07-29; factory/API in tree same day)
+### Landed (on main as of 2026-07-29)
 
 | Piece | Where | Notes |
 |---|---|---|
@@ -42,26 +43,24 @@ wiring and a usable block catalog are still open. Refreshed 2026-07-29.
 | Source pump + Stop on teardown | `internal/flow/flow.go` (#37) | pumps `Source.Emit` → router; `Stopper.Stop` after drain |
 | AstarteSource block | `internal/flow/blocks/astartesource` | bus → FlowMessage (#27) |
 | Pipeline store + migration | `internal/store/pipelines.go`, `000008_pipelines` | realm-scoped DAG JSON (#24) |
-| **Block factory + instantiate** | `internal/flow/factory.go` | `Registry`, `ParseDefinition`, topo order → `[]Block` |
-| **Built-in catalog (minimal)** | `internal/flow/blocks/catalog.go` | `astarte_source`, `null_sink`, `log_sink` |
-| **Process wiring** | `cmd/astrate/main.go` | shared `e.Bus()` + `flow.Manager`; shutdown drains flows |
-| **Operator HTTP API** | `internal/flowapi` | `/flow/v1/{realm}/pipelines` + `/flows` (a_rma) |
+| Block factory + instantiate | `internal/flow/factory.go` | `Registry`, `ParseDefinition`, topo order → `[]Block` |
+| Built-in catalog | `internal/flow/blocks/catalog.go` + `transform.go` | `astarte_source`, `filter`, `map`, `null_sink`, `log_sink` |
+| Process wiring | `cmd/astrate/main.go` | shared `e.Bus()` + `flow.Manager`; shutdown drains flows |
+| Operator HTTP API | `internal/flowapi` | `/flow/v1/{realm}/pipelines` + `/flows` (a_rma) |
 
 ### Remaining gaps (file / keep as `milestone-2.0` issues)
 
 Work these roughly in order. Escalate design questions to `.mule/for-giulio.md` rather than
 guessing wire shape.
 
-1. **Native block catalog (transforms)** — beyond source + sinks: at least one useful
-   transform operators can compose (filter/map). Containerised blocks are later unless a
-   client needs them for parity. (`null_sink` / `log_sink` already land the sink side.)
-2. **Flow runtime persistence (optional / decide)** — issue-25 sketched a `flows` table
+1. **Flow runtime persistence (optional / decide)** — issue-25 sketched a `flows` table
    (`000009`); only `pipelines` landed. Decide whether running-flow records need durable
    status or in-memory manager is enough for v2.0.
-3. **Parity audit** — walk astarte_flow's operator-visible concepts (pipelines, blocks,
+2. **Parity audit** — walk astarte_flow's operator-visible concepts (pipelines, blocks,
    flows, container blocks) against what Astrate exposes; file residual gaps or escalate
    "won't do for v2.0" decisions. Match upstream HTTP paths only if a real client needs them
-   (current surface is Astrate-native `/flow/v1/...`).
+   (current surface is Astrate-native `/flow/v1/...`). Containerised blocks later unless a
+   client needs them for parity.
 
 ### Explicitly out of this milestone (tracked elsewhere)
 

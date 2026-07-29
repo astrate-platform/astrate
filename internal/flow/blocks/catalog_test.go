@@ -11,7 +11,13 @@ import (
 
 func TestDefaultRegistry_Types(t *testing.T) {
 	reg := blocks.DefaultRegistry()
-	for _, want := range []string{blocks.TypeAstarteSource, blocks.TypeLogSink, blocks.TypeNullSink} {
+	for _, want := range []string{
+		blocks.TypeAstarteSource,
+		blocks.TypeFilter,
+		blocks.TypeMap,
+		blocks.TypeLogSink,
+		blocks.TypeNullSink,
+	} {
 		if !reg.Has(want) {
 			t.Errorf("missing %q", want)
 		}

@@ -16,14 +16,17 @@ const (
 	TypeAstarteSource = "astarte_source"
 	TypeNullSink      = "null_sink"
 	TypeLogSink       = "log_sink"
+	// TypeFilter and TypeMap are declared in transform.go.
 )
 
 // DefaultRegistry returns a registry with the minimum useful built-in set:
-// AstarteSource (bus → FlowMessage) plus null and log sinks so operators can
-// compose a complete source→sink pipeline before the wider catalog lands.
+// AstarteSource (bus → FlowMessage), filter/map transforms, and null/log sinks
+// so operators can compose a complete source→transform→sink pipeline.
 func DefaultRegistry() *flow.Registry {
 	r := flow.NewRegistry()
 	r.Register(TypeAstarteSource, AstarteSource)
+	r.Register(TypeFilter, Filter)
+	r.Register(TypeMap, Map)
 	r.Register(TypeNullSink, NullSink)
 	r.Register(TypeLogSink, LogSink)
 	return r
