@@ -112,6 +112,7 @@ python -m emulator_agent.main \
   --realm test \
   --device-id "$DEVICE_ID"
 # optional: --fps 60 (default) | --fps 0 for uncapped (high CPU)
+# default: --skip-intro (mash A/START past title); --no-skip-intro to disable
 ```
 
 Or via Makefile from `examples/pokemon-agent/`:
@@ -120,15 +121,16 @@ Or via Makefile from `examples/pokemon-agent/`:
 make run-emulator-rom DEVICE_ID="$DEVICE_ID" ROM="$ROM"
 ```
 
-Expected (verified 2026-07-29 on pyboy + insecure Astrate):
+Expected (verified 2026-07-29 on pyboy + insecure Astrate; intro skip added later):
 - Agent loads ROM, connects MQTT `:1883`, publishes introspection
-- AppEngine `GameState /state` samples every ~5 s (heartbeat) while on title
-  screen: `mapId=0`, `mapName=Pallet Town` (zeroed WRAM), `dialogText=""`
-  (zeros no longer decode as `????…`), `playerX/Y=0`, `inBattle=false`
+- With default `--skip-intro`, logs show mashing A/START then
+  `Intro skip complete` once WRAM leaves cold-boot zeros (or timeout ~180 s)
+- Early samples may still show title zeros; after intro skip, coords/dialog/party
+  should become meaningful without a save-state
 - Cold boot has empty party → no `PartyStatus` until in-game
 - Process CPU stays modest at default `--fps 60` (uncapped was ~full core)
-- Meaningful map/party values require progressing past the title/intro
-  (or loading a save state — not automated yet)
+- ControlCommand from AppEngine is queued on MQTT thread and applied on the
+  main loop (no `pyboy.tick` from the paho callback)
 
 **T4 — LLM Orchestrator with stub**
 ```sh
@@ -142,3 +144,18 @@ export POKEMON_OPENAI_API_KEY=<key>
 python -m llm_orchestrator.main
 ```
 Expected: ControlCommand events visible in Astrate; if emulator agent is also running, character moves.
+
+**T4 notes — API key via Big Pickle / opencode (not wired yet)**
+
+T4 was never run end-to-end in prior sessions (no `POKEMON_OPENAI_API_KEY` in
+the interactive environment). Preferred path for the next session that runs T4:
+
+- Use **Big Pickle via opencode** (mule / solo-mule workflow) for the long-running
+  orchestrator + emulator smoke, rather than burning the strong-model session on
+  watching ticks.
+- Put the OpenAI-compatible key only in the environment of that process
+  (`POKEMON_OPENAI_API_KEY` or whatever `llm_orchestrator` settings read) —
+  do **not** commit keys or paste them into handoff files.
+- Emulator agent should already be on T3 (`--insecure`, ROM, default `--skip-intro`)
+  so the orchestrator sees non-zero game state after intro.
+- App JWT must include the **channels** claim (`a_ch`) for the live stream path.

@@ -142,8 +142,8 @@ that exposes a direct API for reading/writing memory and injecting button presse
 | `emulator_agent/wram.py` | WRAM address constants and named read helpers |
 | `emulator_agent/state_decoder.py` | Converts raw bytes → structured `GameState` / `PartyStatus` dataclasses |
 | `emulator_agent/astrate_client.py` | MQTT client (paho-mqtt over mTLS); publishes telemetry; subscribes to `ControlCommand` |
-| `emulator_agent/input_executor.py` | Receives `ControlCommand`; deduplicates by `sequenceId`; calls pyboy joypad API |
-| `emulator_agent/main.py` | asyncio main loop; pyboy tick; stasis detection; shutdown handling |
+| `emulator_agent/input_executor.py` | Queues `ControlCommand` from MQTT; main loop drains + injects joypad; `sequenceId` dedup |
+| `emulator_agent/main.py` | asyncio main loop; owns every `pyboy.tick()`; intro auto-press; stasis; shutdown |
 
 **Tick rate:** 60 fps pyboy tick (CLI `--fps`, default 60; `0` = uncapped); WRAM
 snapshot + publish on every *changed* state (position, battle flag, or dialog text
@@ -318,14 +318,31 @@ active, it sets `stasis=true` in the next `GameState` publish. The Orchestrator
 recognises this flag and adjusts the LLM prompt to explicitly request a different
 movement direction.
 
-### 5.2 `sequenceId` deduplication
+### 5.2 Command queue (main loop owns ticks)
+
+MQTT callbacks run on paho’s background thread. They only call
+`InputExecutor.enqueue()` — never `pyboy.tick()` or `send_input`. Each main-loop
+frame does `before_tick()` → `pyboy.tick()` → `after_tick()` so hold-frames and
+releases stay single-threaded with the emulator.
+
+Local intro skip uses `enqueue_local()` (`_local=True`) and does **not** advance
+the MQTT `sequenceId` space.
+
+### 5.3 Intro auto-press (default for ROM mode)
+
+`--skip-intro` (default on; `--no-skip-intro` to disable) mashes A/START while
+WRAM still looks like cold boot (all-zero coords, empty party, no dialog). Stops
+when `looks_past_cold_boot()` is true or after a timeout (~180 s). Preferred over
+save-state loading for local smoke.
+
+### 5.4 `sequenceId` deduplication
 
 Every `ControlCommand` carries a monotonically increasing `sequenceId`. The
 `input_executor` maintains the last-executed ID in memory; commands with
 `sequenceId ≤ last_executed` are silently dropped. This prevents duplicate button
 presses caused by MQTT redelivery or network latency spikes.
 
-### 5.3 LLM timeout → no-op
+### 5.5 LLM timeout → no-op
 
 If the LLM does not respond within `LLM_TIMEOUT_SECONDS` (default: 5), the
 Orchestrator publishes a `ControlCommand` with `button="NONE"` and `holdFrames=0`.

@@ -35,6 +35,14 @@ STASIS_SECONDS = 15.0
 HEARTBEAT_INTERVAL = 5.0  # seconds between forced GameState publishes
 DEFAULT_FPS = 60          # DESIGN §3.1; 0 = uncapped (high CPU)
 
+# Auto-press through title / Oak intro until WRAM looks "in game".
+# Prefer this over loading a save-state (session preference).
+SKIP_INTRO_MAX_SECONDS = 180.0
+SKIP_INTRO_INTERVAL_FRAMES = 20   # press when idle, every N frames
+SKIP_INTRO_HOLD_FRAMES = 4
+# Cycle: mostly A (advance text / confirm), occasional START (title menu)
+_SKIP_INTRO_BUTTONS = ("A", "A", "A", "START")
+
 
 # ---------------------------------------------------------------------------
 # Configuration dataclass (populated from CLI args)
@@ -58,6 +66,8 @@ class AgentConfig:
     insecure: bool = False
     # Target emulator ticks per second (0 = uncapped). Default 60.
     fps: int = DEFAULT_FPS
+    # Mash A/START until past cold-boot zero WRAM (ROM mode; ignored with --stub).
+    skip_intro: bool = True
 
 
 # ---------------------------------------------------------------------------
@@ -105,6 +115,21 @@ class _StubPyboy:
         pass
 
 
+def looks_past_cold_boot(state: GameState) -> bool:
+    """Heuristic: WRAM is no longer the all-zero title/cold-boot pattern.
+
+    Pallet Town's mapId is 0, so map alone is useless. Non-zero player coords,
+    party, dialog, or battle mean the game has progressed past pure boot zeros.
+    """
+    return (
+        state.player_x != 0
+        or state.player_y != 0
+        or state.in_battle
+        or bool(state.dialog_text)
+        or len(state.party) > 0
+    )
+
+
 # ---------------------------------------------------------------------------
 # Main async run loop
 # ---------------------------------------------------------------------------
@@ -128,7 +153,8 @@ async def run(config: AgentConfig) -> None:
     # ----- Set up Astrate client and input executor -----
     client   = AstrateClient(config)
     executor = InputExecutor(pyboy if not config.stub else None)
-    client.set_command_callback(executor.execute)
+    # MQTT thread only enqueues; main loop drains + owns every pyboy.tick().
+    client.set_command_callback(executor.enqueue)
 
     await client.connect()
 
@@ -140,6 +166,11 @@ async def run(config: AgentConfig) -> None:
     running         = True
     frame_dt = (1.0 / config.fps) if config.fps > 0 else 0.0
     next_frame_at = time.monotonic()
+    frame_i = 0
+    skip_intro = bool(config.skip_intro and not config.stub)
+    intro_done = not skip_intro
+    intro_started_at = time.monotonic()
+    intro_press_i = 0
 
     def _shutdown(sig, frame):
         nonlocal running
@@ -153,13 +184,48 @@ async def run(config: AgentConfig) -> None:
         log.info("Emulator Agent running at %d fps. Press Ctrl-C to stop.", config.fps)
     else:
         log.info("Emulator Agent running uncapped. Press Ctrl-C to stop.")
+    if skip_intro:
+        log.info(
+            "Intro skip ON — mashing A/START until past cold boot (max %.0fs). "
+            "Use --no-skip-intro to disable.",
+            SKIP_INTRO_MAX_SECONDS,
+        )
 
     try:
         while running:
+            # ---- Intro auto-press (main thread only; yields to MQTT queue) ----
+            if not intro_done and not executor.busy:
+                now_intro = time.monotonic()
+                if (now_intro - intro_started_at) >= SKIP_INTRO_MAX_SECONDS:
+                    intro_done = True
+                    log.warning(
+                        "Intro skip timed out after %.0fs — stopping auto-press.",
+                        SKIP_INTRO_MAX_SECONDS,
+                    )
+                elif frame_i % SKIP_INTRO_INTERVAL_FRAMES == 0:
+                    button = _SKIP_INTRO_BUTTONS[
+                        intro_press_i % len(_SKIP_INTRO_BUTTONS)
+                    ]
+                    if executor.enqueue_local(button, SKIP_INTRO_HOLD_FRAMES):
+                        intro_press_i += 1
+
+            # MQTT/local presses applied here; main loop owns all ticks.
+            executor.before_tick()
             pyboy.tick()
+            executor.after_tick()
+            frame_i += 1
 
             raw = decode_state(pyboy)
             now = time.monotonic()
+
+            if not intro_done and looks_past_cold_boot(raw):
+                intro_done = True
+                log.info(
+                    "Intro skip complete — past cold boot "
+                    "(map=%s pos=(%d,%d) party=%d dialog=%r).",
+                    raw.map_name, raw.player_x, raw.player_y,
+                    len(raw.party), (raw.dialog_text[:20] if raw.dialog_text else ""),
+                )
 
             # ---- Stasis detection (time-based, overworld + no dialog) ----
             stationary = (
@@ -261,6 +327,13 @@ def _parse_args() -> AgentConfig:
                    help="Override MQTT broker port (default: 8883 mTLS / 1883 --insecure)")
     p.add_argument("--fps", type=int, default=DEFAULT_FPS,
                    help=f"Emulator tick rate (default: {DEFAULT_FPS}; 0 = uncapped)")
+    p.add_argument(
+        "--skip-intro",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Mash A/START past title/intro until WRAM looks in-game "
+             "(default: on for ROM; ignored with --stub). Use --no-skip-intro to disable.",
+    )
     args = p.parse_args()
     if args.fps < 0:
         p.error("--fps must be >= 0")
@@ -277,6 +350,7 @@ def _parse_args() -> AgentConfig:
         mqtt_port         = args.mqtt_port,
         insecure          = args.insecure,
         fps               = args.fps,
+        skip_intro        = args.skip_intro,
     )
 
 

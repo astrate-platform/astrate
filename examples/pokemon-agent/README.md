@@ -32,4 +32,8 @@ make -C examples/pokemon-agent run-emulator-rom \
   ROM="/path/to/Pokemon Red.gb"
 ```
 
+Default `--skip-intro` mashes A/START past the title screen (no save-state).
+Use `--no-skip-intro` on the agent CLI to disable. ControlCommands are queued
+from MQTT and applied on the main loop only.
+
 Architecture and ADRs: [docs/DESIGN.md](docs/DESIGN.md), [docs/DECISIONS.md](docs/DECISIONS.md).

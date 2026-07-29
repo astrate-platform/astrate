@@ -1,4 +1,4 @@
-# Handoff Prompt — Pokémon Agent Next Session (post-P5)
+# Handoff Prompt — Pokémon Agent Next Session (post queue + intro skip)
 
 Copy-paste this prompt into a new session to continue work on the Pokémon Red autonomous agent.
 
@@ -7,10 +7,10 @@ I'm working on the `feat/pokemon-agent` branch of ~/astrate — an autonomous Po
 agent that connects a Game Boy emulator (pyboy) to an LLM via the Astrate IoT platform.
 
 Before doing anything, read:
-  - ~/astrate/docs/handoff/pokemon-agent-memory.md   ← session summary, P0–P5 results, risks
-  - ~/astrate/examples/pokemon-agent/docs/DESIGN.md  ← architecture (v0.2)
+  - ~/astrate/docs/handoff/pokemon-agent-memory.md   ← session summary + remaining work
+  - ~/astrate/examples/pokemon-agent/docs/DESIGN.md  ← architecture (v0.2; §5.2–5.4 queue/intro)
   - ~/astrate/examples/pokemon-agent/docs/DECISIONS.md ← 10 ADRs
-  - ~/astrate/examples/pokemon-agent/docs/TESTING.md ← T0–T4 smoke steps (updated for --insecure + T3 ROM)
+  - ~/astrate/examples/pokemon-agent/docs/TESTING.md ← T0–T4 (T4 notes: Big Pickle / opencode)
 
 Branch: feat/pokemon-agent
 
@@ -24,28 +24,29 @@ Architecture (agreed, do NOT re-discuss):
   pyboy (in-process) ↔ Emulator Agent (Python) ←MQTT→ Astrate ←WS/HTTP→ LLM Orchestrator
   No AtomVM. No TCP bridge. Two services. Astrate is the bus.
   Local smoke uses --insecure (plaintext :1883); production uses mTLS :8883.
+  Main loop owns every pyboy.tick(); MQTT only InputExecutor.enqueue().
+  Default --skip-intro mashes A/START past title (not save-state).
 
-P0 DONE: App API stream/publish paths (llm-orchestrator client).
-P1 DONE: unit tests green.
-P2 DONE: WRAM verified (DIALOG $CF4B, maxHP@+34).
-P3 DONE: live smoke T1+T2 — interfaces install, stub agent, GameState+PartyStatus in AppEngine.
-P4 DONE: ROM integration — pyboy + real ROM + insecure Astrate; 60 fps pacing; dialog 0x00;
-         stasis 15s; ControlCommand START delivered via AppEngine POST.
-P5 DONE: MkDocs Examples → Pokémon Agent nav; docs/Makefile sync copies DESIGN →
-         docs/site/pokemon-agent.md; index.md link. Run `cd docs && make sync` after DESIGN edits.
+P0–P5 DONE (see memory). Also DONE this branch: command queue + intro auto-press.
 
 IMPORTANT: the branch working tree may contain unrelated WIP (pipelines, broker ACL,
 triggers). Only edit/commit files under examples/pokemon-agent/ and docs/handoff/
 (plus docs/mkdocs.yml / docs/Makefile / docs/site/ when touching site docs)
 unless the user explicitly asks otherwise.
 
-Current task (pick the first the user wants; all numbered P0–P5 are complete):
+Current task (pick what the user wants; numbered phases are complete):
 
-  Optional:
-  - T4 LLM orchestrator when API key is available
-  - Save-state / skip title so map/party telemetry is real
-  - Queue ControlCommand ticks on the main loop (avoid MQTT-thread pyboy.tick race)
-  - Fill remaining pass unit tests
+  Preferred next:
+  - T4 LLM orchestrator end-to-end — run via **Big Pickle / opencode** (mule),
+    not a long interactive strong-model watch. Put POKEMON_OPENAI_API_KEY only
+    in that process env; never commit keys. App JWT needs channels claim a_ch.
+    Emulator: T3 ROM + --insecure + default --skip-intro first.
+
+  Also optional:
+  - Fill remaining pass unit tests (orchestrator action_translator / context_builder,
+    richer state_decoder fixtures)
+  - Live-validate intro skip + mid-dialog $CF4B after intro on real ROM
+  - After DESIGN edits: cd docs && make sync  (site/pokemon-agent.md)
 
 ROM path (do NOT commit the ROM):
   /Users/atsetilam/Downloads/Pokemon - Red Version (UE)[!]/Pokemon Red.gb
