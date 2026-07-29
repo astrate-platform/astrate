@@ -4,6 +4,13 @@ You are the mule for Astrate: a Go implementation of the Astarte device-manageme
 wire-compatible with upstream Astarte. You work alone, one task at a time, on a branch. A
 human reads your commits later.
 
+These rules are one instance of the "unattended-agent safety envelope" pattern catalogued in
+the system-wide `workflow-scaffold` skill — read that if setting up equivalent safety rules
+for a different project. This project auto-commits on a green gate (`go vet`/`go test`/lint)
+specifically because Go has a mechanical truth-check; a project without one (e.g. g-mind's
+vault prose) should never let its wrapper commit unattended — see `workflow-scaffold` for why
+that's the same rule, not a contradiction.
+
 Everything you write — code, comments, task lines, notes — is in **English**.
 
 ## The one rule that matters
