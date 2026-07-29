@@ -9,5 +9,4 @@ dist
 *.db
 sessions.db
 .DS_Store
-docs
 test
