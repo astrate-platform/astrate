@@ -309,7 +309,10 @@ func mountAPIs(cfg config.Config, st *store.Store, e *engine.Engine, b *broker.B
 	}
 	hkSvc := housekeeping.NewService(st, sealer, b, log)
 	housekeeping.NewAPI(hkSvc, mw, hkKeys).Mount(mux)
-	realm.NewAPI(realm.NewService(st, e, log).WithDisconnecter(b), mw).Mount(mux)
+	realmSvc := realm.NewService(st, e, log).WithDisconnecter(b)
+	realmSvc.OnDeletionStart = e.HandleDeviceDeletionStarted
+	realmSvc.OnDeletionFinish = e.HandleDeviceDeletionFinished
+	realm.NewAPI(realmSvc, mw).Mount(mux)
 	appengine.NewAPI(appengine.NewService(st, e, log), mw).Mount(mux)
 	apstream.NewAPI(e.Bus(), mw).Mount(mux)
 	// Phoenix Channels socket (phoenix.js V2), alongside the Astrate-native

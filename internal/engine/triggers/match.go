@@ -46,6 +46,12 @@ const (
 	OnDeviceConnected = "device_connected"
 	// OnDeviceDisconnected fires when a device connection ends.
 	OnDeviceDisconnected = "device_disconnected"
+	// OnDeviceDeletionStarted fires immediately before a device is deleted
+	// (upstream: start of async deletion; Astrate: before the sync delete).
+	OnDeviceDeletionStarted = "device_deletion_started"
+	// OnDeviceDeletionFinished fires immediately after a device is deleted
+	// (upstream: end of async deletion; Astrate: after the sync delete).
+	OnDeviceDeletionFinished = "device_deletion_finished"
 	// OnDeviceEmptyCacheReceived fires on control/emptyCache (accepted, not
 	// evaluated in v1: upstream defines no SimpleEvent variant for it).
 	OnDeviceEmptyCacheReceived = "device_empty_cache_received"
@@ -87,6 +93,8 @@ var deviceOns = map[string]bool{
 	OnDeviceRegistered:         true,
 	OnDeviceConnected:          true,
 	OnDeviceDisconnected:       true,
+	OnDeviceDeletionStarted:    true,
+	OnDeviceDeletionFinished:   true,
 	OnDeviceEmptyCacheReceived: false,
 	OnDeviceError:              true,
 	OnIncomingIntrospection:    true,

@@ -50,6 +50,7 @@ func TestCheckACLMatrix(t *testing.T) {
 		{"pub interface with empty path", base + "/com.ex.DeviceData/", true, false},
 		{"pub control consumer properties", base + "/control/consumer/properties", true, false},
 		{"pub control unknown", base + "/control/selfDestruct", true, false},
+		{"pub control keyAgreement", base + "/control/keyAgreement", true, false},
 		{"pub control prefix only", base + "/control", true, false},
 		{"pub bare realm", "test", true, false},
 		{"pub empty topic", "", true, false},

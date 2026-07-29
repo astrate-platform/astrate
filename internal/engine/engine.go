@@ -300,6 +300,40 @@ func (e *Engine) HandleDeviceRegistered(realmName string, hwID string, at time.T
 	})
 }
 
+// HandleDeviceDeletionStarted is called by the realm service immediately
+// before a synchronous device delete. It fires device_deletion_started
+// triggers and publishes on the live bus (issue #21; upstream wraps async
+// deletion with the same pair of events).
+func (e *Engine) HandleDeviceDeletionStarted(realmName string, hwID string, at time.Time) {
+	e.handleDeviceDeletion(realmName, hwID, at,
+		triggers.OnDeviceDeletionStarted, stream.KindDeviceDeletionStarted,
+		triggers.NewDeviceDeletionStartedEvent())
+}
+
+// HandleDeviceDeletionFinished is called by the realm service immediately
+// after a synchronous device delete completes (success or failure after the
+// delete was attempted).
+func (e *Engine) HandleDeviceDeletionFinished(realmName string, hwID string, at time.Time) {
+	e.handleDeviceDeletion(realmName, hwID, at,
+		triggers.OnDeviceDeletionFinished, stream.KindDeviceDeletionFinished,
+		triggers.NewDeviceDeletionFinishedEvent())
+}
+
+func (e *Engine) handleDeviceDeletion(realmName, hwID string, at time.Time, on, kind string, body any) {
+	rs := e.schemas.realm(realmName)
+	if rs == nil {
+		return
+	}
+	id, err := deviceid.Parse(hwID)
+	if err != nil {
+		return
+	}
+	e.fireDevice(rs, id, at, triggers.DeviceEvent{DeviceID: hwID, On: on}, body)
+	e.bus.Publish(stream.Event{
+		Kind: kind, Realm: rs.name, DeviceID: hwID, Timestamp: at,
+	})
+}
+
 // eventValue renders a decoded payload value into its canonical
 // JSON-friendly form for trigger events and the live bus; nil stays nil
 // (property unset renders as JSON null, upstream parity).

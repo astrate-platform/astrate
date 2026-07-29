@@ -24,6 +24,12 @@ const (
 	KindDeviceConnected = "device_connected"
 	// KindDeviceDisconnected is a device disconnection.
 	KindDeviceDisconnected = "device_disconnected"
+	// KindDeviceDeletionStarted is emitted immediately before a synchronous
+	// device delete (upstream fires it at the start of async deletion).
+	KindDeviceDeletionStarted = "device_deletion_started"
+	// KindDeviceDeletionFinished is emitted immediately after a synchronous
+	// device delete (upstream fires it when async deletion completes).
+	KindDeviceDeletionFinished = "device_deletion_finished"
 	// KindDeviceError is a rejected device message (docs/DESIGN.md §2.6
 	// "failures are never silent"). Unlike the trigger path, it is published
 	// whether or not the realm declares any trigger.
