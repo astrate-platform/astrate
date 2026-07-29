@@ -34,6 +34,9 @@ import (
 	"github.com/astrate-platform/astrate/internal/engine"
 	"github.com/astrate-platform/astrate/internal/engine/forward"
 	"github.com/astrate-platform/astrate/internal/engine/triggers"
+	"github.com/astrate-platform/astrate/internal/flow"
+	"github.com/astrate-platform/astrate/internal/flow/blocks"
+	"github.com/astrate-platform/astrate/internal/flowapi"
 	"github.com/astrate-platform/astrate/internal/housekeeping"
 	"github.com/astrate-platform/astrate/internal/httpx"
 	"github.com/astrate-platform/astrate/internal/observability"
@@ -83,8 +86,8 @@ func main() {
 }
 
 // run assembles and serves the whole stack until ctx is cancelled, then drains
-// it in the §5.3 order: HTTP → broker → engine → store. It is the in-process
-// entry point the boot tests drive.
+// it in the §5.3 order: HTTP → broker → flow manager → engine → store. It is
+// the in-process entry point the boot tests drive.
 func run(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	st, err := store.New(ctx, cfg.Database.DSN)
 	if err != nil {
@@ -124,6 +127,11 @@ func run(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 		return fmt.Errorf("engine: %w", err)
 	}
 
+	// Flow runtime shares the engine's live bus so AstarteSource blocks see
+	// the same device events as the stream socket (v2.0 process wiring).
+	flowMgr := flow.NewManager()
+	flowSvc := flowapi.NewService(st, flowMgr, blocks.DefaultRegistry(), e.Bus(), log)
+
 	b, err := newBroker(ctx, cfg, st, e, log)
 	if err != nil {
 		return fmt.Errorf("broker: %w", err)
@@ -138,15 +146,15 @@ func run(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 		return fmt.Errorf("starting broker: %w", err)
 	}
 
-	handler, hkSvc, err := mountAPIs(cfg, st, e, b, sealer, metrics, log)
+	handler, hkSvc, err := mountAPIs(cfg, st, e, b, sealer, metrics, flowSvc, log)
 	if err != nil {
-		shutdown(nil, b, e, log)
+		shutdown(nil, b, flowMgr, e, log)
 		return err
 	}
 
 	if cfg.Realm.Name != "" {
 		if err := autoProvisionRealm(ctx, st, hkSvc, cfg, log); err != nil {
-			shutdown(nil, b, e, log)
+			shutdown(nil, b, flowMgr, e, log)
 			return err
 		}
 	}
@@ -166,11 +174,11 @@ func run(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	case <-ctx.Done():
 		log.Info("shutdown signal received")
 	case err := <-serveErr:
-		shutdown(nil, b, e, log)
+		shutdown(nil, b, flowMgr, e, log)
 		return fmt.Errorf("http server: %w", err)
 	}
 
-	shutdown(srv, b, e, log)
+	shutdown(srv, b, flowMgr, e, log)
 	<-serveErr // ListenAndServe returns http.ErrServerClosed after Shutdown
 	return nil
 }
@@ -280,7 +288,7 @@ func selfSignedDevCert() (tls.Certificate, error) {
 // mountAPIs builds the HTTP handler carrying every REST surface plus the
 // observability endpoints (wrapped in CORS when configured), and returns the
 // housekeeping service for auto-provisioning.
-func mountAPIs(cfg config.Config, st *store.Store, e *engine.Engine, b *broker.Broker, sealer *store.KeySealer, metrics *observability.Metrics, log *slog.Logger) (http.Handler, *housekeeping.Service, error) {
+func mountAPIs(cfg config.Config, st *store.Store, e *engine.Engine, b *broker.Broker, sealer *store.KeySealer, metrics *observability.Metrics, flowSvc *flowapi.Service, log *slog.Logger) (http.Handler, *housekeeping.Service, error) {
 	mw := auth.NewMiddleware(st)
 	mux := http.NewServeMux()
 
@@ -318,6 +326,8 @@ func mountAPIs(cfg config.Config, st *store.Store, e *engine.Engine, b *broker.B
 	// Phoenix Channels socket (phoenix.js V2), alongside the Astrate-native
 	// socket above: two protocols, one bus.
 	channels.NewAPI(e.Bus(), st).Mount(mux)
+	// Flow operator API: pipelines CRUD + start/stop/status (v2.0).
+	flowapi.NewAPI(flowSvc, mw).Mount(mux)
 
 	// Upstream-parity per-service health endpoints (the dashboard's API
 	// status indicators poll them).
@@ -391,8 +401,9 @@ func autoProvisionRealm(ctx context.Context, st *store.Store, hk *housekeeping.S
 }
 
 // shutdown drains the stack in the §5.3 order. srv may be nil on a startup
-// error before the HTTP server began serving.
-func shutdown(srv *http.Server, b *broker.Broker, e *engine.Engine, log *slog.Logger) {
+// error before the HTTP server began serving. flowMgr may be nil when Flow
+// was never wired (should not happen in run).
+func shutdown(srv *http.Server, b *broker.Broker, flowMgr *flow.Manager, e *engine.Engine, log *slog.Logger) {
 	sctx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 	defer cancel()
 
@@ -405,6 +416,12 @@ func shutdown(srv *http.Server, b *broker.Broker, e *engine.Engine, log *slog.Lo
 	log.Info("stopping broker")
 	if err := b.Close(); err != nil {
 		log.Warn("broker close", "error", err)
+	}
+	if flowMgr != nil {
+		log.Info("stopping flows")
+		if err := flowMgr.Shutdown(sctx); err != nil {
+			log.Warn("flow shutdown", "error", err)
+		}
 	}
 	drainEngine(e, log)
 	log.Info("shutdown complete")

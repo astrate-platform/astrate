@@ -1,5 +1,13 @@
 # Handoff — after #37 source pump + milestones refresh (2026-07-29)
 
+> **Superseded for “what next”.** Prefer
+> `docs/handoff/session-2026-07-29-flow-factory-handoff.md` and
+> `docs/handoff/README.md`.
+>
+> Updates since this file was written: source pump is on `main`; Flow
+> **factory + catalog + `/flow/v1` + cmd wiring** live as **uncommitted worktree
+> WIP** (stash popped 2026-07-29); **pokemon agent completed** via PR #38.
+
 Use this prompt to continue general Astrate work (not a docs-only phase).
 
 ````text

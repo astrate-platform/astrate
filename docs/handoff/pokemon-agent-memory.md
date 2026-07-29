@@ -1,5 +1,13 @@
 # Pokemon Agent — Session Memory (2026-07-29, session 11)
 
+## Merge status (platform)
+
+- **PR #38** merged to `main` 2026-07-29 (`bb67a95`).
+- Project line treated as **complete** for Astrate product prioritization; further
+  pokemon work is optional polish only.
+- Flow work continues separately: committed core on main + uncommitted factory/API
+  WIP in the worktree (see `session-2026-07-29-flow-factory-handoff.md`).
+
 ## What happened this session
 
 ### Goal

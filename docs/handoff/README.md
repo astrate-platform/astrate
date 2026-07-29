@@ -14,9 +14,29 @@ Start every documentation session by reading:
 
 ### General project work (preferred start for non-docs sessions)
 
-- **`docs/handoff/session-2026-07-29-handoff.md`** — next-session prompt: #37 source
-  pump + milestones refresh done in tree (uncommitted); next Flow gaps are block
-  factory, process wiring, HTTP API; then Legion/#20 etc.
+- **`docs/handoff/session-2026-07-29-flow-factory-handoff.md`** — **primary next-session
+  prompt for product work.** Flow v2.0 is **partially done**:
+  - **On `main` (committed):** source pump / Stop on teardown (#37 lineage), pipeline
+    store, AstarteSource, runtime core through PR merges up to `bb67a95` (+ pokemon #38).
+  - **In the worktree (uncommitted after stash pop 2026-07-29):** block factory,
+    built-in catalog (`astarte_source` / `null_sink` / `log_sink`), `cmd/astrate`
+    wiring, `internal/flowapi` (`/flow/v1/...`). Do **not** discard; commit when ready.
+  - **Still open after that WIP lands:** transform block(s), flows-table decision,
+    parity audit; Legion/#20, mule items, etc.
+
+- `docs/handoff/session-2026-07-29-handoff.md` — older (source pump only); superseded
+  for “what next” by the flow-factory handoff.
+
+### Pokémon agent example — **completed / merged**
+
+- Branch `feat/pokemon-agent` merged to `main` via **PR #38** (`bb67a95`, 2026-07-29).
+- Live path proven: intro skip → overworld move → leave Red's House 2F → 1F → Pallet
+  Town (`POKEMON_GUIDANCE=light` + Astrate ControlCommand bus).
+- Code: `examples/pokemon-agent/` (+ `docs/site/pokemon-agent.md`, handoffs
+  `pokemon-agent-*.md`).
+- Optional follow-ups only (not blocking product Flow): pure-LLM leave-house,
+  mid-dialog flags, endurance demo — see `pokemon-agent-handoff.md` if revisiting.
+- **Do not treat pokemon as the default “what next”** for Astrate platform work.
 
 ### Documentation phases
 
@@ -34,8 +54,8 @@ Current status:
 - Docs on `main`: 22 narrative pages, Swagger UI, MkDocs config, GitHub Actions workflow, OpenAPI specs.
 - GitHub Pages enabled in repo Settings (source: GitHub Actions).
 - Live site: https://astrate-platform.github.io/astrate/
-- Platform code (M0–M9 lineage + Flow v2.0 pieces) is on `main` as of 2026-07-29;
-  handoff README previously claimed worktrees-only — outdated.
+- Platform code (M0–M9 lineage + Flow v2.0 pieces through source pump) is on `main`;
+  factory/API catalog work is local uncommitted WIP (see flow-factory handoff).
 
 Phase 11 plan (docs, when chosen):
 

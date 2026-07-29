@@ -30,7 +30,7 @@ containerised blocks) — not a port of the Elixir implementation. See
 Status: **in progress** (not DONE). Core runtime pieces are on `main`; operator-facing
 wiring and a usable block catalog are still open. Refreshed 2026-07-29.
 
-### Landed (on main as of 2026-07-29)
+### Landed (on main as of 2026-07-29; factory/API in tree same day)
 
 | Piece | Where | Notes |
 |---|---|---|
@@ -39,32 +39,29 @@ wiring and a usable block catalog are still open. Refreshed 2026-07-29.
 | Pipeline DAG model + validate | `internal/flow/pipeline.go` | serialisable description |
 | Flow lifecycle manager | `internal/flow/flow.go` | Start / Stop / List / Shutdown |
 | Stream router (lanes, QoS, metrics) | `internal/flow/router.go` | in-order per key |
-| **Source pump + Stop on teardown** | `internal/flow/flow.go` (#37) | pumps `Source.Emit` → router; `Stopper.Stop` after drain |
+| Source pump + Stop on teardown | `internal/flow/flow.go` (#37) | pumps `Source.Emit` → router; `Stopper.Stop` after drain |
 | AstarteSource block | `internal/flow/blocks/astartesource` | bus → FlowMessage (#27) |
 | Pipeline store + migration | `internal/store/pipelines.go`, `000008_pipelines` | realm-scoped DAG JSON (#24) |
+| **Block factory + instantiate** | `internal/flow/factory.go` | `Registry`, `ParseDefinition`, topo order → `[]Block` |
+| **Built-in catalog (minimal)** | `internal/flow/blocks/catalog.go` | `astarte_source`, `null_sink`, `log_sink` |
+| **Process wiring** | `cmd/astrate/main.go` | shared `e.Bus()` + `flow.Manager`; shutdown drains flows |
+| **Operator HTTP API** | `internal/flowapi` | `/flow/v1/{realm}/pipelines` + `/flows` (a_rma) |
 
 ### Remaining gaps (file / keep as `milestone-2.0` issues)
 
 Work these roughly in order. Escalate design questions to `.mule/for-giulio.md` rather than
 guessing wire shape.
 
-1. **Block factory + pipeline instantiate** — turn a stored `Pipeline` definition into
-   `[]flow.Block` (map `block_type` → constructor) and `Manager.StartFlow`. Without this,
-   the runtime only runs hand-built graphs in tests.
-2. **Wire Astrate process** — construct a shared `stream.Bus` + `flow.Manager` in
-   `cmd/astrate` / engine bootstrap; nothing in `cmd/` imports `internal/flow` yet.
-3. **Operator HTTP API** — realm-scoped CRUD for pipelines and start/stop/status for flows
-   (astarte_flow / AppEngine-shaped surface as needed for clients). Prefer small,
-   test-backed endpoints; match upstream paths only where a real client needs them.
-4. **Native block catalog (minimum useful set)** — beyond AstarteSource: at least one
-   transform and one sink that operators can compose (e.g. filter/map + HTTP or log sink).
-   Containerised blocks are later unless a client needs them for parity.
-5. **Flow runtime persistence (optional / decide)** — issue-25 sketched a `flows` table
+1. **Native block catalog (transforms)** — beyond source + sinks: at least one useful
+   transform operators can compose (filter/map). Containerised blocks are later unless a
+   client needs them for parity. (`null_sink` / `log_sink` already land the sink side.)
+2. **Flow runtime persistence (optional / decide)** — issue-25 sketched a `flows` table
    (`000009`); only `pipelines` landed. Decide whether running-flow records need durable
    status or in-memory manager is enough for v2.0.
-6. **Parity audit** — walk astarte_flow's operator-visible concepts (pipelines, blocks,
+3. **Parity audit** — walk astarte_flow's operator-visible concepts (pipelines, blocks,
    flows, container blocks) against what Astrate exposes; file residual gaps or escalate
-   "won't do for v2.0" decisions.
+   "won't do for v2.0" decisions. Match upstream HTTP paths only if a real client needs them
+   (current surface is Astrate-native `/flow/v1/...`).
 
 ### Explicitly out of this milestone (tracked elsewhere)
 

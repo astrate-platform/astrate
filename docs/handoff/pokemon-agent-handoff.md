@@ -1,18 +1,22 @@
 # Handoff Prompt — Pokémon Agent Next Session
 
-Copy-paste this prompt into a new session to continue work on the Pokémon Red autonomous agent.
+> **Project line complete on platform `main`.** Merged via **PR #38** (2026-07-29,
+> merge `bb67a95`). Example lives at `examples/pokemon-agent/`. Optional polish only —
+> default Astrate work is Flow (`session-2026-07-29-flow-factory-handoff.md`).
+
+Copy-paste this prompt into a new session to continue **optional** Pokémon Red agent work.
 
 ````text
-I'm working on the `feat/pokemon-agent` branch of ~/astrate — an autonomous Pokémon Red
-agent that connects a Game Boy emulator (pyboy) to an LLM via the Astrate IoT platform.
+I'm working on the Astrate project in ~/astrate. The Pokémon Red autonomous agent
+example is already on main (PR #38). Optional follow-ups only.
 
 Before doing anything, read:
-  - ~/astrate/docs/handoff/pokemon-agent-memory.md   ← session 11; leave house PASS (light)
+  - ~/astrate/docs/handoff/pokemon-agent-memory.md   ← session 11; leave house PASS; merged
   - ~/astrate/examples/pokemon-agent/docs/DESIGN.md  ← architecture (v0.2)
   - ~/astrate/examples/pokemon-agent/docs/DECISIONS.md ← 10 ADRs
   - ~/astrate/examples/pokemon-agent/docs/TESTING.md ← T0–T4 + T4b leave-house
 
-Branch: feat/pokemon-agent
+Branch: main (code under examples/pokemon-agent/; feat/pokemon-agent was merged)
 
 Code lives in:
   examples/pokemon-agent/
