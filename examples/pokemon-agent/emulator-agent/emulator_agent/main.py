@@ -50,6 +50,8 @@ class AgentConfig:
 
     # MQTT broker port override (defaults: 8883 mTLS, 1883 plain)
     mqtt_port: Optional[int] = None
+    # Skip mTLS and use plaintext :1883 (Astrate mqtt.insecure_dev_mode only)
+    insecure: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -72,14 +74,16 @@ class _StubPyboy:
         self.memory[wram.PLAYER_Y]    = 5
         self.memory[wram.PARTY_COUNT] = 1
         self.memory[wram.BATTLE_TYPE] = 0
-        # Party slot 0: Pikachu lv5, HP 20/20
+        # Empty dialog: first byte is the 0x50 string terminator ('@')
+        self.memory[wram.DIALOG_BUFFER] = 0x50
+        # Party slot 0: Pikachu lv5, HP 20/20 (pret party_struct offsets)
         self.memory[wram.PARTY_SPECIES_BASE] = 25  # Pikachu
         base = wram.PARTY_DATA_BASE
-        self.memory[base + 1] = 0   # current HP high byte
-        self.memory[base + 2] = 20  # current HP low byte
-        self.memory[base + 3] = 0   # max HP high byte
-        self.memory[base + 4] = 20  # max HP low byte
-        self.memory[base + 33] = 5  # level
+        self.memory[base + wram.SLOT_CURRENT_HP_OFFSET] = 0      # current HP high
+        self.memory[base + wram.SLOT_CURRENT_HP_OFFSET + 1] = 20  # current HP low
+        self.memory[base + wram.SLOT_LEVEL_OFFSET] = 5
+        self.memory[base + wram.SLOT_MAX_HP_OFFSET] = 0          # max HP high
+        self.memory[base + wram.SLOT_MAX_HP_OFFSET + 1] = 20     # max HP low
 
     def tick(self) -> None:
         from . import wram
@@ -212,18 +216,20 @@ def _parse_args() -> AgentConfig:
     p.add_argument("--device-id", required=True,
                    help="Astrate device ID (from pairing registration)")
     p.add_argument("--cert",      default="device.crt",
-                   help="Path to device TLS certificate (PEM)")
+                   help="Path to device TLS certificate (PEM); unused with --insecure")
     p.add_argument("--key",       default="device.key",
-                   help="Path to device TLS private key (PEM)")
+                   help="Path to device TLS private key (PEM); unused with --insecure")
     p.add_argument("--ca",        default="ca.crt",
-                   help="Path to Astrate CA certificate (PEM)")
+                   help="Path to Astrate CA certificate (PEM); unused with --insecure")
     p.add_argument("--stub",      action="store_true",
                    help="Run without a ROM using a synthetic game state")
+    p.add_argument("--insecure",  action="store_true",
+                   help="Plaintext MQTT on :1883 (Astrate insecure_dev_mode only)")
     p.add_argument("--log-level", default="INFO",
                    choices=["DEBUG", "INFO", "WARNING", "ERROR"],
                    help="Log verbosity (default: INFO)")
     p.add_argument("--mqtt-port", type=int, default=None,
-                   help="Override MQTT broker port (default: 8883)")
+                   help="Override MQTT broker port (default: 8883 mTLS / 1883 --insecure)")
     args = p.parse_args()
     return AgentConfig(
         rom_path          = args.rom,
@@ -236,6 +242,7 @@ def _parse_args() -> AgentConfig:
         stub              = args.stub,
         log_level         = args.log_level,
         mqtt_port         = args.mqtt_port,
+        insecure          = args.insecure,
     )
 
 

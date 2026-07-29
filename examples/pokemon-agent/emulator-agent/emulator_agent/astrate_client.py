@@ -69,8 +69,16 @@ class AstrateClient:
         self._command_cb: Optional[Callable[[dict], None]] = None
         self._connected = threading.Event()
 
+        # Plaintext insecure_dev_mode authenticates by client ID alone, which
+        # must be the CN form <realm>/<device_id> (see internal/broker/authhook.go).
+        # mTLS rewrites the client ID from the cert CN, so device_id alone is fine.
+        client_id = (
+            f"{self._realm}/{self._device_id}"
+            if getattr(config, "insecure", False)
+            else self._device_id
+        )
         self._client = mqtt.Client(
-            client_id=self._device_id,
+            client_id=client_id,
             protocol=mqtt.MQTTv311,
             callback_api_version=mqtt.CallbackAPIVersion.VERSION2,
         )
@@ -83,16 +91,31 @@ class AstrateClient:
     # ------------------------------------------------------------------
 
     async def connect(self) -> None:
-        """Configure TLS, connect, publish introspection, and start MQTT loop."""
+        """Connect to the broker, publish introspection, and start the MQTT loop.
+
+        Production path uses mTLS (device cert + realm CA). With
+        ``config.insecure`` (Astrate ``mqtt.insecure_dev_mode``), connect over
+        plaintext :1883 and skip TLS — cert/key/ca are not required.
+        """
         cfg = self._config
+        host, port = _parse_broker_url(
+            cfg.astrate_url,
+            mqtt_port=getattr(cfg, "mqtt_port", None),
+            insecure=getattr(cfg, "insecure", False),
+        )
 
-        # mTLS: device certificate + key + CA bundle from Astrate Pairing API
-        tls_ctx = ssl.create_default_context(ssl.Purpose.SERVER_AUTH, cafile=cfg.ca)
-        tls_ctx.load_cert_chain(certfile=cfg.cert, keyfile=cfg.key)
-        self._client.tls_set_context(tls_ctx)
+        if not getattr(cfg, "insecure", False):
+            # mTLS: device certificate + key + CA bundle from Astrate Pairing API
+            tls_ctx = ssl.create_default_context(ssl.Purpose.SERVER_AUTH, cafile=cfg.ca)
+            tls_ctx.load_cert_chain(certfile=cfg.cert, keyfile=cfg.key)
+            self._client.tls_set_context(tls_ctx)
+            log.info("Connecting to Astrate broker %s:%d (mTLS) …", host, port)
+        else:
+            log.warning(
+                "Connecting to Astrate broker %s:%d (plaintext insecure_dev_mode) …",
+                host, port,
+            )
 
-        host, port = _parse_broker_url(cfg.astrate_url)
-        log.info("Connecting to Astrate broker %s:%d …", host, port)
         self._client.connect(host, port, keepalive=60)
         self._client.loop_start()
 
@@ -187,24 +210,37 @@ class AstrateClient:
 # Helper
 # ------------------------------------------------------------------
 
-def _parse_broker_url(url: str) -> tuple[str, int]:
-    """Extract (host, port) from an Astrate URL.
+def _parse_broker_url(
+    url: str,
+    mqtt_port: Optional[int] = None,
+    insecure: bool = False,
+) -> tuple[str, int]:
+    """Extract (host, port) from an Astrate HTTP URL.
 
-    Astrate's embedded MQTT broker listens on a separate port from the HTTP API.
-    Default: 8883 (mTLS).  Override via ASTRATE_MQTT_PORT env var or by passing
-    host:port directly.
-
-    For development without mTLS, set port 1883 and skip TLS config.
+    Astrate's MQTT broker is on a different port from the HTTP API.
+    Defaults: 8883 (mTLS) or 1883 when ``insecure`` (dev plaintext).
+    Explicit ``mqtt_port`` always wins.
     """
-    # Strip scheme
     stripped = url.replace("https://", "").replace("http://", "")
     if ":" in stripped:
         host, port_str = stripped.rsplit(":", 1)
-        # If the port looks like an HTTP port, assume MQTT is on 8883
-        port = int(port_str)
-        if port in (80, 8080, 443, 8443):
-            port = 8883
+        try:
+            http_port = int(port_str)
+        except ValueError:
+            host = stripped
+            http_port = None
+        else:
+            # Host was host:port; keep host only when port was numeric.
+            pass
     else:
         host = stripped
-        port = 8883
-    return host, port
+        http_port = None
+
+    if mqtt_port is not None:
+        return host, mqtt_port
+    if insecure:
+        return host, 1883
+    # HTTP API ports map to the default mTLS MQTT listener.
+    if http_port in (80, 8080, 443, 8443, None):
+        return host, 8883
+    return host, http_port
