@@ -80,14 +80,48 @@ func parseAction(raw json.RawMessage) (*Action, []string, error) {
 
 	switch {
 	case h.HTTPPostURL != "":
+		// Legacy pre-1.1 action (#63): its presence picks this branch (probe:
+		// post_url + http_url answers "must be blank" on http_url). post_url
+		// validates like http_url, the modern fields must all be blank, and
+		// no header blocklist/size check applies (headers must be blank).
+		fe := newFieldErrors()
+		if h.HTTPURL != "" {
+			fe.add("http_url", "must be blank")
+		}
+		if h.HTTPMethod != "" {
+			fe.add("http_method", "must be blank")
+		}
+		if len(h.HTTPStaticHeaders) > 0 {
+			fe.add("http_static_headers", "must be blank")
+		}
+		validateURLField(fe, "http_post_url", h.HTTPPostURL)
+		validateTemplate(fe, h.Template)
+		if len(fe.Fields) > 0 {
+			return nil, nil, fe
+		}
 		return &Action{
 			Method: http.MethodPost, URL: h.HTTPPostURL,
 			StaticHeaders: h.HTTPStaticHeaders, IgnoreSSLErrors: h.IgnoreSSLErrors,
 			Template: h.Template, TemplateType: h.TemplateType,
 		}, unsupported, nil
 	case h.HTTPURL != "":
-		if !httpMethods[h.HTTPMethod] {
-			return nil, nil, fmt.Errorf("unsupported http_method %q", h.HTTPMethod)
+		// Modern action (#63): upstream-shaped field-scoped validation.
+		fe := newFieldErrors()
+		if h.HTTPMethod == "" {
+			fe.add("http_method", "can't be blank")
+		} else if !httpMethods[h.HTTPMethod] {
+			fe.add("http_method", "is invalid")
+		}
+		// Mirrors upstream's modern-branch validator; unreachable given the
+		// legacy branch above owns every non-empty http_post_url.
+		if h.HTTPPostURL != "" {
+			fe.add("http_post_url", "must be blank")
+		}
+		validateURLField(fe, "http_url", h.HTTPURL)
+		validateStaticHeaders(fe, h.HTTPStaticHeaders)
+		validateTemplate(fe, h.Template)
+		if len(fe.Fields) > 0 {
+			return nil, nil, fe
 		}
 		return &Action{
 			// Methods arrive lowercase on the wire (upstream convention) but

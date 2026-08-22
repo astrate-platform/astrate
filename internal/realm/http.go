@@ -8,6 +8,7 @@ import (
 	"strconv"
 
 	"github.com/astrate-platform/astrate/internal/auth"
+	"github.com/astrate-platform/astrate/internal/engine/triggers"
 	"github.com/astrate-platform/astrate/internal/store"
 	"github.com/astrate-platform/astrate/pkg/astarteapi"
 	"github.com/astrate-platform/astrate/pkg/interfaceschema"
@@ -247,6 +248,15 @@ func (a *API) createTrigger(w http.ResponseWriter, r *http.Request) {
 	}
 	tr, err := a.svc.CreateTrigger(r.Context(), r.PathValue("realm"), def)
 	if err != nil {
+		// Action validation errors are produced BY triggers and render as
+		// upstream's nested changeset envelope (issue #63); they stay scoped
+		// to this handler — writeError keeps generic details elsewhere.
+		var fe *triggers.FieldErrors
+		if errors.As(err, &fe) {
+			_ = astarteapi.WriteRawErrors(w, http.StatusUnprocessableEntity,
+				map[string]any{fe.Part: fe.Fields})
+			return
+		}
 		a.writeError(w, err)
 		return
 	}

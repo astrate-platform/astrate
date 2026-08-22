@@ -105,6 +105,20 @@ func TestGoldenEnvelopes(t *testing.T) {
 				})
 			},
 		},
+		{
+			name: "raw nested errors", golden: "error_raw_nested.json", wantStatus: 422,
+			write: func(w http.ResponseWriter) error {
+				// Upstream nests changeset errors inside the failing part of a
+				// trigger definition; keys must come out sorted with no HTML
+				// escaping and no trailing newline.
+				return astarteapi.WriteRawErrors(w, 422, map[string]any{
+					"action": map[string][]string{
+						"http_url":    {"should be at least 8 character(s)", "must be a valid http(s) URL"},
+						"http_method": {"is invalid"},
+					},
+				})
+			},
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

@@ -314,7 +314,7 @@ func TestCompileRejects(t *testing.T) {
 			want: "missing action"},
 		{name: "bad http method", def: `{"action": {"http_url": "https://e.com", "http_method": "yeet"},
 			"simple_triggers": [{"type": "device_trigger", "on": "device_connected"}]}`,
-			want: "unsupported http_method"},
+			want: "http_method=is invalid"},
 		{name: "unknown trigger type", def: `{` + action + `, "simple_triggers": [{"type": "mystery"}]}`,
 			want: "unknown trigger type"},
 		{name: "unknown data condition", def: `{` + action + `, "simple_triggers": [{

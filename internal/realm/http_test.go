@@ -616,6 +616,68 @@ func TestRealmManagementAmqpTriggerAndPolicyGuards(t *testing.T) {
 	})
 }
 
+// TestRealmManagementTriggerActionLimits pins the #63 upstream action
+// validation limits on the wire: POST /triggers answers upstream's nested
+// changeset 422 envelope with exact bytes, and an acceptance twin creates
+// alongside the rejections to prove nothing else moved.
+func TestRealmManagementTriggerActionLimits(t *testing.T) {
+	r := newRig(t)
+
+	trigger := func(name, action string) string {
+		return `{"name":"` + name + `","action":` + action +
+			`,"simple_triggers":[{"type":"data_trigger","on":"incoming_data",` +
+			`"interface_name":"com.ex.M7a.Sensors","interface_major":1,` +
+			`"match_path":"/value","value_match_operator":"*"}]}`
+	}
+
+	rows := []struct {
+		name       string
+		action     string
+		wantStatus int
+		wantBody   string
+	}{
+		{
+			name:       "short url and wrong scheme",
+			action:     `{"http_url":"http://","http_method":"post"}`,
+			wantStatus: http.StatusUnprocessableEntity,
+			wantBody:   `{"errors":{"action":{"http_url":["should be at least 8 character(s)","must be a valid http(s) URL"]}}}`,
+		},
+		{
+			name:       "blocked header",
+			action:     `{"http_url":"https://example.com/hook","http_method":"post","http_static_headers":{"Host":"evil.example"}}`,
+			wantStatus: http.StatusUnprocessableEntity,
+			wantBody:   `{"errors":{"action":{"http_static_headers":["must contain only allowed http headers"]}}}`,
+		},
+		{
+			name: "oversized header value",
+			action: `{"http_url":"https://example.com/hook","http_method":"post","http_static_headers":{"X-A":"` +
+				strings.Repeat("v", 8187) + `"}}`, // name(3) + ": "(2) + value == 8192 bytes
+			wantStatus: http.StatusUnprocessableEntity,
+			wantBody:   `{"errors":{"action":{"http_static_headers":["headers total size must be lower than 8192"]}}}`,
+		},
+		{
+			name:       "bad method",
+			action:     `{"http_url":"https://example.com/hook","http_method":"fetch"}`,
+			wantStatus: http.StatusUnprocessableEntity,
+			wantBody:   `{"errors":{"action":{"http_method":["is invalid"]}}}`,
+		},
+	}
+	for _, tc := range rows {
+		t.Run(tc.name, func(t *testing.T) {
+			rec := r.req(t, http.MethodPost, "/triggers", trigger("limit_"+strings.ReplaceAll(tc.name, " ", "_"), tc.action), r.rmaToken)
+			if rec.Code != tc.wantStatus || rec.Body.String() != tc.wantBody {
+				t.Errorf("got %d %s, want %d %s", rec.Code, rec.Body, tc.wantStatus, tc.wantBody)
+			}
+		})
+	}
+
+	t.Run("valid trigger twin creates", func(t *testing.T) {
+		if rec := r.req(t, http.MethodPost, "/triggers", triggerJSON, r.rmaToken); rec.Code != http.StatusCreated {
+			t.Errorf("create trigger: got %d (%s), want 201", rec.Code, rec.Body)
+		}
+	})
+}
+
 // --- helpers ----------------------------------------------------------------
 
 func discardLogger() *slog.Logger { return slog.New(slog.NewTextHandler(io.Discard, nil)) }

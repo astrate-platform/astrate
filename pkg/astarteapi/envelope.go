@@ -168,6 +168,20 @@ func WriteFieldErrors(w http.ResponseWriter, status int, fields map[string][]str
 	return write(w, status, fieldsEnvelope{Errors: fields})
 }
 
+// rawEnvelope is the caller-shaped error wrapper: {"errors": <anything>}.
+type rawEnvelope struct {
+	Errors any `json:"errors"`
+}
+
+// WriteRawErrors writes {"errors": <anything>} — caller-shaped error bodies
+// for the nested changeset envelopes upstream uses inside sub-objects (for
+// example a trigger's {"action": {"http_url": [...]}}). Map keys are emitted
+// in sorted order, without HTML escaping, and without a trailing newline,
+// like every envelope here.
+func WriteRawErrors(w http.ResponseWriter, status int, errs any) error {
+	return write(w, status, rawEnvelope{Errors: errs})
+}
+
 // WriteBadRequest writes the canonical 400 envelope.
 func WriteBadRequest(w http.ResponseWriter) error {
 	return WriteError(w, http.StatusBadRequest, DetailBadRequest)

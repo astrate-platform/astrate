@@ -3,10 +3,13 @@ package triggers
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -172,6 +175,178 @@ func TestParseAction(t *testing.T) {
 			t.Fatal("want error for missing action")
 		}
 	})
+}
+
+// TestParseActionHTTPLimits pins the upstream http_action.ex v1.2.0
+// validation limits, probe-frozen in #63. Every rejection row is paired
+// with an acceptance twin that differs only in the violating field; each
+// rejection asserts the exact field→messages map.
+func TestParseActionHTTPLimits(t *testing.T) {
+	urlOfLen := func(n int) string { return "http://" + strings.Repeat("a", n-7) }
+	headerTotalling := func(total int) string {
+		// name "X-A" (3 bytes) + ": " (2 bytes) + value == total bytes.
+		return `{"X-A":"` + strings.Repeat("v", total-5) + `"}`
+	}
+	rows := []struct {
+		name            string
+		raw             string
+		want            map[string][]string // nil ⇒ the action must compile
+		wantMeth        string              // normalization asserts for acceptance twins
+		wantURL         string
+		wantUnsupported bool // twin must still report its accepted-but-ignored feature
+	}{
+		// --- http_url length and format ---
+		{
+			name: "url too short accumulates length then format",
+			raw:  `{"http_url":"http://","http_method":"post"}`,
+			want: map[string][]string{"http_url": {"should be at least 8 character(s)", "must be a valid http(s) URL"}},
+		},
+		{
+			name: "twin url of exactly eight characters compiles", wantMeth: "POST", wantURL: "http://a",
+			raw: `{"http_url":"http://a","http_method":"post"}`,
+		},
+		{
+			name: "url one rune over the limit",
+			raw:  `{"http_url":"` + urlOfLen(8193) + `","http_method":"post"}`,
+			want: map[string][]string{"http_url": {"should be at most 8192 character(s)"}},
+		},
+		{
+			name: "twin url at the limit compiles", wantMeth: "POST", wantURL: urlOfLen(8192),
+			raw: `{"http_url":"` + urlOfLen(8192) + `","http_method":"post"}`,
+		},
+		{
+			name: "url without scheme is invalid format",
+			raw:  `{"http_url":"example.com/hook","http_method":"post"}`,
+			want: map[string][]string{"http_url": {"must be a valid http(s) URL"}},
+		},
+		{
+			name: "url with ftp scheme is invalid format",
+			raw:  `{"http_url":"ftp://example.com/x","http_method":"post"}`,
+			want: map[string][]string{"http_url": {"must be a valid http(s) URL"}},
+		},
+		{
+			name: "twin https url compiles", wantMeth: "POST", wantURL: "https://example.com/hook",
+			raw: `{"http_url":"https://example.com/hook","http_method":"post"}`,
+		},
+
+		// --- http_method ---
+		{
+			name: "absent method can't be blank",
+			raw:  `{"http_url":"https://x/h"}`,
+			want: map[string][]string{"http_method": {"can't be blank"}},
+		},
+		{
+			name: "unknown method is invalid",
+			raw:  `{"http_url":"https://x/h","http_method":"fetch"}`,
+			want: map[string][]string{"http_method": {"is invalid"}},
+		},
+		{
+			name: "uppercase method is invalid",
+			raw:  `{"http_url":"https://x/h","http_method":"POST"}`,
+			want: map[string][]string{"http_method": {"is invalid"}},
+		},
+		{
+			name: "twin lowercase method compiles", wantMeth: "DELETE", wantURL: "https://x/h",
+			raw: `{"http_url":"https://x/h","http_method":"delete"}`,
+		},
+
+		// --- fields fail together ---
+		{
+			name: "short url and missing method accumulate across fields",
+			raw:  `{"http_url":"http://"}`,
+			want: map[string][]string{
+				"http_method": {"can't be blank"},
+				"http_url":    {"should be at least 8 character(s)", "must be a valid http(s) URL"},
+			},
+		},
+
+		// --- legacy http_post_url ---
+		{
+			name: "legacy with http_url must be blank",
+			raw:  `{"http_post_url":"https://y/legacy","http_url":"https://x/hook"}`,
+			want: map[string][]string{"http_url": {"must be blank"}},
+		},
+		{
+			name: "legacy with http_method must be blank",
+			raw:  `{"http_post_url":"https://y/legacy","http_method":"get"}`,
+			want: map[string][]string{"http_method": {"must be blank"}},
+		},
+		{
+			name: "legacy with headers must be blank",
+			raw:  `{"http_post_url":"https://y/legacy","http_static_headers":{"X-A":"b"}}`,
+			want: map[string][]string{"http_static_headers": {"must be blank"}},
+		},
+		{
+			name: "twin bare legacy compiles and normalizes to POST", wantMeth: "POST", wantURL: "https://y/legacy",
+			raw: `{"http_post_url":"https://y/legacy"}`,
+		},
+		{
+			name: "legacy post_url validates like http_url",
+			raw:  `{"http_post_url":"ftp://y/x"}`,
+			want: map[string][]string{"http_post_url": {"must be a valid http(s) URL"}},
+		},
+
+		// --- http_static_headers ---
+		{
+			name: "blocked header Host rejected",
+			raw:  `{"http_url":"https://x/h","http_method":"post","http_static_headers":{"Host":"evil.example"}}`,
+			want: map[string][]string{"http_static_headers": {"must contain only allowed http headers"}},
+		},
+		{
+			name: "twin custom header compiles", wantMeth: "POST", wantURL: "https://x/h",
+			raw: `{"http_url":"https://x/h","http_method":"post","http_static_headers":{"X-Custom":"ok"}}`,
+		},
+		{
+			name: "headers totalling exactly 8192 bytes rejected",
+			raw:  `{"http_url":"https://x/h","http_method":"post","http_static_headers":` + headerTotalling(8192) + `}`,
+			want: map[string][]string{"http_static_headers": {"headers total size must be lower than 8192"}},
+		},
+		{
+			name: "twin headers totalling 8191 bytes compile", wantMeth: "POST", wantURL: "https://x/h",
+			raw: `{"http_url":"https://x/h","http_method":"post","http_static_headers":` + headerTotalling(8191) + `}`,
+		},
+
+		// --- template ---
+		{
+			name: "template over the limit regardless of template_type",
+			raw: `{"http_url":"https://x/h","http_method":"post","template_type":"jinja2","template":"` +
+				strings.Repeat("x", 1048577) + `"}`,
+			want: map[string][]string{"template": {"should be at most 1048576 character(s)"}},
+		},
+		{
+			name: "twin template at the limit compiles even as jinja2", wantMeth: "POST", wantURL: "https://x/h",
+			wantUnsupported: true,
+			raw: `{"http_url":"https://x/h","http_method":"post","template_type":"jinja2","template":"` +
+				strings.Repeat("x", 1048576) + `"}`,
+		},
+	}
+	for _, tc := range rows {
+		t.Run(tc.name, func(t *testing.T) {
+			a, unsupported, err := parseAction([]byte(tc.raw))
+			if tc.want == nil {
+				if err != nil {
+					t.Fatalf("parseAction accepted: %v", err)
+				}
+				if tc.wantMeth != "" && (a.Method != tc.wantMeth || a.URL != tc.wantURL) {
+					t.Errorf("action = %s %s, want %s %s", a.Method, a.URL, tc.wantMeth, tc.wantURL)
+				}
+				if tc.wantUnsupported && len(unsupported) == 0 {
+					t.Error("jinja2 twin lost its unsupported report")
+				}
+				return
+			}
+			var fe *FieldErrors
+			if !errors.As(err, &fe) {
+				t.Fatalf("want *FieldErrors, got %v", err)
+			}
+			if fe.Part != "action" {
+				t.Errorf("part = %q, want action", fe.Part)
+			}
+			if !reflect.DeepEqual(fe.Fields, tc.want) {
+				t.Errorf("fields = %v, want %v", fe.Fields, tc.want)
+			}
+		})
+	}
 }
 
 // TestWebhookDelivered: a 2xx response is a successful delivery, and the
