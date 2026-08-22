@@ -232,6 +232,16 @@ func TestRealmManagement(t *testing.T) {
 		}
 	})
 
+	t.Run("ConfigRetention", func(t *testing.T) {
+		// Upstream's default for a realm that never set a retention ceiling is
+		// 0, and Astrate has no way to set one yet — so 0 is the only value.
+		var retention int64
+		decodeData(t, r.req(t, http.MethodGet, "/config/datastream_maximum_storage_retention", "", r.rmaToken), &retention)
+		if retention != 0 {
+			t.Errorf("datastream_maximum_storage_retention = %d, want 0", retention)
+		}
+	})
+
 	t.Run("ConfigAuth", func(t *testing.T) {
 		// Rotate to a 2-key set that still includes the original, so the test
 		// token keeps verifying.

@@ -45,6 +45,7 @@ func (a *API) Mount(mux *http.ServeMux) {
 	mux.Handle("GET /realmmanagement/v1/{realm}/config/auth", h(a.getAuth))
 	mux.Handle("PUT /realmmanagement/v1/{realm}/config/auth", h(a.putAuth))
 	mux.Handle("GET /realmmanagement/v1/{realm}/config/device_registration_limit", h(a.getRegistrationLimit))
+	mux.Handle("GET /realmmanagement/v1/{realm}/config/datastream_maximum_storage_retention", h(a.getDatastreamMaximumStorageRetention))
 	mux.Handle("GET /realmmanagement/v1/{realm}/version", h(a.getVersion))
 	mux.Handle("DELETE /realmmanagement/v1/{realm}/devices/{device}", h(a.deleteDevice))
 	mux.Handle("GET /realmmanagement/v1/{realm}/policies", h(a.listPolicies))
@@ -124,6 +125,17 @@ func (a *API) getRegistrationLimit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_ = astarteapi.WriteData(w, http.StatusOK, limit)
+}
+
+// getDatastreamMaximumStorageRetention serves the realm's retention ceiling in
+// seconds (upstream 1.2.0+; see Service.GetDatastreamMaximumStorageRetention).
+func (a *API) getDatastreamMaximumStorageRetention(w http.ResponseWriter, r *http.Request) {
+	retention, err := a.svc.GetDatastreamMaximumStorageRetention(r.Context(), r.PathValue("realm"))
+	if err != nil {
+		a.writeError(w, err)
+		return
+	}
+	_ = astarteapi.WriteData(w, http.StatusOK, retention)
 }
 
 // --- interfaces -------------------------------------------------------------

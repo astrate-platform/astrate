@@ -439,6 +439,18 @@ func (s *Service) GetDeviceRegistrationLimit(ctx context.Context, realm string) 
 	return r.DeviceRegistrationLimit, nil
 }
 
+// GetDatastreamMaximumStorageRetention returns the realm's datastream maximum
+// storage retention in seconds, upstream GET
+// /config/datastream_maximum_storage_retention (served since 1.2.0). Astrate
+// has no retention ceiling yet (issue #72), and upstream's default for a
+// realm that never set one is 0 — so 0 is always the accurate answer today.
+func (s *Service) GetDatastreamMaximumStorageRetention(ctx context.Context, realm string) (int64, error) {
+	if _, err := s.st.GetRealmByName(ctx, realm); err != nil {
+		return 0, err
+	}
+	return 0, nil
+}
+
 // --- config/auth ------------------------------------------------------------
 
 // GetAuthKey returns the realm's JWT public key PEM (upstream GET
