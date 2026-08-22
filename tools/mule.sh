@@ -23,7 +23,8 @@
 #
 set -uo pipefail
 
-REPO="$(git rev-parse --show-toplevel 2>/dev/null)" || { echo "not in a git repo" >&2; exit 1; }
+REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+git -C "$REPO" rev-parse --show-toplevel >/dev/null 2>&1 || { echo "not in a git repo" >&2; exit 1; }
 MULE="$REPO/.mule"
 CONFIG="$MULE/config"
 TODO="$MULE/todo.md"

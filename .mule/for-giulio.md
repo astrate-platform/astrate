@@ -51,3 +51,4 @@ line once you have dealt with it — this file is a queue, not a log.
   `/root/astrate-mule` already solved the same way (your call, confirmed 2026-07-27: align it
   with the existing unattended-Pi-clone convention rather than fix gpg-agent or bypass signing
   silently inside the script).
+- **The mule has been idle 15h.** Filed by the dead-man's switch; see journalctl on the Pi.
