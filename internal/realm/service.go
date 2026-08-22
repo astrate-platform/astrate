@@ -430,12 +430,13 @@ func (s *Service) CreateTrigger(ctx context.Context, realm string, def []byte) (
 	}
 	ct, err := triggers.Compile(tn.Name, def)
 	if err != nil {
-		// Action validation failures carry the upstream-shaped field errors
-		// (issue #63); the HTTP layer renders them as the nested 422 envelope.
-		// Everything else stays a generic ErrValidation.
-		var fe *triggers.FieldErrors
-		if errors.As(err, &fe) {
-			return nil, fe
+		// Trigger validation failures carry the upstream-shaped field errors
+		// across action and simple_triggers (issues #63/#70); the HTTP layer
+		// renders them as the nested 422 envelope. Everything else stays a
+		// generic ErrValidation.
+		var te *triggers.TriggerErrors
+		if errors.As(err, &te) {
+			return nil, te
 		}
 		return nil, fmt.Errorf("%w: %v", ErrValidation, err)
 	}

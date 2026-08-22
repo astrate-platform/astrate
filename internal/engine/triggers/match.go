@@ -19,7 +19,9 @@ package triggers
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/astrate-platform/astrate/pkg/deviceid"
@@ -79,6 +81,14 @@ const anyToken = "*"
 
 // anyPath is the wildcard match_path.
 const anyPath = "/*"
+
+// upstream v1.2.0 formats, probe-frozen (#70): Interface.interface_name_regex
+// and Mapping.mapping_regex. Concrete (non-wildcard) interface_name and
+// match_path values must match these or the definition is rejected.
+var (
+	ifaceNameRE = regexp.MustCompile(`^([a-zA-Z][a-zA-Z0-9]*\.([a-zA-Z0-9][a-zA-Z0-9-]*\.)*)?[a-zA-Z][a-zA-Z0-9]*$`)
+	matchPathRE = regexp.MustCompile(`^(\/(%{([a-zA-Z_]+[a-zA-Z0-9_]*)}|[a-zA-Z_]+[a-zA-Z0-9_]*)){1,64}$`)
+)
 
 // dataOns enumerates the data_trigger conditions; the value records whether
 // this version evaluates them.
@@ -241,6 +251,11 @@ type simpleTriggerConfig struct {
 // Compile parses and validates one stored trigger definition. Validation
 // follows upstream SimpleTriggerConfig: M7's Realm Management reuses it at
 // install time, so an error here maps to an upstream-shaped 422.
+//
+// Field-scoped violations accumulate into a *TriggerErrors (action plus an
+// index-aligned simple_triggers array, upstream changeset semantics); errors
+// that have no field shape (does-not-parse, no simple_triggers, unknown
+// trigger type) stay plain wrapped errors.
 func Compile(name string, def []byte) (*Trigger, error) {
 	var d definition
 	if err := json.Unmarshal(def, &d); err != nil {
@@ -250,18 +265,35 @@ func Compile(name string, def []byte) (*Trigger, error) {
 		return nil, fmt.Errorf("triggers: %q declares no simple_triggers", name)
 	}
 	t := &Trigger{Name: name, PolicyName: d.Policy}
+	agg := &TriggerErrors{}
 
 	action, unsupported, err := parseAction(d.Action)
 	if err != nil {
-		return nil, fmt.Errorf("triggers: %q action: %w", name, err)
+		var fe *FieldErrors
+		if errors.As(err, &fe) {
+			agg.Action = fe.Fields
+		} else {
+			return nil, fmt.Errorf("triggers: %q action: %w", name, err)
+		}
+	} else {
+		t.Action = action
+		t.Unsupported = append(t.Unsupported, unsupported...)
 	}
-	t.Action = action
-	t.Unsupported = append(t.Unsupported, unsupported...)
 
 	for i := range d.SimpleTriggers {
 		if err := t.compileSimple(&d.SimpleTriggers[i]); err != nil {
-			return nil, fmt.Errorf("triggers: %q simple_triggers[%d]: %w", name, i, err)
+			var fe fieldErrs
+			if !errors.As(err, &fe) {
+				return nil, fmt.Errorf("triggers: %q simple_triggers[%d]: %w", name, i, err)
+			}
+			for len(agg.SimpleTriggers) < i {
+				agg.SimpleTriggers = append(agg.SimpleTriggers, nil)
+			}
+			agg.SimpleTriggers = append(agg.SimpleTriggers, fe)
 		}
+	}
+	if agg.Action != nil || len(agg.SimpleTriggers) > 0 {
+		return nil, fmt.Errorf("triggers: %q: %w", name, agg)
 	}
 	return t, nil
 }
@@ -278,40 +310,65 @@ func (t *Trigger) compileSimple(c *simpleTriggerConfig) error {
 	}
 }
 
-// compileData applies upstream's data_trigger validation rules.
+// compileData applies upstream's data_trigger validation rules (v1.2.0
+// simple_trigger_config.ex). Violations accumulate into a fieldErrs error so
+// Compile renders them as the per-index changeset envelope; every accepted
+// definition compiles to exactly the same matcher it did before #70.
 func (t *Trigger) compileData(c *simpleTriggerConfig) error {
-	evaluated, known := dataOns[c.On]
-	if !known {
-		return fmt.Errorf("unknown data_trigger condition %q", c.On)
+	fe := fieldErrs{}
+	_, known := dataOns[c.On]
+	if c.On == "" {
+		fe.add("on", "can't be blank")
+	} else if !known {
+		fe.add("on", "is invalid")
 	}
-	if c.InterfaceName == nil || *c.InterfaceName == "" {
-		return fmt.Errorf("data_trigger requires interface_name")
+	iface := ""
+	if c.InterfaceName != nil {
+		iface = *c.InterfaceName
 	}
-	iface := *c.InterfaceName
+	if iface == "" {
+		fe.add("interface_name", "can't be blank")
+	}
 	if c.MatchPath == "" {
-		return fmt.Errorf("data_trigger requires match_path")
+		fe.add("match_path", "can't be blank")
 	}
-	if !valueOperators[c.ValueMatchOperator] {
-		return fmt.Errorf("unknown value_match_operator %q", c.ValueMatchOperator)
+	op := c.ValueMatchOperator
+	switch {
+	case op == "":
+		fe.add("value_match_operator", "can't be blank")
+	case !valueOperators[op]:
+		fe.add("value_match_operator", "is invalid")
 	}
 	if iface == anyToken {
-		if c.On != OnIncomingData {
-			return fmt.Errorf("interface_name %q requires on %q", anyToken, OnIncomingData)
+		// Upstream's cond reports one forcing violation at a time; a major
+		// riding along with "*" is deleted (accepted, ignored).
+		switch {
+		case c.On != OnIncomingData:
+			fe.add("on", "must be incoming_data when interface_name is "+anyToken)
+		case c.MatchPath != anyPath:
+			fe.add("match_path", "must be /* when interface_name is "+anyToken)
 		}
-		if c.MatchPath != anyPath {
-			return fmt.Errorf("interface_name %q requires match_path %q", anyToken, anyPath)
+	} else {
+		if iface != "" && !ifaceNameRE.MatchString(iface) {
+			fe.add("interface_name", "has invalid format")
 		}
-	} else if c.InterfaceMajor == nil {
-		return fmt.Errorf("data_trigger requires interface_major")
+		if c.InterfaceMajor == nil {
+			fe.add("interface_major", "can't be blank")
+		}
 	}
-	if c.MatchPath == anyPath && c.ValueMatchOperator != anyToken {
-		return fmt.Errorf("match_path %q requires value_match_operator %q", anyPath, anyToken)
+	deviceFilterErrs(fe, c.DeviceID, c.GroupName)
+	if c.MatchPath == anyPath {
+		if op != anyToken && op != "" {
+			fe.add("value_match_operator", "must be * when match_path is "+anyPath)
+		}
+	} else if c.MatchPath != "" && !matchPathRE.MatchString(c.MatchPath) {
+		fe.add("match_path", "has invalid format")
 	}
-	if c.ValueMatchOperator != anyToken && len(c.KnownValue) == 0 {
-		return fmt.Errorf("value_match_operator %q requires known_value", c.ValueMatchOperator)
+	if op != anyToken && op != "" && len(c.KnownValue) == 0 {
+		fe.add("known_value", "can't be blank")
 	}
-	if err := validDeviceFilter(c.DeviceID, c.GroupName); err != nil {
-		return err
+	if len(fe) > 0 {
+		return fe
 	}
 
 	m := dataMatcher{
@@ -320,15 +377,12 @@ func (t *Trigger) compileData(c *simpleTriggerConfig) error {
 		iface:     iface,
 		anyPath:   c.MatchPath == anyPath,
 		operator:  c.ValueMatchOperator,
-		evaluated: evaluated && c.GroupName == "",
+		evaluated: known && c.GroupName == "",
 	}
 	if c.InterfaceMajor != nil {
 		m.major = *c.InterfaceMajor
 	}
 	if !m.anyPath {
-		if !strings.HasPrefix(c.MatchPath, "/") {
-			return fmt.Errorf("match_path %q does not start with '/'", c.MatchPath)
-		}
 		m.pathSegs = strings.Split(c.MatchPath, "/")[1:]
 	}
 	if len(c.KnownValue) > 0 {
@@ -336,41 +390,77 @@ func (t *Trigger) compileData(c *simpleTriggerConfig) error {
 			return fmt.Errorf("known_value does not parse: %w", err)
 		}
 	}
-	t.noteUnsupported(!evaluated, "data_trigger on "+c.On)
+	t.noteUnsupported(!known, "data_trigger on "+c.On)
 	t.noteUnsupported(c.GroupName != "", "group-scoped trigger (group_name)")
 	t.data = append(t.data, m)
 	return nil
 }
 
-// compileDevice applies upstream's device_trigger validation rules.
+// compileDevice applies upstream's device_trigger validation rules (v1.2.0
+// simple_trigger_config.ex): interface filters only on introspection
+// conditions, minor_updated's name requirements, and the major rule — with
+// interface_name "*" the major is accepted and ignored, otherwise (name nil
+// or concrete) it is required even for name-less added/removed triggers.
 func (t *Trigger) compileDevice(c *simpleTriggerConfig) error {
+	fe := fieldErrs{}
 	evaluated, known := deviceOns[c.On]
-	if !known {
-		return fmt.Errorf("unknown device_trigger condition %q", c.On)
+	if c.On == "" {
+		fe.add("on", "can't be blank")
+	} else if !known {
+		fe.add("on", "is invalid")
 	}
-	if err := validDeviceFilter(c.DeviceID, c.GroupName); err != nil {
-		return err
+	deviceFilterErrs(fe, c.DeviceID, c.GroupName)
+
+	name := ""
+	hasName := c.InterfaceName != nil && *c.InterfaceName != ""
+	if hasName {
+		name = *c.InterfaceName
 	}
-	if c.InterfaceName != nil && !introspectionOns[c.On] {
-		return fmt.Errorf("interface_name is only valid on introspection conditions, not %q", c.On)
+	if hasName && !introspectionOns[c.On] {
+		fe.add("interface_name",
+			"is allowed only in if 'on' is one of interface_minor_updated, interface_removed, interface_added")
 	}
 	if introspectionOns[c.On] {
-		if c.InterfaceName == nil {
-			return fmt.Errorf("condition %q requires interface_name", c.On)
+		switch name {
+		case "":
+			if c.On == OnInterfaceMinorUpdated {
+				fe.add("interface_name", "must be set in interface_minor_updated triggers")
+			}
+			if c.InterfaceMajor == nil {
+				fe.add("interface_major", "can't be blank")
+			}
+		case anyToken:
+			if c.On == OnInterfaceMinorUpdated {
+				fe.add("interface_name", "must not be '*' in interface_minor_updated triggers")
+			}
+		default:
+			if !ifaceNameRE.MatchString(name) {
+				fe.add("interface_name", "has invalid format")
+			}
+			if c.InterfaceMajor == nil {
+				fe.add("interface_major", "can't be blank")
+			}
 		}
-		if *c.InterfaceName != anyToken && c.InterfaceMajor == nil {
-			return fmt.Errorf("condition %q requires interface_major", c.On)
-		}
+	}
+	if c.On == OnIncomingIntrospection && hasName {
+		fe.add("interface_name", "must not be set in incoming_introspection triggers")
+	}
+	if len(fe) > 0 {
+		return fe
 	}
 
 	m := deviceMatcher{
 		on:        c.On,
 		deviceID:  c.DeviceID,
-		major:     c.InterfaceMajor,
 		evaluated: evaluated && c.GroupName == "",
 	}
-	if c.InterfaceName != nil {
-		m.iface = *c.InterfaceName
+	if hasName {
+		m.iface = name
+	}
+	if introspectionOns[c.On] && name != anyToken {
+		// Name-less and concrete matchers carry the required major; a "*"
+		// filter ignores it entirely.
+		m.major = c.InterfaceMajor
 	}
 	t.noteUnsupported(!evaluated, "device_trigger on "+c.On)
 	t.noteUnsupported(c.GroupName != "", "group-scoped trigger (group_name)")
@@ -391,19 +481,41 @@ func (t *Trigger) noteUnsupported(cond bool, what string) {
 	t.Unsupported = append(t.Unsupported, what)
 }
 
-// validDeviceFilter checks the device_id / group_name pair: at most one may
-// be set (upstream validate_device_id_xor_group_name) and device_id must be
-// "*" or a valid encoded device ID.
-func validDeviceFilter(deviceID, groupName string) error {
+// deviceFilterErrs validates the device_id / group_name pair into fe: at most
+// one may be set (upstream validate_device_id_xor_group_name) and device_id
+// must be "*" or a valid encoded device ID, with upstream's separate message
+// for extended (longer than 128-bit) IDs.
+func deviceFilterErrs(fe fieldErrs, deviceID, groupName string) {
 	if deviceID != "" && groupName != "" {
-		return fmt.Errorf("device_id and group_name are mutually exclusive")
+		fe.add("group_name", "must not be defined if device_id is defined")
 	}
 	if deviceID != "" && deviceID != anyToken {
 		if _, err := deviceid.Parse(deviceID); err != nil {
-			return fmt.Errorf("device_id %q is not a valid device id", deviceID)
+			if isExtendedDeviceID(deviceID) {
+				fe.add("device_id", "is too long, device id must be 128 bits")
+			} else {
+				fe.add("device_id", "is not a valid device id")
+			}
 		}
 	}
-	return nil
+}
+
+// isExtendedDeviceID reports whether s is pure unpadded-base64url text that
+// decodes to more than the canonical 128 bits (upstream's extended-id shape:
+// every character beyond 22 adds decoded bytes past the 16-byte device ID).
+func isExtendedDeviceID(s string) bool {
+	if len(s) <= deviceid.EncodedLen {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		switch {
+		case 'A' <= c && c <= 'Z', 'a' <= c && c <= 'z', '0' <= c && c <= '9', c == '-', c == '_':
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 // MatchesData reports whether any data_trigger condition matches the event.
@@ -427,8 +539,11 @@ func (t *Trigger) MatchesDevice(ev DeviceEvent) bool {
 		if !deviceIDMatches(m.deviceID, ev.DeviceID) {
 			continue
 		}
-		if introspectionOns[m.on] && m.iface != anyToken {
-			if m.iface != ev.Interface {
+		if introspectionOns[m.on] {
+			// The name filters only when concrete: a "*" or name-less matcher
+			// matches every interface, with the compiled major still applied
+			// when present (name-less introspection triggers always carry one).
+			if m.iface != "" && m.iface != anyToken && m.iface != ev.Interface {
 				continue
 			}
 			if m.major != nil && *m.major != ev.Major {

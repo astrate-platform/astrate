@@ -107,17 +107,17 @@ func TestCompileConditionInvalidInputs(t *testing.T) {
 		{
 			name:    "data_trigger missing interface_name",
 			raw:     `{"type":"data_trigger","on":"incoming_data","match_path":"/p","value_match_operator":"*"}`,
-			wantMsg: "data_trigger requires interface_name",
+			wantMsg: "interface_name=can't be blank",
 		},
 		{
 			name:    "data_trigger missing interface_major",
 			raw:     `{"type":"data_trigger","on":"incoming_data","interface_name":"org.example.Sensors","match_path":"/p","value_match_operator":"*"}`,
-			wantMsg: "data_trigger requires interface_major",
+			wantMsg: "interface_major=can't be blank",
 		},
 		{
 			name:    "unknown device on",
 			raw:     `{"type":"device_trigger","on":"bogus_event"}`,
-			wantMsg: `unknown device_trigger condition "bogus_event"`,
+			wantMsg: "on=is invalid",
 		},
 		{
 			name:    "not json",

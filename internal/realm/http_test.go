@@ -678,6 +678,56 @@ func TestRealmManagementTriggerActionLimits(t *testing.T) {
 	})
 }
 
+// TestRealmManagementTriggerWildcardEnvelopes pins the #70 simple-trigger
+// validation on the wire: the full-wildcard trigger still installs, and
+// per-simple-trigger field errors render as upstream's index-aligned
+// {"errors":{"simple_triggers":[...]}} array with {} for clean entries.
+func TestRealmManagementTriggerWildcardEnvelopes(t *testing.T) {
+	r := newRig(t)
+	action := `"action":{"http_url":"https://example.com/hook","http_method":"post"}`
+
+	t.Run("full wildcard creates", func(t *testing.T) {
+		def := `{"name":"wild_ok",` + action +
+			`,"simple_triggers":[{"type":"data_trigger","on":"incoming_data","interface_name":"*",` +
+			`"match_path":"/*","value_match_operator":"*"}]}`
+		if rec := r.req(t, http.MethodPost, "/triggers", def, r.rmaToken); rec.Code != http.StatusCreated {
+			t.Errorf("got %d (%s), want 201", rec.Code, rec.Body)
+		}
+	})
+
+	t.Run("star interface demands incoming_data", func(t *testing.T) {
+		def := `{"name":"star_vc",` + action +
+			`,"simple_triggers":[{"type":"data_trigger","on":"value_change","interface_name":"*",` +
+			`"match_path":"/*","value_match_operator":"*"}]}`
+		want := `{"errors":{"simple_triggers":[{"on":["must be incoming_data when interface_name is *"]}]}}`
+		rec := r.req(t, http.MethodPost, "/triggers", def, r.rmaToken)
+		if rec.Code != http.StatusUnprocessableEntity || rec.Body.String() != want {
+			t.Errorf("got %d %s, want 422 %s", rec.Code, rec.Body, want)
+		}
+	})
+
+	t.Run("second violating simple trigger is index-aligned", func(t *testing.T) {
+		def := `{"name":"aligned",` + action + `,"simple_triggers":[` +
+			`{"type":"data_trigger","on":"incoming_data","interface_name":"com.ex.M7a.Sensors",` +
+			`"interface_major":1,"match_path":"/value","value_match_operator":"*"},` +
+			`{"type":"data_trigger","on":"incoming_data","interface_name":"com.ex.M7a.Sensors",` +
+			`"interface_major":1,"match_path":"/*","value_match_operator":"==","known_value":1}]}`
+		want := `{"errors":{"simple_triggers":[{},{"value_match_operator":["must be * when match_path is /*"]}]}}`
+		rec := r.req(t, http.MethodPost, "/triggers", def, r.rmaToken)
+		if rec.Code != http.StatusUnprocessableEntity || rec.Body.String() != want {
+			t.Errorf("got %d %s, want 422 %s", rec.Code, rec.Body, want)
+		}
+	})
+
+	t.Run("name-less interface_added with major installs", func(t *testing.T) {
+		def := `{"name":"any_iface_added",` + action +
+			`,"simple_triggers":[{"type":"device_trigger","on":"interface_added","interface_major":2}]}`
+		if rec := r.req(t, http.MethodPost, "/triggers", def, r.rmaToken); rec.Code != http.StatusCreated {
+			t.Errorf("got %d (%s), want 201", rec.Code, rec.Body)
+		}
+	})
+}
+
 // --- helpers ----------------------------------------------------------------
 
 func discardLogger() *slog.Logger { return slog.New(slog.NewTextHandler(io.Discard, nil)) }

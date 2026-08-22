@@ -248,19 +248,40 @@ func (a *API) createTrigger(w http.ResponseWriter, r *http.Request) {
 	}
 	tr, err := a.svc.CreateTrigger(r.Context(), r.PathValue("realm"), def)
 	if err != nil {
-		// Action validation errors are produced BY triggers and render as
-		// upstream's nested changeset envelope (issue #63); they stay scoped
-		// to this handler — writeError keeps generic details elsewhere.
-		var fe *triggers.FieldErrors
-		if errors.As(err, &fe) {
-			_ = astarteapi.WriteRawErrors(w, http.StatusUnprocessableEntity,
-				map[string]any{fe.Part: fe.Fields})
+		// Trigger validation errors are produced BY triggers and render as
+		// upstream's nested changeset envelope (issues #63/#70); they stay
+		// scoped to this handler — writeError keeps generic details elsewhere.
+		var te *triggers.TriggerErrors
+		if errors.As(err, &te) {
+			_ = astarteapi.WriteRawErrors(w, http.StatusUnprocessableEntity, triggerErrorBody(te))
 			return
 		}
 		a.writeError(w, err)
 		return
 	}
 	_ = astarteapi.WriteData(w, http.StatusCreated, json.RawMessage(tr.Definition))
+}
+
+// triggerErrorBody builds the upstream nested envelope for a trigger
+// definition: {"action": {...}} and/or "simple_triggers" as the index-aligned
+// array with {} for clean entries (same convention as interface mappings).
+func triggerErrorBody(te *triggers.TriggerErrors) map[string]any {
+	body := map[string]any{}
+	if len(te.Action) > 0 {
+		body["action"] = te.Action
+	}
+	if len(te.SimpleTriggers) > 0 {
+		arr := make([]map[string][]string, len(te.SimpleTriggers))
+		for i, fields := range te.SimpleTriggers {
+			if len(fields) > 0 {
+				arr[i] = fields
+			} else {
+				arr[i] = map[string][]string{}
+			}
+		}
+		body["simple_triggers"] = arr
+	}
+	return body
 }
 
 func (a *API) getTrigger(w http.ResponseWriter, r *http.Request) {

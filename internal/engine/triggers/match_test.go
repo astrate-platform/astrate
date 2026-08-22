@@ -1,6 +1,7 @@
 package triggers
 
 import (
+	"errors"
 	"strings"
 	"testing"
 )
@@ -320,51 +321,95 @@ func TestCompileRejects(t *testing.T) {
 		{name: "unknown data condition", def: `{` + action + `, "simple_triggers": [{
 			"type": "data_trigger", "on": "data_happened", "interface_name": "a.B",
 			"interface_major": 0, "match_path": "/*", "value_match_operator": "*"}]}`,
-			want: "unknown data_trigger condition"},
+			want: "on=is invalid"},
 		{name: "data without interface", def: `{` + action + `, "simple_triggers": [{
 			"type": "data_trigger", "on": "incoming_data",
 			"match_path": "/*", "value_match_operator": "*"}]}`,
-			want: "requires interface_name"},
+			want: "interface_name=can't be blank"},
 		{name: "data without major", def: `{` + action + `, "simple_triggers": [{
 			"type": "data_trigger", "on": "incoming_data", "interface_name": "a.B",
 			"match_path": "/v", "value_match_operator": "*"}]}`,
-			want: "requires interface_major"},
+			want: "interface_major=can't be blank"},
+		{name: "any interface with value_change", def: `{` + action + `, "simple_triggers": [{
+			"type": "data_trigger", "on": "value_change", "interface_name": "*",
+			"match_path": "/*", "value_match_operator": "*"}]}`,
+			want: `on=must be incoming_data when interface_name is *`},
 		{name: "any interface with concrete path", def: `{` + action + `, "simple_triggers": [{
 			"type": "data_trigger", "on": "incoming_data", "interface_name": "*",
 			"match_path": "/v", "value_match_operator": "*"}]}`,
-			want: `requires match_path "/*"`},
+			want: `match_path=must be /* when interface_name is *`},
 		{name: "any path with operator", def: `{` + action + `, "simple_triggers": [{
 			"type": "data_trigger", "on": "incoming_data", "interface_name": "a.B",
 			"interface_major": 0, "match_path": "/*", "value_match_operator": ">",
 			"known_value": 1}]}`,
-			want: `requires value_match_operator "*"`},
+			want: `value_match_operator=must be * when match_path is /*`},
 		{name: "operator without known value", def: `{` + action + `, "simple_triggers": [{
 			"type": "data_trigger", "on": "incoming_data", "interface_name": "a.B",
 			"interface_major": 0, "match_path": "/v", "value_match_operator": ">"}]}`,
-			want: "requires known_value"},
+			want: "known_value=can't be blank"},
 		{name: "unknown operator", def: `{` + action + `, "simple_triggers": [{
 			"type": "data_trigger", "on": "incoming_data", "interface_name": "a.B",
 			"interface_major": 0, "match_path": "/v", "value_match_operator": "~="}]}`,
-			want: "unknown value_match_operator"},
+			want: "known_value=can't be blank, value_match_operator=is invalid"},
+		{name: "bad interface format leading digit", def: `{` + action + `, "simple_triggers": [{
+			"type": "data_trigger", "on": "incoming_data", "interface_name": "1bad.Name",
+			"interface_major": 0, "match_path": "/v", "value_match_operator": "*"}]}`,
+			want: "interface_name=has invalid format"},
+		{name: "bad interface format leading hyphen", def: `{` + action + `, "simple_triggers": [{
+			"type": "data_trigger", "on": "incoming_data", "interface_name": "-bad",
+			"interface_major": 0, "match_path": "/v", "value_match_operator": "*"}]}`,
+			want: "interface_name=has invalid format"},
+		{name: "bad interface format empty label", def: `{` + action + `, "simple_triggers": [{
+			"type": "data_trigger", "on": "incoming_data", "interface_name": "a..b",
+			"interface_major": 0, "match_path": "/v", "value_match_operator": "*"}]}`,
+			want: "interface_name=has invalid format"},
+		{name: "bad path trailing slash", def: `{` + action + `, "simple_triggers": [{
+			"type": "data_trigger", "on": "incoming_data", "interface_name": "a.B",
+			"interface_major": 0, "match_path": "/value/", "value_match_operator": "*"}]}`,
+			want: "match_path=has invalid format"},
+		{name: "bad path empty placeholder", def: `{` + action + `, "simple_triggers": [{
+			"type": "data_trigger", "on": "incoming_data", "interface_name": "a.B",
+			"interface_major": 0, "match_path": "%{}/x", "value_match_operator": "*"}]}`,
+			want: "match_path=has invalid format"},
+		// Upstream's mapping regex admits uppercase segments ([a-zA-Z]):
+		// "/Value/x" is VALID, unlike a naive lowercase-only reading.
 		{name: "device id and group name", def: `{` + action + `, "simple_triggers": [{
 			"type": "device_trigger", "on": "device_connected",
 			"device_id": "f0VMRgIBAQAAAAAAAAAAAA", "group_name": "g"}]}`,
-			want: "mutually exclusive"},
+			want: "group_name=must not be defined if device_id is defined"},
 		{name: "invalid device id", def: `{` + action + `, "simple_triggers": [{
 			"type": "device_trigger", "on": "device_connected", "device_id": "nope!"}]}`,
-			want: "not a valid device id"},
+			want: "device_id=is not a valid device id"},
+		{name: "extended device id", def: `{` + action + `, "simple_triggers": [{
+			"type": "device_trigger", "on": "device_connected", "device_id": "` +
+			strings.Repeat("A", 43) + `"}]}`,
+			want: "device_id=is too long, device id must be 128 bits"},
 		{name: "unknown device condition", def: `{` + action + `, "simple_triggers": [{
 			"type": "device_trigger", "on": "device_exploded"}]}`,
-			want: "unknown device_trigger condition"},
+			want: "on=is invalid"},
 		{name: "interface filter on connect", def: `{` + action + `, "simple_triggers": [{
 			"type": "device_trigger", "on": "device_connected", "interface_name": "a.B"}]}`,
-			want: "only valid on introspection conditions"},
+			want: "is allowed only in if 'on' is one of interface_minor_updated, interface_removed, interface_added"},
 		{name: "interface_added without interface", def: `{` + action + `, "simple_triggers": [{
 			"type": "device_trigger", "on": "interface_added"}]}`,
-			want: "requires interface_name"},
+			want: "interface_major=can't be blank"},
 		{name: "interface_added without major", def: `{` + action + `, "simple_triggers": [{
 			"type": "device_trigger", "on": "interface_added", "interface_name": "a.B"}]}`,
-			want: "requires interface_major"},
+			want: "interface_major=can't be blank"},
+		{name: "interface_removed without major", def: `{` + action + `, "simple_triggers": [{
+			"type": "device_trigger", "on": "interface_removed", "interface_name": "a.B"}]}`,
+			want: "interface_major=can't be blank"},
+		{name: "minor_updated without name", def: `{` + action + `, "simple_triggers": [{
+			"type": "device_trigger", "on": "interface_minor_updated", "interface_major": 1}]}`,
+			want: "interface_name=must be set in interface_minor_updated triggers"},
+		{name: "minor_updated wildcard name", def: `{` + action + `, "simple_triggers": [{
+			"type": "device_trigger", "on": "interface_minor_updated", "interface_name": "*",
+			"interface_major": 1}]}`,
+			want: `interface_name=must not be '*' in interface_minor_updated triggers`},
+		{name: "incoming_introspection with name", def: `{` + action + `, "simple_triggers": [{
+			"type": "device_trigger", "on": "incoming_introspection",
+			"interface_name": "a.B", "interface_major": 1}]}`,
+			want: "must not be set in incoming_introspection triggers"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -374,6 +419,94 @@ func TestCompileRejects(t *testing.T) {
 			}
 			if !strings.Contains(err.Error(), tc.want) {
 				t.Errorf("err = %v, want substring %q", err, tc.want)
+			}
+		})
+	}
+}
+
+// TestCompileFieldErrorShape pins the aggregate error shape end to end: a
+// clean first simple_trigger renders as an empty entry ({} on the wire), a
+// "/*"+"==" definition demands only the operator fix even though known_value
+// would be required for a concrete path (upstream's probe-frozen combo).
+func TestCompileFieldErrorShape(t *testing.T) {
+	def := `{
+		"action": {"http_url": "https://example.com", "http_method": "post"},
+		"simple_triggers": [
+			{"type": "device_trigger", "on": "device_connected"},
+			{"type": "data_trigger", "on": "incoming_data", "interface_name": "a.B",
+			 "interface_major": 0, "match_path": "/*", "value_match_operator": "==",
+			 "known_value": 1}
+		]
+	}`
+	_, err := Compile("t", []byte(def))
+	if err == nil {
+		t.Fatal("Compile accepted wildcard path with ==")
+	}
+	want := `triggers: "t": simple_triggers[1]: value_match_operator=must be * when match_path is /*`
+	if err.Error() != want {
+		t.Errorf("err = %q, want %q", err.Error(), want)
+	}
+	var te *TriggerErrors
+	if !errors.As(err, &te) {
+		t.Fatalf("err %v is not *TriggerErrors", err)
+	}
+	if te.Action != nil || len(te.SimpleTriggers) != 2 || te.SimpleTriggers[0] != nil {
+		t.Errorf("aggregate = %+v, want clean action, aligned length 2, empty entry 0", te)
+	}
+}
+
+// TestCompileDeviceIntrospectionMatrix covers rule set 2's accept side:
+// name-less added/removed triggers need (and keep) their major, "*" ignores
+// it, minor_updated wants a concrete name, stray majors are accepted.
+func TestCompileDeviceIntrospectionMatrix(t *testing.T) {
+	defDevice := func(condition string) string {
+		return `{
+			"action": {"http_url": "https://example.com/hook", "http_method": "post"},
+			"simple_triggers": [` + condition + `]
+		}`
+	}
+
+	namelessAdded := compile(t, defDevice(
+		`{"type": "device_trigger", "on": "interface_added", "interface_major": 2}`))
+	namelessRemoved := compile(t, defDevice(
+		`{"type": "device_trigger", "on": "interface_removed", "interface_major": 3}`))
+	wildcardAdded := compile(t, defDevice(
+		`{"type": "device_trigger", "on": "interface_added", "interface_name": "*", "interface_major": 7}`))
+	minorUpdated := compile(t, defDevice(
+		`{"type": "device_trigger", "on": "interface_minor_updated",
+		  "interface_name": "com.example.Sensors", "interface_major": 1}`))
+	connectWithMajor := compile(t, defDevice(
+		`{"type": "device_trigger", "on": "device_connected", "interface_major": 9}`))
+
+	if len(minorUpdated.Unsupported) == 0 {
+		t.Error("minor_updated should stay unevaluated-but-accepted")
+	}
+
+	cases := []struct {
+		name    string
+		trigger *Trigger
+		ev      DeviceEvent
+		want    bool
+	}{
+		{name: "name-less added matches any interface of the major", trigger: namelessAdded,
+			ev: DeviceEvent{DeviceID: "x", On: OnInterfaceAdded, Interface: "com.example.Other", Major: 2}, want: true},
+		{name: "name-less added rejects other majors", trigger: namelessAdded,
+			ev: DeviceEvent{DeviceID: "x", On: OnInterfaceAdded, Interface: "com.example.Other", Major: 1}, want: false},
+		{name: "name-less removed matches any interface of the major", trigger: namelessRemoved,
+			ev: DeviceEvent{DeviceID: "x", On: OnInterfaceRemoved, Interface: "org.a.B", Major: 3}, want: true},
+		{name: "name-less removed rejects other majors", trigger: namelessRemoved,
+			ev: DeviceEvent{DeviceID: "x", On: OnInterfaceRemoved, Interface: "org.a.B", Major: 4}, want: false},
+		{name: "wildcard name matches any interface", trigger: wildcardAdded,
+			ev: DeviceEvent{DeviceID: "x", On: OnInterfaceAdded, Interface: "com.example.X", Major: 9}, want: true},
+		{name: "wildcard name ignores the major", trigger: wildcardAdded,
+			ev: DeviceEvent{DeviceID: "x", On: OnInterfaceAdded, Interface: "com.example.X", Major: 123}, want: true},
+		{name: "connect with major-only stays unfiltered", trigger: connectWithMajor,
+			ev: DeviceEvent{DeviceID: "x", On: OnDeviceConnected}, want: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := tc.trigger.MatchesDevice(tc.ev); got != tc.want {
+				t.Errorf("MatchesDevice(%+v) = %t, want %t", tc.ev, got, tc.want)
 			}
 		})
 	}

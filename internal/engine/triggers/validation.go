@@ -44,16 +44,62 @@ type FieldErrors struct {
 // Error renders a stable human form ("action: field=message, ..." with fields
 // sorted) so logs and plain-error consumers stay deterministic.
 func (e *FieldErrors) Error() string {
-	fields := make([]string, 0, len(e.Fields))
-	for f := range e.Fields {
-		fields = append(fields, f)
+	return e.Part + ": " + formatFieldErrors(e.Fields)
+}
+
+// TriggerErrors carries upstream-shaped field errors across the parts of a
+// trigger definition; rendered as {"errors":{"action":{...}}} and/or
+// {"errors":{"simple_triggers":[...]}} (index-aligned, {} for clean entries).
+type TriggerErrors struct {
+	Action         map[string][]string
+	SimpleTriggers []map[string][]string // nil entries = no errors at that index
+}
+
+// Error renders a stable human form: one "action: ..." segment plus one
+// "simple_triggers[i]: ..." segment per offending condition (fields sorted
+// inside each), joined by "; ".
+func (e *TriggerErrors) Error() string {
+	var parts []string
+	if len(e.Action) > 0 {
+		parts = append(parts, "action: "+formatFieldErrors(e.Action))
 	}
-	sort.Strings(fields)
-	parts := make([]string, 0, len(fields))
-	for _, f := range fields {
-		parts = append(parts, fmt.Sprintf("%s=%s", f, strings.Join(e.Fields[f], ", ")))
+	for i, fields := range e.SimpleTriggers {
+		if len(fields) > 0 {
+			parts = append(parts, fmt.Sprintf("simple_triggers[%d]: %s", i, formatFieldErrors(fields)))
+		}
 	}
-	return e.Part + ": " + strings.Join(parts, ", ")
+	if len(parts) == 0 {
+		return "no trigger errors"
+	}
+	return strings.Join(parts, "; ")
+}
+
+// fieldErrs is the per-condition accumulator compileData/compileDevice build;
+// it doubles as an error so Compile can collect it into TriggerErrors without
+// changing compileSimple's signature.
+type fieldErrs map[string][]string
+
+// Error renders the sorted "field=message" form (see formatFieldErrors).
+func (f fieldErrs) Error() string { return formatFieldErrors(f) }
+
+// add appends one message for field, preserving accumulation order.
+func (f fieldErrs) add(field, msg string) {
+	f[field] = append(f[field], msg)
+}
+
+// formatFieldErrors renders fields sorted as "field=msg1, msg2" entries
+// joined with ", ", so logs and plain-error consumers stay deterministic.
+func formatFieldErrors(fields map[string][]string) string {
+	names := make([]string, 0, len(fields))
+	for f := range fields {
+		names = append(names, f)
+	}
+	sort.Strings(names)
+	parts := make([]string, 0, len(names))
+	for _, f := range names {
+		parts = append(parts, fmt.Sprintf("%s=%s", f, strings.Join(fields[f], ", ")))
+	}
+	return strings.Join(parts, ", ")
 }
 
 // newFieldErrors starts an empty accumulation for the "action" part.
