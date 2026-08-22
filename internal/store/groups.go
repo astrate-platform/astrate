@@ -149,6 +149,31 @@ func (s *Store) ListGroupDevices(ctx context.Context, groupID int64) ([]deviceid
 	return out, nil
 }
 
+// ListGroupDevicesPage returns one page of member IDs ordered by device_id,
+// skipping the first offset rows; at most limit rows are returned.
+func (s *Store) ListGroupDevicesPage(ctx context.Context, groupID int64, offset, limit int) ([]deviceid.ID, error) {
+	rows, err := s.pool.Query(ctx,
+		`SELECT device_id FROM group_devices WHERE group_id = $1 ORDER BY device_id OFFSET $2 LIMIT $3`,
+		groupID, offset, limit)
+	if err != nil {
+		return nil, fmt.Errorf("store: listing devices of group %d: %w", groupID, err)
+	}
+	defer rows.Close()
+
+	var out []deviceid.ID
+	for rows.Next() {
+		var u pgtype.UUID
+		if err := rows.Scan(&u); err != nil {
+			return nil, fmt.Errorf("store: scanning group device: %w", err)
+		}
+		out = append(out, deviceid.ID(u.Bytes))
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("store: listing devices of group %d: %w", groupID, err)
+	}
+	return out, nil
+}
+
 // ListDeviceGroups returns the names of every group the device belongs to.
 func (s *Store) ListDeviceGroups(ctx context.Context, realmID int16, deviceID deviceid.ID) ([]string, error) {
 	rows, err := s.pool.Query(ctx, `

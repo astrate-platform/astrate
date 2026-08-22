@@ -8,6 +8,7 @@ package appengine
 
 import (
 	"context"
+	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -39,6 +40,26 @@ var (
 
 // ErrGroupNotFound marks a missing group (maps to 404 "Group not found").
 var ErrGroupNotFound = errors.New("Group not found")
+
+// ErrGroupAlreadyExists marks a duplicate group name (maps to 409 "Group
+// already exists"); it also satisfies store.ErrAlreadyExists so generic
+// duplicate handling keeps working.
+var ErrGroupAlreadyExists = fmt.Errorf("Group already exists: %w", store.ErrAlreadyExists)
+
+// ErrDeviceAlreadyInGroup marks re-adding an existing member (maps to 409
+// "Device already in group"); it too satisfies store.ErrAlreadyExists.
+var ErrDeviceAlreadyInGroup = fmt.Errorf("Device already in group: %w", store.ErrAlreadyExists)
+
+// FieldErrors carries per-field validation failures rendered as the
+// Phoenix-changeset envelope {"errors":{"<field>":["<message>",...]}} (422).
+type FieldErrors map[string][]string
+
+func (fe FieldErrors) Error() string { return "appengine: invalid request payload" }
+
+// addf appends one formatted message under field.
+func (fe FieldErrors) addf(field, format string, args ...any) {
+	fe[field] = append(fe[field], fmt.Sprintf(format, args...))
+}
 
 // missingGroup wraps a failed group resolution so it satisfies BOTH
 // ErrGroupNotFound (→ 404 "Group not found") and store.ErrNotFound.
@@ -434,30 +455,63 @@ func (s *Service) aliasValuesTaken(ctx context.Context, rid int16, id deviceid.I
 // --- groups -----------------------------------------------------------------
 
 // CreateGroup creates a group with its initial device membership (upstream
-// POST /groups requires a non-empty device list).
+// POST /groups requires a non-empty device list). Blank-name and empty-device
+// rejections live at the handler level as field errors; here every listed id
+// must parse AND name an existing device row — a single failure rejects the
+// whole body with the upstream changeset message, before any row is created.
 func (s *Service) CreateGroup(ctx context.Context, realm, name string, devices []string) error {
 	rid, err := s.realmID(ctx, realm)
 	if err != nil {
 		return err
 	}
-	if name == "" {
-		return fmt.Errorf("%w: group_name can't be blank", ErrValidation)
+	fe := FieldErrors{}
+	var ids []deviceid.ID
+	seen := make(map[deviceid.ID]struct{}, len(devices))
+	for _, raw := range devices {
+		id, err := deviceid.Parse(raw)
+		if err != nil {
+			fe.addf("devices", "must exist (%s not found)", raw)
+			continue
+		}
+		if _, err := s.st.GetDevice(ctx, rid, id); err != nil {
+			if errors.Is(err, store.ErrNotFound) {
+				fe.addf("devices", "must exist (%s not found)", raw)
+				continue
+			}
+			return err
+		}
+		// Duplicate ids inside one body are accepted and inserted once.
+		if _, dup := seen[id]; !dup {
+			seen[id] = struct{}{}
+			ids = append(ids, id)
+		}
 	}
-	if len(devices) == 0 {
-		return fmt.Errorf("%w: a group must contain at least one device", ErrValidation)
-	}
-	ids, err := parseDeviceIDs(devices)
-	if err != nil {
-		return err
+	if len(fe) > 0 {
+		return fe
 	}
 	g, err := s.st.CreateGroup(ctx, rid, name)
 	if err != nil {
+		if errors.Is(err, store.ErrAlreadyExists) {
+			return fmt.Errorf("%w: %w", ErrGroupAlreadyExists, err)
+		}
 		return err
 	}
 	for _, id := range ids {
 		if err := s.st.AddGroupDevice(ctx, g.ID, rid, id); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+// GetGroup resolves one group by name (upstream GET /groups/{group}).
+func (s *Service) GetGroup(ctx context.Context, realm, name string) error {
+	rid, err := s.realmID(ctx, realm)
+	if err != nil {
+		return err
+	}
+	if _, err := s.st.GetGroupByName(ctx, rid, name); err != nil {
+		return missingGroup(name)
 	}
 	return nil
 }
@@ -479,45 +533,90 @@ func (s *Service) ListGroups(ctx context.Context, realm string) ([]string, error
 	return names, nil
 }
 
-// ListGroupDevices returns the devices in a group — bare IDs, or full status
-// objects with details (the dashboard's group page). Groups are unpaginated
-// upstream; details resolves each member row individually, which is fine at
-// group sizes.
-func (s *Service) ListGroupDevices(ctx context.Context, realm, name string, details bool) (*DevicePage, error) {
+// ListGroupDevices returns one page of the devices in a group — bare IDs, or
+// full status objects with details (the dashboard's group page). The bare
+// listing paginates with an OFFSET cursor carried inside a UUID-v1-format
+// from_token (upstream's own tokens are insertion-time v1 uuids; any
+// well-formed v1 string is accepted); details stays unpaginated.
+func (s *Service) ListGroupDevices(ctx context.Context, realm, name string, details bool, fromToken string, limit int) (*DevicePage, error) {
 	rid, err := s.realmID(ctx, realm)
 	if err != nil {
 		return nil, err
 	}
+	offset := 0
+	if fromToken != "" {
+		var ok bool
+		if offset, ok = parseGroupToken(fromToken); !ok {
+			return nil, FieldErrors{"from_token": {"is invalid"}}
+		}
+	}
+	if limit < 0 {
+		return nil, FieldErrors{"limit": {"must be greater than or equal to 0"}}
+	}
+	if limit == 0 {
+		limit = DefaultDeviceLimit
+	}
 	g, err := s.st.GetGroupByName(ctx, rid, name)
 	if err != nil {
-		return nil, err
-	}
-	ids, err := s.st.ListGroupDevices(ctx, g.ID)
-	if err != nil {
-		return nil, err
+		return nil, missingGroup(name)
 	}
 	page := &DevicePage{}
-	if !details {
-		page.IDs = make([]string, len(ids))
-		for i := range ids {
-			page.IDs[i] = ids[i].String()
-		}
-		return page, nil
-	}
-	devs := make([]store.Device, 0, len(ids))
-	for _, id := range ids {
-		d, err := s.st.GetDevice(ctx, rid, id)
+	if details {
+		ids, err := s.st.ListGroupDevices(ctx, g.ID)
 		if err != nil {
 			return nil, err
 		}
-		devs = append(devs, *d)
+		devs := make([]store.Device, 0, len(ids))
+		for _, id := range ids {
+			d, err := s.st.GetDevice(ctx, rid, id)
+			if err != nil {
+				return nil, err
+			}
+			devs = append(devs, *d)
+		}
+		statuses, err := s.deviceStatusBatch(ctx, rid, devs)
+		if err != nil {
+			return nil, err
+		}
+		page.Statuses = statuses
+		return page, nil
 	}
-	statuses, err := s.deviceStatusBatch(ctx, rid, devs)
+	rows, err := s.st.ListGroupDevicesPage(ctx, g.ID, offset, limit+1)
 	if err != nil {
 		return nil, err
 	}
-	page.Statuses = statuses
+	if len(rows) > limit {
+		rows = rows[:limit]
+		page.Next = groupTokenFor(offset + limit)
+	}
+	page.IDs = make([]string, len(rows))
+	for i := range rows {
+		page.IDs[i] = rows[i].String()
+	}
 	return page, nil
+}
+
+// groupTokenFor renders offset as a UUID-v1-format cursor string:
+// time_low = offset (big-endian), time_mid = 0, version nibble = 1,
+// clock-seq variant = 0b10, node = 0.
+func groupTokenFor(offset int) string {
+	var u deviceid.ID
+	binary.BigEndian.PutUint32(u[0:4], uint32(offset))
+	u[6] = 0x10 // version 1
+	u[8] = 0x80 // RFC 4122 variant
+	return u.UUID()
+}
+
+// parseGroupToken accepts only strings that parse as a canonical UUID whose
+// version NIBBLE is 1 (upstream :uuid.is_v1()); returns (offset, true) using
+// time_low, or (0, false) otherwise. The zero fields are not demanded —
+// upstream accepts any well-formed v1 uuid.
+func parseGroupToken(s string) (int, bool) {
+	u, err := deviceid.FromUUID(s)
+	if err != nil || u[6]>>4 != 1 {
+		return 0, false
+	}
+	return int(binary.BigEndian.Uint32(u[0:4])), true
 }
 
 // AddGroupDevice adds a device to a group.
@@ -528,9 +627,15 @@ func (s *Service) AddGroupDevice(ctx context.Context, realm, name, deviceID stri
 	}
 	id, err := deviceid.Parse(deviceID)
 	if err != nil {
-		return fmt.Errorf("%w: invalid device id", ErrValidation)
+		return FieldErrors{"device_id": {"is not a valid device id"}}
 	}
-	return s.st.AddGroupDevice(ctx, g.ID, rid, id)
+	if err := s.st.AddGroupDevice(ctx, g.ID, rid, id); err != nil {
+		if errors.Is(err, store.ErrAlreadyExists) {
+			return fmt.Errorf("%w: %w", ErrDeviceAlreadyInGroup, err)
+		}
+		return err
+	}
+	return nil
 }
 
 // RemoveGroupDevice removes a device from a group.
@@ -735,16 +840,4 @@ func orEmptyStr(m map[string]string) map[string]string {
 		return map[string]string{}
 	}
 	return m
-}
-
-func parseDeviceIDs(ids []string) ([]deviceid.ID, error) {
-	out := make([]deviceid.ID, len(ids))
-	for i, s := range ids {
-		id, err := deviceid.Parse(s)
-		if err != nil {
-			return nil, fmt.Errorf("%w: invalid device id %q", ErrValidation, s)
-		}
-		out[i] = id
-	}
-	return out, nil
 }

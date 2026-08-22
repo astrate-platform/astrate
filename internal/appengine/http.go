@@ -60,6 +60,7 @@ func (a *API) Mount(mux *http.ServeMux) {
 
 	mux.Handle("GET "+base+"/groups", h(a.listGroups))
 	mux.Handle("POST "+base+"/groups", h(a.createGroup))
+	mux.Handle("GET "+base+"/groups/{group}", h(a.getGroup))
 	mux.Handle("GET "+base+"/groups/{group}/devices", h(a.listGroupDevices))
 	mux.Handle("POST "+base+"/groups/{group}/devices", h(a.addGroupDevice))
 	mux.Handle("GET "+base+"/groups/{group}/devices/{device}", h(a.getGroupDevice))
@@ -362,10 +363,12 @@ func (a *API) listGroups(w http.ResponseWriter, r *http.Request) {
 	_ = astarteapi.WriteData(w, http.StatusOK, names)
 }
 
-// groupBody is the POST /groups wire shape.
+// groupBody is the POST /groups wire shape. Devices is a pointer so a MISSING
+// key is distinguishable from an empty array (upstream rejects both, with
+// different messages).
 type groupBody struct {
-	GroupName string   `json:"group_name"`
-	Devices   []string `json:"devices"`
+	GroupName string    `json:"group_name"`
+	Devices   *[]string `json:"devices"`
 }
 
 func (a *API) createGroup(w http.ResponseWriter, r *http.Request) {
@@ -374,25 +377,81 @@ func (a *API) createGroup(w http.ResponseWriter, r *http.Request) {
 		_ = astarteapi.WriteBadRequest(w)
 		return
 	}
-	if err := a.svc.CreateGroup(r.Context(), r.PathValue("realm"), body.GroupName, body.Devices); err != nil {
+	switch {
+	case body.GroupName == "":
+		_ = astarteapi.WriteFieldErrors(w, http.StatusUnprocessableEntity,
+			FieldErrors{"group_name": {"can't be blank"}})
+		return
+	case body.Devices == nil:
+		_ = astarteapi.WriteFieldErrors(w, http.StatusUnprocessableEntity,
+			FieldErrors{"devices": {"can't be blank"}})
+		return
+	case len(*body.Devices) == 0:
+		_ = astarteapi.WriteFieldErrors(w, http.StatusUnprocessableEntity,
+			FieldErrors{"devices": {"should have at least 1 item(s)"}})
+		return
+	}
+	if err := a.svc.CreateGroup(r.Context(), r.PathValue("realm"), body.GroupName, *body.Devices); err != nil {
 		a.writeError(w, err)
 		return
 	}
+	// The 201 echo carries the ORIGINAL body list, duplicates included.
 	_ = astarteapi.WriteData(w, http.StatusCreated, body)
 }
 
+// getGroup serves GET /groups/{group}: the group identity body, distinct from
+// listing its members.
+func (a *API) getGroup(w http.ResponseWriter, r *http.Request) {
+	if err := a.svc.GetGroup(r.Context(), r.PathValue("realm"), r.PathValue("group")); err != nil {
+		a.writeError(w, err)
+		return
+	}
+	_ = astarteapi.WriteData(w, http.StatusOK, map[string]string{"group_name": r.PathValue("group")})
+}
+
 func (a *API) listGroupDevices(w http.ResponseWriter, r *http.Request) {
-	details, _ := strconv.ParseBool(r.URL.Query().Get("details"))
-	page, err := a.svc.ListGroupDevices(r.Context(), r.PathValue("realm"), r.PathValue("group"), details)
+	q := r.URL.Query()
+	details, _ := strconv.ParseBool(q.Get("details"))
+	limit, _ := strconv.Atoi(q.Get("limit"))
+	page, err := a.svc.ListGroupDevices(r.Context(), r.PathValue("realm"), r.PathValue("group"),
+		details, q.Get("from_token"), limit)
 	if err != nil {
 		a.writeError(w, err)
 		return
 	}
+	var body any = page.IDs
 	if details {
-		_ = astarteapi.WriteData(w, http.StatusOK, page.Statuses)
-		return
+		body = page.Statuses
 	}
-	_ = astarteapi.WriteData(w, http.StatusOK, page.IDs)
+	_ = astarteapi.WriteDataWithLinks(w, http.StatusOK, body,
+		groupListLinks(r.PathValue("realm"), r.PathValue("group"), q, page.Next))
+}
+
+// groupListLinks builds the upstream pagination links for a group-device
+// listing. Self echoes the request query only when one was sent; next carries
+// from_token plus the effective limit (and details when the request had it),
+// matching the probed upstream bodies — url.Values.Encode sorts the keys, so
+// details precedes from_token precedes limit.
+func groupListLinks(realm, group string, q url.Values, next string) astarteapi.Links {
+	base := "/v1/" + realm + "/groups/" + group + "/devices"
+	self := base
+	if enc := q.Encode(); enc != "" {
+		self += "?" + enc
+	}
+	links := astarteapi.Links{Self: self}
+	if next == "" {
+		return links
+	}
+	limit := q.Get("limit")
+	if limit == "" {
+		limit = strconv.Itoa(DefaultDeviceLimit)
+	}
+	nq := url.Values{"from_token": {next}, "limit": {limit}}
+	if d := q.Get("details"); d != "" {
+		nq.Set("details", d)
+	}
+	links.Next = base + "?" + nq.Encode()
+	return links
 }
 
 // groupDeviceBody is the POST /groups/{group}/devices wire shape.
@@ -504,7 +563,10 @@ func parseQueryOpts(r *http.Request) (QueryOpts, error) {
 
 // writeError maps service/store errors onto upstream-shaped responses.
 func (a *API) writeError(w http.ResponseWriter, err error) {
+	var fe FieldErrors
 	switch {
+	case errors.As(err, &fe):
+		_ = astarteapi.WriteFieldErrors(w, http.StatusUnprocessableEntity, fe)
 	case errors.Is(err, ErrInvalidAlias):
 		_ = astarteapi.WriteError(w, http.StatusBadRequest, "Invalid alias")
 	case errors.Is(err, ErrAliasAlreadyInUse):
@@ -517,6 +579,10 @@ func (a *API) writeError(w http.ResponseWriter, err error) {
 		_ = astarteapi.WriteError(w, http.StatusUnprocessableEntity, "Attribute key not found")
 	case errors.Is(err, ErrValidation):
 		_ = astarteapi.WriteError(w, http.StatusUnprocessableEntity, validationDetail(err))
+	case errors.Is(err, ErrGroupAlreadyExists):
+		_ = astarteapi.WriteError(w, http.StatusConflict, "Group already exists")
+	case errors.Is(err, ErrDeviceAlreadyInGroup):
+		_ = astarteapi.WriteError(w, http.StatusConflict, "Device already in group")
 	case errors.Is(err, store.ErrAlreadyExists):
 		_ = astarteapi.WriteError(w, http.StatusConflict, "Already exists")
 	case errors.Is(err, ErrGroupNotFound):
