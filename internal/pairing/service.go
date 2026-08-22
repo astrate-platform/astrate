@@ -33,6 +33,9 @@ type Store interface {
 	SetDeviceCredentials(ctx context.Context, realmID int16, id deviceid.ID, certSerial, certAKI string, requestIP netip.Addr) error
 	SetPayloadFormatHint(ctx context.Context, realmID int16, id deviceid.ID, hint string) error
 	CountDevices(ctx context.Context, realmID int16) (int64, error)
+	// Health verifies database liveness behind the realm-scoped health
+	// probe (#71).
+	Health(ctx context.Context) error
 }
 
 // Service-level sentinel errors; the HTTP layer maps them onto upstream
@@ -358,6 +361,16 @@ func (s *Service) VerifyCredentials(ctx context.Context, realmName, deviceIDStr,
 	res.Valid = true
 	res.Until = until
 	return res, nil
+}
+
+// Health reports whether the realm exists and the database behind it is
+// healthy (GET /pairing/v1/{realm}/health, upstream 1.3+; unauthenticated by
+// design — FDO-flow devices probe it before they hold credentials).
+func (s *Service) Health(ctx context.Context, realm string) error {
+	if _, err := s.st.GetRealmByName(ctx, realm); err != nil {
+		return err // store.ErrNotFound → 404
+	}
+	return s.st.Health(ctx) // nil → 200; anything else → 503
 }
 
 // authenticateDevice resolves the realm and device and bcrypt-compares the

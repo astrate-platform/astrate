@@ -13,6 +13,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"net/netip"
 	"strings"
 	"testing"
 	"time"
@@ -35,12 +36,28 @@ type hkRig struct {
 	realmKey string // a JWT public key PEM realms are created with
 }
 
+// hkRigOpts selects the optional service knobs a rig wires.
+type hkRigOpts struct {
+	defaultRetention *int64
+	deletionDisabled bool
+}
+
 func newHKRig(t *testing.T) *hkRig {
 	t.Helper()
-	return newHKRigWithDefault(t, nil)
+	return newHKRigOpts(t, hkRigOpts{})
 }
 
 func newHKRigWithDefault(t *testing.T, defaultRetention *int64) *hkRig {
+	t.Helper()
+	return newHKRigOpts(t, hkRigOpts{defaultRetention: defaultRetention})
+}
+
+func newHKRigWithDeletionDisabled(t *testing.T) *hkRig {
+	t.Helper()
+	return newHKRigOpts(t, hkRigOpts{deletionDisabled: true})
+}
+
+func newHKRigOpts(t *testing.T, opts hkRigOpts) *hkRig {
 	t.Helper()
 	ctx := context.Background()
 	pool := testutil.StartTimescale(t)
@@ -68,7 +85,10 @@ func newHKRigWithDefault(t *testing.T, defaultRetention *int64) *hkRig {
 	instancePub := pubPEM(t, &instanceKey.PublicKey)
 
 	mux := http.NewServeMux()
-	NewAPI(NewService(st, sealer, nil, discardLogger()).WithDefaultDatastreamMaximumStorageRetention(defaultRetention), auth.NewMiddleware(st), []string{instancePub}).Mount(mux)
+	NewAPI(NewService(st, sealer, nil, discardLogger()).
+		WithDefaultDatastreamMaximumStorageRetention(opts.defaultRetention).
+		WithRealmDeletionDisabled(opts.deletionDisabled),
+		auth.NewMiddleware(st), []string{instancePub}).Mount(mux)
 
 	return &hkRig{
 		st: st, sealer: sealer, mux: mux,
@@ -329,6 +349,92 @@ func TestHousekeepingRetentionDefault(t *testing.T) {
 		decodeData(t, r.req(t, http.MethodGet, "/realms/"+name, "", r.haToken), &rb)
 		if rb.DatastreamMaximumStorageRetention != nil {
 			t.Errorf("retention without default = %v, want nil", *rb.DatastreamMaximumStorageRetention)
+		}
+	})
+}
+
+// TestHousekeepingDeleteGating drives #75 against upstream's wire shapes:
+// the cluster flag answers 405 verbatim, connected devices answer 422 with
+// the connected_devices_present error_name, and everything else keeps the
+// synchronous always-delete behavior.
+func TestHousekeepingDeleteGating(t *testing.T) {
+	create := func(t *testing.T, r *hkRig) string {
+		t.Helper()
+		name := "dg" + randSuffix(t)
+		body := `{"realm_name":` + jsonStr(name) + `,"jwt_public_key_pem":` + jsonStr(r.realmKey) + `}`
+		if rec := r.req(t, http.MethodPost, "/realms", body, r.haToken); rec.Code != http.StatusCreated {
+			t.Fatalf("create %s: got %d, want 201 (%s)", name, rec.Code, rec.Body)
+		}
+		return name
+	}
+	registerDevice := func(t *testing.T, r *hkRig, realmName string) deviceid.ID {
+		t.Helper()
+		svc := pairing.New(r.st, r.sealer, pairing.Config{BrokerURL: "mqtts://localhost:8883"})
+		dev, err := deviceid.Random()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := svc.Register(context.Background(), realmName, dev.String(), ""); err != nil {
+			t.Fatalf("registering device into %s: %v", realmName, err)
+		}
+		return dev
+	}
+
+	t.Run("UnknownRealm404", func(t *testing.T) {
+		r := newHKRig(t)
+		if rec := r.req(t, http.MethodDelete, "/realms/nope"+randSuffix(t), "", r.haToken); rec.Code != http.StatusNotFound {
+			t.Errorf("delete unknown realm: got %d, want 404", rec.Code)
+		}
+	})
+
+	t.Run("ConnectedDevicesPresent422", func(t *testing.T) {
+		r := newHKRig(t)
+		realmName := create(t, r)
+		dev := registerDevice(t, r, realmName)
+		realm, err := r.st.GetRealmByName(context.Background(), realmName)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := r.st.SetDeviceConnected(context.Background(), realm.ID, dev, time.Now(), netip.MustParseAddr("10.0.0.1")); err != nil {
+			t.Fatal(err)
+		}
+		rec := r.req(t, http.MethodDelete, "/realms/"+realmName, "", r.haToken)
+		if rec.Code != http.StatusUnprocessableEntity {
+			t.Errorf("delete with connected device: got %d, want 422 (%s)", rec.Code, rec.Body)
+		}
+		if got, want := rec.Body.String(), `{"errors":{"error_name":["connected_devices_present"]}}`; got != want {
+			t.Errorf("body = %s, want %s", got, want)
+		}
+		// Gated, not deleted: the realm must still be there.
+		if rec := r.req(t, http.MethodGet, "/realms/"+realmName, "", r.haToken); rec.Code != http.StatusOK {
+			t.Errorf("realm survived the gated delete: got %d, want 200", rec.Code)
+		}
+
+		// Same realm after disconnection deletes normally.
+		if err := r.st.SetDeviceDisconnected(context.Background(), realm.ID, dev, time.Now()); err != nil {
+			t.Fatal(err)
+		}
+		if rec := r.req(t, http.MethodDelete, "/realms/"+realmName, "", r.haToken); rec.Code != http.StatusNoContent {
+			t.Errorf("delete after disconnect: got %d, want 204 (%s)", rec.Code, rec.Body)
+		}
+		if rec := r.req(t, http.MethodGet, "/realms/"+realmName, "", r.haToken); rec.Code != http.StatusNotFound {
+			t.Errorf("get deleted realm: got %d, want 404", rec.Code)
+		}
+	})
+
+	t.Run("FlagSet405EvenWithoutDevices", func(t *testing.T) {
+		r := newHKRigWithDeletionDisabled(t)
+		realmName := create(t, r)
+		rec := r.req(t, http.MethodDelete, "/realms/"+realmName, "", r.haToken)
+		if rec.Code != http.StatusMethodNotAllowed {
+			t.Errorf("deletion disabled: got %d, want 405 (%s)", rec.Code, rec.Body)
+		}
+		if got, want := rec.Body.String(), `{"errors":{"detail":"Realm deletion disabled"}}`; got != want {
+			t.Errorf("body = %s, want %s", got, want)
+		}
+		// The gate precedes existence checks: an unknown realm gets the same 405.
+		if rec := r.req(t, http.MethodDelete, "/realms/nope"+randSuffix(t), "", r.haToken); rec.Code != http.StatusMethodNotAllowed {
+			t.Errorf("deletion disabled, unknown realm: got %d, want 405", rec.Code)
 		}
 	})
 }

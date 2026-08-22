@@ -20,6 +20,18 @@ import (
 // rule (maps to 422).
 var ErrValidation = errors.New("housekeeping: validation failed")
 
+// Deletion-gating sentinels (#75), mapped onto upstream's wire shapes by the
+// HTTP layer: a deployment with the deletion flag set answers 405, a realm
+// with devices still connected answers 422 connected_devices_present.
+var (
+	// ErrDeletionDisabled reports DELETE against a deployment whose
+	// RealmDeletionDisabled flag is set.
+	ErrDeletionDisabled = errors.New("housekeeping: realm deletion disabled")
+	// ErrConnectedDevicesPresent reports DELETE against a realm that has
+	// devices currently connected.
+	ErrConnectedDevicesPresent = errors.New("housekeeping: connected devices present")
+)
+
 // RealmView is the API projection of a realm: never the CA private key.
 type RealmView struct {
 	Name                              string
@@ -48,6 +60,12 @@ type Service struct {
 	// injected at creation when the caller omits the field (issue #73).
 	// nil disables injection: an explicit value always wins.
 	defaultRetention *int64
+
+	// deletionDisabled mirrors upstream's cluster-wide realm-deletion flag
+	// (#75): when set, DeleteRealm answers ErrDeletionDisabled without
+	// touching the store. False (the zero value) keeps the historical
+	// always-delete behavior.
+	deletionDisabled bool
 }
 
 // NewService builds the service. reloader (the broker) may be nil; log
@@ -66,6 +84,14 @@ func NewService(st *store.Store, sealer *store.KeySealer, reloader Reloader, log
 // before.
 func (s *Service) WithDefaultDatastreamMaximumStorageRetention(defaultRetention *int64) *Service {
 	s.defaultRetention = defaultRetention
+	return s
+}
+
+// WithRealmDeletionDisabled mirrors upstream's cluster flag (#75): when set,
+// DELETE answers 405 "Realm deletion disabled". Default (false) keeps the
+// historical always-delete behavior.
+func (s *Service) WithRealmDeletionDisabled(disabled bool) *Service {
+	s.deletionDisabled = disabled
 	return s
 }
 
@@ -198,7 +224,22 @@ func (s *Service) ListRealms(ctx context.Context) ([]string, error) {
 
 // DeleteRealm tears a realm down, cascading its interfaces, devices,
 // properties, and datastream rows (store.DeleteRealm, docs/DESIGN.md §2.1).
+// Gated upstream-style (#75): ErrDeletionDisabled when the deployment flag is
+// set (405), ErrConnectedDevicesPresent when the realm has devices still
+// connected (422), store.ErrNotFound for an unknown realm (404).
 func (s *Service) DeleteRealm(ctx context.Context, name string) error {
+	if s.deletionDisabled {
+		return ErrDeletionDisabled
+	}
+	r, err := s.st.GetRealmByName(ctx, name)
+	if err != nil {
+		return err
+	}
+	if _, connected, err := s.st.DeviceStats(ctx, r.ID); err != nil {
+		return err
+	} else if connected > 0 {
+		return ErrConnectedDevicesPresent
+	}
 	if err := s.st.DeleteRealm(ctx, name); err != nil {
 		return err
 	}

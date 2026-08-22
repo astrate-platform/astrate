@@ -117,6 +117,10 @@ func (f *fakeStore) CountDevices(_ context.Context, realmID int16) (int64, error
 	return int64(len(f.devices[realmID])), nil
 }
 
+func (f *fakeStore) Health(_ context.Context) error {
+	return nil
+}
+
 // --- test fixtures ---------------------------------------------------------
 
 func newSealer(t *testing.T) *store.KeySealer {

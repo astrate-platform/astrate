@@ -351,3 +351,57 @@ insecure_dev_mode = true
 		}
 	})
 }
+
+func TestHousekeepingRealmDeletionDisabledEnv(t *testing.T) {
+	const env = "ASTRATE_HOUSEKEEPING_REALM_DELETION_DISABLED"
+	body := `
+[database]
+dsn = "x"
+[mqtt]
+insecure_dev_mode = true
+`
+	load := func(t *testing.T) (Config, error) {
+		t.Helper()
+		return Load(writeTOML(t, body))
+	}
+
+	t.Run("absent is false", func(t *testing.T) {
+		cfg, err := load(t)
+		if err != nil {
+			t.Fatalf("Load: %v", err)
+		}
+		if cfg.Housekeeping.RealmDeletionDisabled {
+			t.Error("realm deletion disabled without env = true, want false")
+		}
+	})
+	for _, truthy := range []string{"true", "TRUE", "True", "1"} {
+		t.Run("true "+truthy, func(t *testing.T) {
+			t.Setenv(env, truthy)
+			cfg, err := load(t)
+			if err != nil {
+				t.Fatalf("Load: %v", err)
+			}
+			if !cfg.Housekeeping.RealmDeletionDisabled {
+				t.Errorf("env %s=%s → false, want true", env, truthy)
+			}
+		})
+	}
+	for _, falsy := range []string{"0", "false"} {
+		t.Run("false "+falsy, func(t *testing.T) {
+			t.Setenv(env, falsy)
+			cfg, err := load(t)
+			if err != nil {
+				t.Fatalf("Load: %v", err)
+			}
+			if cfg.Housekeeping.RealmDeletionDisabled {
+				t.Errorf("env %s=%s → true, want false", env, falsy)
+			}
+		})
+	}
+	t.Run("banana fails loud", func(t *testing.T) {
+		t.Setenv(env, "banana")
+		if _, err := load(t); err == nil {
+			t.Error("malformed boolean env: got nil error")
+		}
+	})
+}

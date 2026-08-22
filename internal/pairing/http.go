@@ -75,6 +75,10 @@ func NewAPI(svc *Service, mw *auth.Middleware, cfg APIConfig) *API {
 // (docs/DESIGN.md §4.4): they are exactly what the official SDKs and
 // astartectl call.
 func (a *API) Mount(mux *http.ServeMux) {
+	// Realm-scoped health (#71, upstream 1.3+): unauthenticated by design —
+	// FDO-flow devices probe it before they hold credentials. No rate
+	// limiter either; it is one cheap query.
+	mux.HandleFunc("GET /pairing/v1/{realm}/health", a.handleHealth)
 	mux.Handle("POST /pairing/v1/{realm}/agent/devices",
 		a.requireAgent(http.HandlerFunc(a.handleRegister)))
 	mux.Handle("DELETE /pairing/v1/{realm}/agent/devices/{deviceID}",
@@ -273,6 +277,21 @@ func (a *API) handleVerify(w http.ResponseWriter, r *http.Request) {
 }
 
 // --- shared plumbing --------------------------------------------------------
+
+// handleHealth serves the realm-scoped health probe (#71): 200 when the
+// realm exists and its database answers, 404 for an unknown realm, 503 when
+// the database is unhealthy.
+func (a *API) handleHealth(w http.ResponseWriter, r *http.Request) {
+	err := a.svc.Health(r.Context(), r.PathValue("realm"))
+	switch {
+	case err == nil:
+		_ = astarteapi.WriteData(w, http.StatusOK, map[string]string{"status": "ok"})
+	case errors.Is(err, store.ErrNotFound):
+		_ = astarteapi.WriteNotFound(w)
+	default:
+		_ = astarteapi.WriteError(w, http.StatusServiceUnavailable, "unhealthy")
+	}
+}
 
 // writeServiceError maps service errors onto upstream statuses and bodies.
 //

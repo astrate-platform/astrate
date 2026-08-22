@@ -232,6 +232,11 @@ func (a *API) patchRealm(w http.ResponseWriter, r *http.Request) {
 // writeError maps service/store errors onto upstream-shaped responses.
 func (a *API) writeError(w http.ResponseWriter, err error) {
 	switch {
+	case errors.Is(err, ErrDeletionDisabled):
+		_ = astarteapi.WriteError(w, http.StatusMethodNotAllowed, "Realm deletion disabled")
+	case errors.Is(err, ErrConnectedDevicesPresent):
+		_ = astarteapi.WriteFieldErrors(w, http.StatusUnprocessableEntity,
+			map[string][]string{"error_name": {"connected_devices_present"}})
 	case errors.Is(err, ErrValidation):
 		_ = astarteapi.WriteError(w, http.StatusUnprocessableEntity, validationDetail(err))
 	case errors.Is(err, store.ErrAlreadyExists):

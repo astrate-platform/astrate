@@ -116,6 +116,11 @@ type HousekeepingConfig struct {
 	// omits the field (#73). When unset (nil) no default is injected and
 	// existing deployments behave exactly as before.
 	DefaultDatastreamMaximumStorageRetention *int64 `toml:"default_datastream_maximum_storage_retention"`
+	// RealmDeletionDisabled gates DELETE /housekeeping/v1/realms/{realm}
+	// (#75): when true, deletion answers upstream's 405 "Realm deletion
+	// disabled". Opt-in — unset (false) keeps the historical
+	// always-delete behavior.
+	RealmDeletionDisabled bool `toml:"realm_deletion_disabled"`
 }
 
 // StorageConfig holds runtime storage policy. Retention applies a global
@@ -275,6 +280,20 @@ func applyEnv(cfg *Config) error {
 			return fmt.Errorf("config: housekeeping.default_datastream_maximum_storage_retention %q must be a non-negative integer", retention)
 		}
 		cfg.Housekeeping.DefaultDatastreamMaximumStorageRetention = &n
+	}
+
+	// The realm-deletion gate (#75) is a fail-loud boolean: only the exact
+	// spellings below are accepted, anything else refuses to load rather
+	// than silently meaning "off". Absent (or empty) leaves the default.
+	if v, ok := os.LookupEnv("ASTRATE_HOUSEKEEPING_REALM_DELETION_DISABLED"); ok {
+		switch v {
+		case "1", "true", "TRUE", "True":
+			cfg.Housekeeping.RealmDeletionDisabled = true
+		case "0", "false", "":
+			cfg.Housekeeping.RealmDeletionDisabled = false
+		default:
+			return fmt.Errorf("config: housekeeping.realm_deletion_disabled %q must be a boolean (1|true|TRUE|True|0|false)", v)
+		}
 	}
 	return nil
 }

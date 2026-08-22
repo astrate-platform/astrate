@@ -321,7 +321,9 @@ func mountAPIs(cfg config.Config, st *store.Store, e *engine.Engine, b *broker.B
 	if err != nil {
 		return nil, nil, err
 	}
-	hkSvc := housekeeping.NewService(st, sealer, b, log).WithDefaultDatastreamMaximumStorageRetention(cfg.Housekeeping.DefaultDatastreamMaximumStorageRetention)
+	hkSvc := housekeeping.NewService(st, sealer, b, log).
+		WithDefaultDatastreamMaximumStorageRetention(cfg.Housekeeping.DefaultDatastreamMaximumStorageRetention).
+		WithRealmDeletionDisabled(cfg.Housekeeping.RealmDeletionDisabled)
 	housekeeping.NewAPI(hkSvc, mw, hkKeys).Mount(mux)
 	realmSvc := realm.NewService(st, e, log).WithDisconnecter(b)
 	realmSvc.OnDeletionStart = e.HandleDeviceDeletionStarted

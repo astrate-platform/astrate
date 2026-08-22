@@ -575,6 +575,41 @@ func TestPairingHTTPRateLimit(t *testing.T) {
 	testutil.Golden(t, "http/envelope_429.json", body)
 }
 
+// TestPairingRealmHealth covers the realm-scoped health probe (#71,
+// upstream 1.3+): unauthenticated by design — none of these requests carries
+// an Authorization header.
+func TestPairingRealmHealth(t *testing.T) {
+	f := newHTTPFixture(t, Config{}, APIConfig{})
+	path := "/pairing/v1/" + f.realmName + "/health"
+
+	t.Run("KnownRealm200", func(t *testing.T) {
+		status, got := f.request(t, "GET", path, "", nil)
+		if status != http.StatusOK {
+			t.Fatalf("status: got %d, want 200 (body %s)", status, got)
+		}
+		if want := `{"data":{"status":"ok"}}`; string(got) != want {
+			t.Errorf("body: got %s, want %s", got, want)
+		}
+	})
+
+	t.Run("UnknownRealm404", func(t *testing.T) {
+		status, _ := f.request(t, "GET",
+			"/pairing/v1/nope"+strconv.FormatInt(time.Now().UnixNano(), 36)+"/health", "", nil)
+		if status != http.StatusNotFound {
+			t.Errorf("status: got %d, want 404", status)
+		}
+	})
+
+	t.Run("UnhealthyDatabase503", func(t *testing.T) {
+		g := newHTTPFixture(t, Config{}, APIConfig{})
+		g.st.Close() // the fixture owns st: closing it forces the failure path without mocking
+		status, _ := g.request(t, "GET", "/pairing/v1/"+g.realmName+"/health", "", nil)
+		if status != http.StatusServiceUnavailable {
+			t.Errorf("status: got %d, want 503", status)
+		}
+	})
+}
+
 // mustRandomDeviceID returns a fresh random device ID wire string.
 func mustRandomDeviceID(t *testing.T) string {
 	t.Helper()
