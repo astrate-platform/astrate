@@ -19,9 +19,17 @@ type Bus interface {
 }
 
 // WatchRequest is the watch payload DTO, exactly as the client sends it.
+//
+// GroupName is a top-level field, measured against upstream (channels.json,
+// 2026-08-22): a group_name nested inside simple_trigger is refused by
+// upstream's changeset, and one at the top level is what its authorization
+// path is built from. Astrate used to read it only from simple_trigger, which
+// meant an upstream-shaped group watch silently degraded into a device-shaped
+// path check.
 type WatchRequest struct {
 	Name          string          `json:"name"`
 	DeviceID      string          `json:"device_id"`
+	GroupName     string          `json:"group_name"`
 	SimpleTrigger json.RawMessage `json:"simple_trigger"`
 }
 

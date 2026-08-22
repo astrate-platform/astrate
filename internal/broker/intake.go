@@ -52,6 +52,14 @@ type InboundMessage struct {
 // Intake consumes accepted device publishes. internal/engine implements it
 // (M6); tests use recorders. Submit may block — a full engine shard blocking
 // the broker's per-client read loop is the §1.4 backpressure contract.
+//
+// TODO(extension point, docs/ROADMAP.md §0.1 rule 3 / docs/DESIGN.md §1.4):
+// external-bus intake — a second implementation of this interface backed by a
+// durable external bus (e.g. NATS JetStream) for multi-instance deployment or
+// restart survival. Not new device data sources: devices keep publishing over
+// the embedded MQTT broker. The frozen decision (2026-08-22) is in §1.4; the
+// consumer must reproduce per-device ordering, deferred-ack backpressure, and
+// QoS 0 drop semantics.
 type Intake interface {
 	Submit(InboundMessage)
 }

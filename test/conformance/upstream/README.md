@@ -179,9 +179,61 @@ trigger's is the **bare device id**. Astrate built `<device_id>/<interface_name>
 until M12 phase 06b, which is wrong in *both* directions: it refused claims upstream accepts and
 accepted claims upstream refuses.
 
-The group shapes (`groups/<name>/<interface><match_path>` and `groups/<name>`) come from the same
-upstream function and are **not measured** — the realm has no group. They are the one part of this
-section still resting on a source read.
+The group shapes (`groups/<name>/<interface><match_path>` and `groups/<name>`) were measured on
+2026-08-22, after a group was provisioned in the realm, and both match what Astrate builds — the
+last source-read claim in this file is now an observation. The same recording settled two payload
+rules a client author needs:
+
+- **`group_name` lives at the watch payload's top level.** A `group_name` nested inside
+  `simple_trigger` is refused by upstream's changeset — `{"errors":{"group_name":["must be present
+  if device_id is not set"],"device_id":[...]}}` — before authorization is consulted. Astrate used
+  to read it only from `simple_trigger`, which meant an upstream-shaped group watch silently
+  degraded into a device-shaped path check; fixed in the reconciliation.
+- **A group device_trigger requires `device_id: "*"` inside `simple_trigger`.** A concrete id is
+  refused with reason `device_id must be * for group triggers` — the exact mirror image of plain
+  device triggers, where `"*"` is refused and a concrete id is required.
+
+### Ownership and size (recorded 2026-08-22, issues #18/#19)
+
+Two interfaces were installed by hand to reach what the realm's original device-owned pair could
+not provoke: `org.astrate.bench.ServerOwned` (server-owned datastream) and
+`org.astrate.bench.Strings` (device-owned datastream with a string endpoint), plus the group above.
+The rows live in the fixture's `device_errors` section; the bisection that found the boundaries was
+a scratch probe and is summarized here rather than committed as code.
+
+- **`write_on_server_owned_interface` is confirmed verbatim** (2 of 3 attempts delivered — the
+  usual flakiness). The interface was in the device's introspection, so the rejection cannot be
+  anything else. Astrate's mapping needed no change.
+- **`value_size_exceeded` cannot be reached over MQTT on this stack.** The transport enforces its
+  own cap first: any publish whose MQTT packet exceeds 65536 bytes is ACKed by VerneMQ and then
+  silently discarded — nothing stored, no `device_error`, no session change. Measured by bisection:
+  a 65468-byte BSON document (string of 65455 bytes) is stored and queryable; one byte-string longer,
+  65473 bytes of BSON, vanishes. At ≥ ~3 MB the broker stops being polite and closes the connection
+  outright (accepted ≤ 3,088,710-byte payloads' neighbour; 3,090,000 dropped the TCP connection).
+  Upstream's own validator *does* have the name — astarte_core rejects strings over 65536 bytes as
+  `value_size_exceeded` — but a publish that large can never reach it over MQTT. Astrate keeps its
+  own caps and emits the event upstream does not; that divergence is deliberate and recorded in
+  `docs/COMPATIBILITY.md`.
+
+The size rows pin both sides of each boundary with fixed sizes so the fixture stays deterministic;
+the exact byte bounds belong to this note, since they describe this deployment's transport as much
+as Astarte.
+
+### Re-recording one section at a time
+
+`ASTARTE_UPSTREAM_SECTION=auth|errors|extra|all` (default `all`) re-records one section and carries
+the others over from the committed fixture, refusing to write a fixture with a section empty.
+Delivery of `device_error` to the room is unreliable on this stack, so settling an authorization
+question with a full re-run would churn `attempts`/`delivered` counts that were measured carefully
+and are not what is being asked about. `extra` appends the ownership/size rows without touching the
+previously measured ones.
+
+### Setup the extra sections assume
+
+`auth` needs a group named `probe` containing the recorder's device; `extra` needs the two extra
+interfaces installed. Neither is created by `bench provision` yet — they were made once by hand via
+Realm Management/AppEngine APIs (realm token minted from the state file's realm key) and survive in
+the realm. If either goes missing, the recorder fails loudly rather than recording a wrong answer.
 
 One more, which is a client-facing trap rather than an authorization rule: a `device_trigger` is
 authorized only when `device_id` sits **inside `simple_trigger`** *and equals the request's own
@@ -201,11 +253,7 @@ would have been read as evidence about the authorization path. The recorder now 
 
 ### Re-recording one section at a time
 
-`ASTARTE_UPSTREAM_SECTION=auth|errors|all` (default `all`) re-records one section and carries the
-other over from the committed fixture, refusing to write a fixture with a section empty. Delivery of
-`device_error` to the room is unreliable on this stack, so settling an authorization question with a
-full re-run would churn `attempts`/`delivered` counts that were measured carefully and are not what
-is being asked about.
+Covered above — `ASTARTE_UPSTREAM_SECTION` takes `auth`, `errors`, `extra` or `all`.
 
 ### Two facts a re-recorder needs and will otherwise lose an evening to
 

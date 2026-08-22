@@ -99,6 +99,26 @@ const (
 	ifaceObject     = "org.astrate.bench.Object"     // /data/{temp,hum,status}
 	introspection   = ifaceIndividual + ":1:0;" + ifaceObject + ":1:0"
 
+	// Installed by hand (2026-08-22) to reach what the two interfaces above
+	// cannot provoke — see issues #17/#18/#19:
+	//
+	//   - ifaceServerOwned, server-owned datastream, makes
+	//     write_on_server_owned_interface reachable (#18);
+	//   - ifaceStrings, device-owned datastream with a /value string endpoint,
+	//     gives the size bisection a value type that can grow (#19);
+	//   - the realm also holds a group named probeGroup containing this
+	//     device, so the group WATCH shapes are measurable (#17).
+	//
+	// extIntrospection declares all four, because publishing on an interface
+	// the device never declared comes back as interface_loading_failed —
+	// which would turn every ownership provocation into a lie about why it
+	// was rejected.
+	ifaceServerOwned = "org.astrate.bench.ServerOwned" // /value, double
+	ifaceStrings     = "org.astrate.bench.Strings"     // /value, string
+	probeGroup       = "probe"
+	extIntrospection = introspection + ";" +
+		ifaceStrings + ":1:0;" + ifaceServerOwned + ":1:0"
+
 	// otherDeviceID is a well-formed device id that is deliberately NOT the
 	// device this recorder drives. It exists to pair a narrow WATCH claim's
 	// acceptance with a refusal that differs only in which device is named.
@@ -220,15 +240,24 @@ func run() error {
 	// unreliable on this stack (see the README), so a full re-run to settle an
 	// authorization question would churn attempts/delivered counts that were
 	// measured carefully and are not what is being asked about.
+	//
+	// "extra" appends the #17/#18/#19 provocations (server-owned interface,
+	// payload-size boundary, nothing for auth) without touching the rows a
+	// previous recording measured.
 	section := env("ASTARTE_UPSTREAM_SECTION", "all")
-	if section != "all" && section != "auth" && section != "errors" {
-		return fmt.Errorf("ASTARTE_UPSTREAM_SECTION must be all, auth or errors (got %q)", section)
+	switch section {
+	case "all", "auth", "errors", "extra":
+	default:
+		return fmt.Errorf("ASTARTE_UPSTREAM_SECTION must be all, auth, errors or extra (got %q)", section)
 	}
 	if section != "errors" {
 		fx.Authorization = recordAuthorization(dev.ID)
 	}
-	if section != "auth" {
+	if section == "all" || section == "errors" {
 		fx.DeviceErrors = recordDeviceErrors(dev)
+	}
+	if section == "extra" {
+		fx.DeviceErrors = recordExtraErrors(dev)
 	}
 
 	// Resolve the output directory rather than guessing from the working
@@ -262,12 +291,18 @@ func run() error {
 		if err := json.Unmarshal(b, &prev); err != nil {
 			return fmt.Errorf("parsing %s: %w", jsonPath, err)
 		}
-		if section == "auth" {
+		switch section {
+		case "auth":
 			fx.DeviceErrors = prev.DeviceErrors
-		} else {
+		case "errors":
 			fx.Authorization = prev.Authorization
+		case "extra":
+			// extra appends: the previously measured rows keep their
+			// attempts/delivered counts untouched, the new rows join them.
+			fx.Authorization = prev.Authorization
+			fx.DeviceErrors = append(prev.DeviceErrors, fx.DeviceErrors...)
 		}
-		logf("\n# section=%s — the other section was carried over unchanged from %s", section, jsonPath)
+		logf("\n# section=%s — carried over unchanged from %s where not re-recorded", section, jsonPath)
 	}
 	if len(fx.Authorization) == 0 || len(fx.DeviceErrors) == 0 {
 		return fmt.Errorf("refusing to write a fixture with an empty section "+
@@ -317,6 +352,13 @@ func recordAuthorization(deviceID string) []authObservation {
 		return authObservation{Name: name, Why: why, Claims: claims,
 			Operation: "watch", Payload: string(pl), Reply: reply, Accepted: ok}
 	}
+	groupWatch := func(name, why string, claims []string, trigger map[string]any) authObservation {
+		o := watch(name, why, claims, trigger)
+		if o.Operation == "watch" {
+			o.Operation = "watch (group trigger)"
+		}
+		return o
+	}
 
 	devTrigger := func(on string, id string) map[string]any {
 		return map[string]any{"name": "probe", "device_id": deviceID,
@@ -340,6 +382,27 @@ func recordAuthorization(deviceID string) []authObservation {
 		"simple_trigger": map[string]any{"type": "data_trigger", "on": "incoming_data",
 			"interface_name": ifaceIndividual, "interface_major": 1,
 			"match_path": "/value", "value_match_operator": "*"}}
+
+	// Group trigger payloads (#17). Upstream's AppEngine REST API carries
+	// group_name at the payload's top level; where a Channels watch wants it
+	// is part of what these rows measure. The device_id stays inside
+	// simple_trigger on device triggers — the earlier rows proved upstream
+	// refuses anything else.
+	groupDataTriggerTop := map[string]any{"name": "probe", "group_name": probeGroup,
+		"simple_trigger": map[string]any{"type": "data_trigger", "on": "incoming_data",
+			"interface_name": ifaceIndividual, "interface_major": 1,
+			"match_path": "/value", "value_match_operator": "*"}}
+	groupDataTriggerNested := map[string]any{"name": "probe",
+		"simple_trigger": map[string]any{"type": "data_trigger", "on": "incoming_data",
+			"group_name":     probeGroup,
+			"interface_name": ifaceIndividual, "interface_major": 1,
+			"match_path": "/value", "value_match_operator": "*"}}
+	// device_id must be "*" inside a group device trigger: a concrete id is
+	// refused with reason "device_id must be * for group triggers" — the
+	// mirror image of plain device triggers, where "*" is refused.
+	groupDevTriggerTop := map[string]any{"name": "probe", "group_name": probeGroup,
+		"simple_trigger": map[string]any{"type": "device_trigger", "on": "device_error",
+			"device_id": "*"}}
 
 	rows := []authObservation{
 		join("join with blanket .*::.*",
@@ -394,6 +457,35 @@ func recordAuthorization(deviceID string) []authObservation {
 			"The paired refusal for the row above: a well-formed claim naming a different device. Together they show the device id is really the string being matched, rather than the acceptance coming from any claim at all.",
 			[]string{"JOIN::.*", "WATCH::" + otherDeviceID},
 			devTrigger("device_error", deviceID)),
+
+		// The group shapes (#17), measured at last now that the realm holds a
+		// group. Astrate builds "groups/<name>/<interface><match_path>" for a
+		// group data trigger and bare "groups/<name>" for a group device
+		// trigger (ws.go watchAuthPath); these rows check upstream agrees.
+		groupWatch("watch group data_trigger (group_name top level), claim WATCH::groups/<group>/<interface><match_path>",
+			"Astrate's predicted shape. If upstream builds the same authorization path for a group trigger this is accepted.",
+			[]string{"JOIN::.*", "WATCH::groups/" + probeGroup + "/" + ifaceIndividual + "/value"},
+			groupDataTriggerTop),
+		groupWatch("watch group data_trigger, claim WATCH::groups/<group>/<interface> (no match path)",
+			"The paired refusal for the row above, mirroring what the device-shape recording found: without the match path appended the anchored claim cannot match.",
+			[]string{"JOIN::.*", "WATCH::groups/" + probeGroup + "/" + ifaceIndividual},
+			groupDataTriggerTop),
+		groupWatch("watch group data_trigger, claim WATCH::<device>/<interface><match_path> (the device shape)",
+			"The alternative reading: that a group trigger authorizes against the publishing device's path. Exactly one of this row and the first group row can be accepted, so together they identify which string upstream builds.",
+			[]string{"JOIN::.*", "WATCH::" + deviceID + "/" + ifaceIndividual + "/value"},
+			groupDataTriggerTop),
+		groupWatch("watch group data_trigger (group_name inside simple_trigger), claim WATCH::groups/<group>/<interface><match_path>",
+			"The other payload shape a client might send: group_name nested where Astrate reads it. If upstream refuses this one with a validation error rather than an authorization refusal, the field belongs at the top level only.",
+			[]string{"JOIN::.*", "WATCH::groups/" + probeGroup + "/" + ifaceIndividual + "/value"},
+			groupDataTriggerNested),
+		groupWatch("watch group device_trigger (device_id \"*\" inside simple_trigger), claim WATCH::groups/<group>",
+			"Astrate's predicted shape for a group device trigger: the bare group name. The payload needs device_id=\"*\" inside simple_trigger — a concrete id is refused with reason \"device_id must be * for group triggers\", the mirror image of plain device triggers where \"*\" is refused.",
+			[]string{"JOIN::.*", "WATCH::groups/" + probeGroup},
+			groupDevTriggerTop),
+		groupWatch("watch group device_trigger, claim WATCH::groups/<other group>",
+			"The paired refusal: same verb, wrong group name, so the group name is really being matched.",
+			[]string{"JOIN::.*", "WATCH::groups/other"},
+			groupDevTriggerTop),
 	}
 
 	for _, r := range rows {
@@ -558,7 +650,83 @@ func orNone(s string) string {
 	return s
 }
 
+// recordExtraErrors records the provocations issues #18 and #19 ask for, which
+// the interfaces the realm originally held could not reach: a publish on a
+// server-owned interface, and payloads around upstream's size limits.
+//
+// The size rows exist because the boundary was bisected first (2026-08-22,
+// scratch probe, transcript in the README): the MQTT transport silently
+// discards any publish whose packet exceeds 65536 bytes — the broker ACKs it,
+// nothing is stored, no event reaches the room — and closes the connection
+// outright above ~3 MB. The rows pin both sides of each boundary with fixed
+// sizes so the fixture stays deterministic; the bisection itself is not part
+// of the committed recorder.
+func recordExtraErrors(dev struct {
+	ID     string `json:"id"`
+	Secret string `json:"secret"`
+}) []observation {
+	logf("\n## extra device_error rows: ownership (#18) and payload size (#19)")
+
+	cases := []struct {
+		name, why, topic string
+		payload          []byte
+		intro            string
+	}{
+		{"valid publish on a device-owned interface (extended introspection)",
+			"The acceptance row for this section: same extended introspection as every row below, no error. Without it a stack that errored on everything would satisfy every rejection row.",
+			ifaceStrings + "/value", bdoc(bString("v", "hello")), extIntrospection},
+		{"publish on a server-owned interface",
+			"Issue #18. The interface is in the device's introspection, so the rejection cannot be interface_loading_failed; Astrate maps its ownership_violation to write_on_server_owned_interface. This row is what upstream actually says.",
+			ifaceServerOwned + "/value", bdoc(bDouble("v", 1)), extIntrospection},
+		{"largest payload observed delivered end-to-end",
+			"Issue #19's lower bound, measured by bisection: a 65468-byte BSON document (MQTT packet just under 64 KiB) is stored and queryable. Recorded as an observation, not a guarantee — the exact bound belongs to the transcript.",
+			ifaceStrings + "/value", bdoc(bString("v", strings.Repeat("x", 65455))), extIntrospection},
+		{"payload one step past the packet cap",
+			"Issue #19's upper bound: a 65473-byte BSON document pushes the MQTT packet over 65536 bytes. Upstream ACKs the publish and then silently drops it — no storage, no device_error, no session change. Astrate instead rejects such payloads itself and emits value_size_exceeded; this row records that upstream, on this surface, says nothing at all.",
+			ifaceStrings + "/value", bdoc(bString("v", strings.Repeat("x", 65460))), extIntrospection},
+		{"string well above the type limit",
+			"astarte_core validates strings > 65536 bytes as value_size_exceeded, but a publish that size can never reach that validator over MQTT — the packet cap drops it first. Three attempts recorded whether any device_error escapes anyway.",
+			ifaceStrings + "/value", bdoc(bString("v", strings.Repeat("x", 70000))), extIntrospection},
+	}
+
+	const attempts = 3
+
+	var out []observation
+	for _, tc := range cases {
+		agg := observation{Name: tc.name, Why: tc.why, Topic: tc.topic,
+			Payload: b64(tc.payload), Attempts: attempts}
+		for i := 0; i < attempts; i++ {
+			o := provokeIntro(dev.ID, dev.Secret, tc.name, tc.why, tc.topic, tc.payload, tc.intro)
+			if o.ErrorName != "" {
+				agg.Delivered++
+				if agg.ErrorName == "" {
+					agg.ErrorName, agg.Metadata = o.ErrorName, o.Metadata
+				} else if agg.ErrorName != o.ErrorName {
+					logf("  !! attempt %d gave %q, earlier attempts gave %q",
+						i+1, o.ErrorName, agg.ErrorName)
+					agg.ErrorName += " | " + o.ErrorName
+				}
+			}
+			agg.Frames = append(agg.Frames, o.Frames...)
+			agg.UncorrelatedFrames = append(agg.UncorrelatedFrames, o.UncorrelatedFrames...)
+		}
+		agg.NoEvent = agg.Delivered == 0
+		logf("  => %s: %s, delivered %d/%d", tc.name,
+			orNone(agg.ErrorName), agg.Delivered, attempts)
+		out = append(out, agg)
+	}
+	return out
+}
+
 func provoke(deviceID, secret, name, why, topic string, payload []byte) observation {
+	return provokeIntro(deviceID, secret, name, why, topic, payload, introspection)
+}
+
+// provokeIntro is provoke with the device's introspection made explicit: the
+// size/ownership provocations declare the extra interfaces, because a publish
+// on an undeclared interface is rejected as interface_loading_failed and that
+// would masquerade as the answer to a different question.
+func provokeIntro(deviceID, secret, name, why, topic string, payload []byte, intro string) observation {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
 
@@ -611,7 +779,7 @@ func provoke(deviceID, secret, name, why, topic string, payload []byte) observat
 		}
 	}()
 
-	mc, err := session(deviceID, secret)
+	mc, err := session(deviceID, secret, intro)
 	if err != nil {
 		o.Frames = []string{"session error: " + err.Error()}
 		return o
@@ -705,7 +873,7 @@ func drain(ch chan string, d time.Duration) []string {
 // Without the settle the first publishes race Data Updater Plant's registration
 // and come back as device_session_not_found, which would be recorded as the
 // answer to whatever was being provoked.
-func session(deviceID, secret string) (paho.Client, error) {
+func session(deviceID, secret, intro string) (paho.Client, error) {
 	priv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		return nil, err
@@ -742,7 +910,7 @@ func session(deviceID, secret string) (paho.Client, error) {
 	if !t.WaitTimeout(25*time.Second) || t.Error() != nil {
 		return nil, fmt.Errorf("connecting: %v", t.Error())
 	}
-	mc.Publish(cn, 2, false, introspection).WaitTimeout(10 * time.Second)
+	mc.Publish(cn, 2, false, intro).WaitTimeout(10 * time.Second)
 	mc.Publish(cn+"/control/emptyCache", 2, false, "1").WaitTimeout(10 * time.Second)
 	time.Sleep(8 * time.Second)
 	return mc, nil

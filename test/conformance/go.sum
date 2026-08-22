@@ -12,6 +12,8 @@ github.com/astarte-platform/astarte-go v0.90.4 h1:yRXeYgTSfRbgwd6HrlaP9F2YLSROgW
 github.com/astarte-platform/astarte-go v0.90.4/go.mod h1:n2sFLJoQ7wyZXy3DgzgsubtBEffAkVoluEP9us2lXtY=
 github.com/beorn7/perks v1.0.1 h1:VlbKKnNfV8bJzeqoa4cOKqO6bYr3WgKZxO8Z16+hsOM=
 github.com/beorn7/perks v1.0.1/go.mod h1:G2ZrVWU2WbWT9wwq4/hrbKbnv/1ERSJQ0ibhJ6rlkpw=
+github.com/cbroglie/mustache v1.4.0 h1:Azg0dVhxTml5me+7PsZ7WPrQq1Gkf3WApcHMjMprYoU=
+github.com/cbroglie/mustache v1.4.0/go.mod h1:SS1FTIghy0sjse4DUVGV1k/40B1qE1XkD9DtDsHo9iM=
 github.com/cenkalti/backoff/v4 v4.3.0 h1:MyRJ/UdXutAwSAT+s3wNd7MfTIcy71VQueUuFK343L8=
 github.com/cenkalti/backoff/v4 v4.3.0/go.mod h1:Y3VNntkOUPxTVeUxJ/G5vcM//AlwfmyYozVcomhLiZE=
 github.com/cespare/xxhash/v2 v2.3.0 h1:UL815xU9SqsFlibzuggzjXhog7bL6oX9BbNZnL2UFvs=

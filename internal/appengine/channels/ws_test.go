@@ -794,6 +794,7 @@ func TestWatchAuthPath(t *testing.T) {
 		req     string
 		want    string
 		wantErr bool
+		wantOf  error
 	}{
 		{
 			name: "data trigger appends the match path",
@@ -826,14 +827,26 @@ func TestWatchAuthPath(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name: "group data trigger",
-			req:  `{"simple_trigger":{"type":"data_trigger","group_name":"g1","interface_name":"org.example.V1","match_path":"/value"}}`,
+			name: "group data trigger, group_name top level (measured 2026-08-22)",
+			req:  `{"group_name":"g1","simple_trigger":{"type":"data_trigger","interface_name":"org.example.V1","match_path":"/value"}}`,
 			want: "groups/g1/org.example.V1/value",
 		},
 		{
-			name: "group device trigger",
-			req:  `{"simple_trigger":{"type":"device_trigger","group_name":"g1","on":"device_error"}}`,
+			name: "group device trigger with device_id \"*\" (measured 2026-08-22)",
+			req:  `{"group_name":"g1","simple_trigger":{"type":"device_trigger","on":"device_error","device_id":"*"}}`,
 			want: "groups/g1",
+		},
+		{
+			name:    "nested-only group_name is refused like upstream's changeset",
+			req:     `{"simple_trigger":{"type":"data_trigger","group_name":"g1","interface_name":"org.example.V1","match_path":"/value"}}`,
+			wantErr: true,
+			wantOf:  errNestedGroupName,
+		},
+		{
+			name:    `group device trigger with a concrete device_id is refused`,
+			req:     `{"group_name":"g1","simple_trigger":{"type":"device_trigger","on":"device_error","device_id":"` + dev + `"}}`,
+			wantErr: true,
+			wantOf:  errGroupDeviceNotWildcard,
 		},
 	}
 
@@ -845,8 +858,12 @@ func TestWatchAuthPath(t *testing.T) {
 			}
 			got, err := watchAuthPath(req)
 			if tc.wantErr {
-				if !errors.Is(err, errUnauthorizedTrigger) {
-					t.Errorf("watchAuthPath() error = %v, want errUnauthorizedTrigger (got path %q)", err, got)
+				want := tc.wantOf
+				if want == nil {
+					want = errUnauthorizedTrigger
+				}
+				if !errors.Is(err, want) {
+					t.Errorf("watchAuthPath() error = %v, want %v (got path %q)", err, want, got)
 				}
 				return
 			}

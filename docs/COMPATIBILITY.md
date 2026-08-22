@@ -97,9 +97,17 @@ All additive or strictly-safer; none affect unmodified device SDKs.
      data triggers until M12 phase 06b, which was wrong in *both* directions:
      it refused claims upstream accepts and accepted claims upstream refuses.
      The group shapes (`groups/<name>/<interface><match_path>` and
-     `groups/<name>`) come from the same upstream function but are **not
-     measured**, the realm having no group; they are the one part of this
-     surface still resting on a source read.
+     `groups/<name>`) are measured too (2026-08-22 recording, realm with a
+     group): both are accepted exactly as Astrate builds them. The recording
+     also settled where `group_name` lives — at the watch payload's **top
+     level**; a `group_name` nested inside `simple_trigger` is refused by
+     upstream's changeset before authorization is consulted — and that a group
+     device_trigger must carry `device_id: "*"` inside `simple_trigger`
+     (refusal reason: `device_id must be * for group triggers`, the mirror
+     image of plain device triggers, where `"*"` is refused). Astrate read
+     `group_name` only from `simple_trigger` until the 2026-08-22
+     reconciliation, which means an upstream-shaped group watch silently
+     degraded into a device-shaped path check; fixed.
    - **A device trigger's `device_id` must sit inside `simple_trigger` and
      equal the request's own.** Upstream refuses a watch whose `device_id` is
      only at the payload's top level — where the AppEngine REST API puts it —
@@ -123,10 +131,21 @@ All additive or strictly-safer; none affect unmodified device SDKs.
    `interface_loading_failed` rather than an unaccepted name. The mapping table
    is **measured**, not reconstructed: it was recorded against upstream Astarte
    v1.2.0 in `test/conformance/upstream/channels.json`, and two rows were
-   corrected as a result. `write_on_server_owned_interface` and
-   `value_size_exceeded` remain unverified guesses — the recording realm had no
-   server-owned interface, and upstream accepted a 100 KB string without
-   bracketing a size limit.
+   corrected as a result. The last two rows were measured on 2026-08-22:
+   `write_on_server_owned_interface` is exact — upstream emits precisely that
+   name for a device publishing on a server-owned interface it has declared.
+   `value_size_exceeded` is real in upstream's value validator (astarte_core
+   rejects strings over 65536 bytes with that name) but **unreachable over
+   MQTT on the self-hosted stack**: the transport discards any publish whose
+   packet exceeds 65536 bytes before Data Updater Plant ever sees it — broker
+   ACKs, nothing stored, no event, no session change — and closes the
+   connection outright above ~3 MB (measured: 65468-byte BSON payload
+   delivered end-to-end; 65473 bytes silently dropped). Astrate instead
+   enforces its own caps (`MaxPayloadBytes` 64 KiB default,
+   `MaxStringLen` 65536) and emits a `device_error` naming `value_size_exceeded`
+   where upstream says nothing at all — kept as a deliberate divergence, since
+   telling the device is strictly more useful than a silent discard, and the
+   name itself is upstream's own enum value.
 
 2. **JSON payload profile + `initial_payload_format`** — Astrate accepts a
    documented plain-JSON data encoding alongside BSON on the same topics, and an

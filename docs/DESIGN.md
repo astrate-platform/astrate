@@ -143,6 +143,18 @@ backpressure semantics are easier to make airtight in-process. The `engine` inta
 a Go interface, so an external bus can be reintroduced later without touching the broker or
 persistence layers.
 
+**Extension point — external-bus intake (decision frozen 2026-08-22 via GitHub issue #10).**
+The sanctioned `TODO(extension)` at `broker.Intake` (`internal/broker/intake.go`) is about
+re-introducing a message bus into *this* concurrency path — it is not an invitation to add new
+device data sources: devices publish over Astrate's own embedded MQTT broker, and that does not
+change. An external-bus intake would be a second implementation of `broker.Intake` whose
+`Submit` hands each `InboundMessage` to a durable external bus (e.g. NATS JetStream) instead of
+the in-process shard router, motivated by running several Astrate instances against one bus or
+by needing the ingest stream to survive a process restart. Whatever consumes from the bus must
+reproduce the in-process contract: per-device ordering (§1.4's shard guarantee), deferred-ack
+backpressure (§5.3), and QoS 0 drop-with-metric under load. Until multi-instance deployment is
+real, the in-process router remains the only implementation and nothing links a bus client.
+
 ### 1.5 Multi-tenancy (realms)
 
 Astarte realms survive in Astrate, because they are part of every wire contract (topics are

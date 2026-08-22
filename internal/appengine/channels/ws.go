@@ -118,45 +118,85 @@ type triggerShape struct {
 	DeviceID      string `json:"device_id"`
 }
 
-// errUnauthorizedTrigger is a device trigger that names no device, or names a
-// different one than the request. Upstream refuses these — see watchAuthPath.
-var errUnauthorizedTrigger = errors.New("device trigger does not name the request's device")
+var (
+	// errUnauthorizedTrigger is a device trigger that names no device, or names
+	// a different one than the request. Upstream refuses these — see
+	// watchAuthPath.
+	errUnauthorizedTrigger = errors.New("device trigger does not name the request's device")
+
+	// errNestedGroupName: group_name arrived only inside simple_trigger.
+	// Upstream carries it at the payload's top level and its changeset refuses
+	// the nested shape before authorization is ever consulted (channels.json,
+	// 2026-08-22 recording).
+	errNestedGroupName = errors.New("group_name belongs at the payload's top level")
+
+	// errNoTriggerTarget: neither group_name nor device_id present, so the
+	// watch names nothing to watch. Same upstream changeset as above.
+	errNoTriggerTarget = errors.New("watch names neither group_name nor device_id")
+
+	// errGroupDeviceNotWildcard: a group device_trigger must carry
+	// device_id "*" inside simple_trigger; upstream refuses a concrete id
+	// with this exact reason (channels.json, 2026-08-22 recording) — the
+	// mirror image of plain device triggers, where "*" is refused.
+	errGroupDeviceNotWildcard = errors.New(`group device trigger requires device_id "*"`)
+
+	// upstreamChangesetReply is the reply body upstream sends for a payload
+	// its changeset rejects on missing target fields, verbatim from the
+	// recording. It is an errors object, not a reason string.
+	upstreamChangesetReply = map[string]any{"errors": map[string][]string{
+		"group_name": {"must be present if device_id is not set"},
+		"device_id":  {"must be present if group_name is not set"},
+	}}
+)
 
 // watchAuthPath derives the authorization path from a WatchRequest, in the
 // shape upstream matches a_ch WATCH claims against. The shapes are recorded in
-// test/conformance/upstream/channels.json:
+// test/conformance/upstream/channels.json — device shapes on 2026-07-26, the
+// group shapes and payload validations on 2026-08-22:
 //
-//	data trigger        <device_id>/<interface_name><match_path>
-//	device trigger      <device_id>
-//	group data trigger  groups/<name>/<interface_name><match_path>
+//	data trigger         <device_id>/<interface_name><match_path>
+//	device trigger       <device_id>
+//	group data trigger   groups/<name>/<interface_name><match_path>
 //	group device trigger groups/<name>
+//
+// All four are now measured. The group rows additionally settled where
+// group_name lives: at the payload's top level, not inside simple_trigger
+// (a nested-only group_name is refused by upstream's changeset), and that a
+// group device_trigger must carry device_id "*" inside simple_trigger.
 //
 // The match path carries its own leading slash, so it is concatenated without a
 // separator. That detail is measured, not inferred: a claim written as
 // "<device>/<interface>" — the shape Astrate used to build — is refused by
 // upstream for a trigger on /value, while "<device>/<interface>/value" is
-// accepted. Only the group shapes are unmeasured, the realm having no group;
-// they come from the same upstream function whose device shapes the recording
-// just confirmed.
+// accepted.
 //
-// A device trigger must name its device inside simple_trigger, and it must be
-// the request's device: upstream refuses a device_id present only at the
-// payload's top level (where the AppEngine REST API puts it) and refuses the
-// wildcard "*", both with the reason "unauthorized". Astrate used to fall back
-// to the top-level device_id and accept both.
+// A plain device trigger must name its device inside simple_trigger, and it
+// must be the request's device: upstream refuses a device_id present only at
+// the payload's top level (where the AppEngine REST API puts it) and refuses
+// the wildcard "*", both with the reason "unauthorized". Astrate used to fall
+// back to the top-level device_id and accept both.
 func watchAuthPath(req WatchRequest) (string, error) {
 	var ts triggerShape
 	if err := json.Unmarshal(req.SimpleTrigger, &ts); err != nil {
 		return "", err
 	}
+	if req.GroupName == "" && ts.GroupName != "" {
+		return "", errNestedGroupName
+	}
+	if req.GroupName != "" {
+		if ts.Type == "device_trigger" && ts.DeviceID != "" && ts.DeviceID != "*" {
+			return "", errGroupDeviceNotWildcard
+		}
+		if ts.Type == "data_trigger" {
+			return "groups/" + req.GroupName + "/" + ts.InterfaceName + ts.MatchPath, nil
+		}
+		return "groups/" + req.GroupName, nil
+	}
 	if ts.Type == "data_trigger" {
-		if ts.GroupName != "" {
-			return "groups/" + ts.GroupName + "/" + ts.InterfaceName + ts.MatchPath, nil
+		if req.DeviceID == "" {
+			return "", errNoTriggerTarget
 		}
 		return req.DeviceID + "/" + ts.InterfaceName + ts.MatchPath, nil
-	}
-	if ts.GroupName != "" {
-		return "groups/" + ts.GroupName, nil
 	}
 	if ts.DeviceID == "" || ts.DeviceID != req.DeviceID {
 		return "", errUnauthorizedTrigger
@@ -293,14 +333,22 @@ func (s *session) handleWatch(f Frame) {
 	}
 
 	path, err := watchAuthPath(req)
-	if errors.Is(err, errUnauthorizedTrigger) {
+	switch {
+	case errors.Is(err, errUnauthorizedTrigger):
 		// Upstream's reason for this is "unauthorized", not a payload error,
 		// even though the cause is the payload's shape.
 		s.sendErr(f, "unauthorized")
-		return
+	case errors.Is(err, errGroupDeviceNotWildcard):
+		s.sendErr(f, "device_id must be * for group triggers")
+	case errors.Is(err, errNestedGroupName), errors.Is(err, errNoTriggerTarget):
+		// Upstream answers both with its changeset errors object rather than
+		// a reason string — recorded verbatim in channels.json.
+		rep, _ := Reply(f, "error", upstreamChangesetReply)
+		s.writeFrame(rep)
+	case err != nil:
+		s.sendErr(f, "invalid simple_trigger")
 	}
 	if err != nil {
-		s.sendErr(f, "invalid simple_trigger")
 		return
 	}
 	if !s.tok.AuthorizesChannel(auth.VerbWatch, path) {
