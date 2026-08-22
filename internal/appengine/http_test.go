@@ -291,28 +291,22 @@ func TestAppEngine(t *testing.T) {
 			t.Errorf("downsample_to=4 returned %d points, downsample_to=10 returned %d", len(coarse), len(got))
 		}
 
-		// downsample_to is a point count greater than one. A malformed one is
-		// rejected by the parser before any query runs — a 400, the same status
-		// the other malformed query parameters get, not the 422 the service
-		// layer reserves for well-formed requests that break a rule.
-		for _, bad := range []string{"1", "0", "-3", "abc"} {
-			if rec := r.req(t, http.MethodGet, path+"?downsample_to="+bad, "", r.token); rec.Code != http.StatusBadRequest {
-				t.Errorf("downsample_to=%s: got %d, want 400", bad, rec.Code)
+		// downsample_to is a point count greater than two. Malformed values are
+		// rejected by the parser as upstream changeset field errors — a 422,
+		// not the 400 other malformed shapes used to get here.
+		for _, bad := range []string{"2", "1", "0", "-3", "abc"} {
+			rec := r.req(t, http.MethodGet, path+"?downsample_to="+bad, "", r.token)
+			if rec.Code != http.StatusUnprocessableEntity {
+				t.Errorf("downsample_to=%s: got %d, want 422", bad, rec.Code)
+				continue
 			}
-		}
-
-		// downsample_to=2 is legal (the parser only rejects < 2), but toolkit
-		// lttb() refuses a resolution below 3 outright — "resolution must be
-		// greater than 2". On a toolkit-bearing server the service must fall
-		// back to the time_bucket path for it rather than surface a 500.
-		var two []Sample
-		rec := r.req(t, http.MethodGet, path+"?downsample_to=2&sort=ascending", "", r.token)
-		if rec.Code != http.StatusOK {
-			t.Fatalf("downsample_to=2: got %d, want 200 (body %s)", rec.Code, rec.Body.String())
-		}
-		decodeData(t, rec, &two)
-		if len(two) == 0 {
-			t.Error("downsample_to=2 returned no points")
+			want := "is invalid"
+			if bad != "abc" {
+				want = "must be greater than 2"
+			}
+			if !strings.Contains(rec.Body.String(), want) {
+				t.Errorf("downsample_to=%s body %s missing %q", bad, rec.Body, want)
+			}
 		}
 
 		// store.Downsample reads the individual-datastream table only, so an

@@ -242,15 +242,21 @@ func (a *API) patchDeviceByAlias(w http.ResponseWriter, r *http.Request) {
 
 // serveData runs the shared tail of every interface-data GET: query parsing,
 // the service read (via the caller's resolution), and the envelope write.
+// Parse failures render as 422 changeset field errors, matching upstream
+// param casting; a *Tabular result renders {data, metadata}.
 func (a *API) serveData(w http.ResponseWriter, r *http.Request, read func(QueryOpts) (any, error)) {
 	opts, err := parseQueryOpts(r)
 	if err != nil {
-		_ = astarteapi.WriteError(w, http.StatusBadRequest, err.Error())
+		a.writeError(w, err)
 		return
 	}
 	data, err := read(opts)
 	if err != nil {
 		a.writeError(w, err)
+		return
+	}
+	if t, ok := data.(*Tabular); ok {
+		_ = astarteapi.WriteDataWithMetadata(w, http.StatusOK, t.Data, t.Metadata)
 		return
 	}
 	_ = astarteapi.WriteData(w, http.StatusOK, data)
@@ -524,10 +530,13 @@ func pathParam(r *http.Request) string {
 	return "/" + p
 }
 
-// parseQueryOpts reads the datastream query parameters.
+// parseQueryOpts reads the datastream query parameters. Malformed values come
+// back as FieldErrors so writeError renders upstream's changeset-shaped 422
+// ({"errors":{"<param>":["is invalid"]}}), not a generic 400.
 func parseQueryOpts(r *http.Request) (QueryOpts, error) {
 	q := r.URL.Query()
 	var opts QueryOpts
+	fe := FieldErrors{}
 	for _, p := range []struct {
 		name string
 		dst  **time.Time
@@ -537,27 +546,78 @@ func parseQueryOpts(r *http.Request) (QueryOpts, error) {
 		if v := q.Get(p.name); v != "" {
 			t, err := time.Parse(time.RFC3339, v)
 			if err != nil {
-				return opts, errors.New(p.name + " is not an RFC 3339 timestamp")
+				fe.addf(p.name, "is invalid")
+				continue
 			}
 			*p.dst = &t
 		}
 	}
+	if q.Get("since") != "" && q.Get("since_after") != "" {
+		fe.addf("since_after", "conflicts already set parameter")
+	}
 	if v := q.Get("limit"); v != "" {
 		n, err := strconv.Atoi(v)
-		if err != nil || n < 0 {
-			return opts, errors.New("limit is not a non-negative integer")
+		switch {
+		case err != nil:
+			fe.addf("limit", "is invalid")
+		case n < 0:
+			fe.addf("limit", "must be greater than or equal to 0")
+		default:
+			opts.Limit = n
 		}
-		opts.Limit = n
 	}
 	if v := q.Get("downsample_to"); v != "" {
 		n, err := strconv.Atoi(v)
-		if err != nil || n < 2 {
-			return opts, errors.New("downsample_to is not an integer greater than 1")
+		switch {
+		case err != nil:
+			fe.addf("downsample_to", "is invalid")
+		case n <= 2:
+			fe.addf("downsample_to", "must be greater than 2")
+		default:
+			opts.DownsamplePoints = n
 		}
-		opts.DownsamplePoints = n
 	}
+	// The default is cast before validation so a rejected value still leaves
+	// a usable format in opts.
+	opts.Format = "structured"
+	switch v := q.Get("format"); v {
+	case "":
+	case "structured", "table", "disjoint_tables":
+		opts.Format = v
+	default:
+		fe.addf("format", "is invalid")
+	}
+	for _, p := range []struct {
+		name string
+		dst  **bool
+	}{
+		{"allow_bigintegers", &opts.AllowBigIntegers},
+		{"allow_safe_bigintegers", &opts.AllowSafeBigIntegers},
+	} {
+		switch v := q.Get(p.name); v {
+		case "":
+		case "true", "false":
+			b := v == "true"
+			*p.dst = &b
+		default:
+			fe.addf(p.name, "is invalid")
+		}
+	}
+	if v := q.Get("retrieve_metadata"); v != "" {
+		switch v {
+		case "true":
+			opts.RetrieveMetadata = true
+		case "false":
+		default:
+			fe.addf("retrieve_metadata", "is invalid")
+		}
+	}
+	opts.DownsampleKey = q.Get("downsample_key")
 	// Upstream default ordering for datastreams is descending (newest first).
 	opts.Descending = q.Get("sort") != "ascending"
+	if len(fe) > 0 {
+		return opts, fe
+	}
 	return opts, nil
 }
 
@@ -587,6 +647,8 @@ func (a *API) writeError(w http.ResponseWriter, err error) {
 		_ = astarteapi.WriteError(w, http.StatusConflict, "Already exists")
 	case errors.Is(err, ErrGroupNotFound):
 		_ = astarteapi.WriteError(w, http.StatusNotFound, "Group not found")
+	case errors.Is(err, ErrPathNotFound):
+		_ = astarteapi.WriteError(w, http.StatusNotFound, "Path not found")
 	case errors.Is(err, store.ErrNotFound):
 		_ = astarteapi.WriteDeviceNotFound(w)
 	default:

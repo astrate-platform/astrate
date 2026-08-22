@@ -141,6 +141,17 @@ func WriteDataWithLinks(w http.ResponseWriter, status int, v any, links Links) e
 	return write(w, status, linksEnvelope{Data: v, Links: links})
 }
 
+type metadataEnvelope struct {
+	Data     any            `json:"data"`
+	Metadata map[string]any `json:"metadata,omitempty"`
+}
+
+// WriteDataWithMetadata writes {"data": v, "metadata": m}; m == nil omits the
+// key (upstream format=table responses carry column metadata this way).
+func WriteDataWithMetadata(w http.ResponseWriter, status int, v any, m map[string]any) error {
+	return write(w, status, metadataEnvelope{Data: v, Metadata: m})
+}
+
 // WriteError writes {"errors": {"detail": detail}} with the given status
 // code. Use the canonical constructors below for the frozen upstream shapes;
 // use WriteError directly for endpoint-specific details.

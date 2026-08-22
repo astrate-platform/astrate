@@ -1,10 +1,13 @@
 package appengine
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -18,20 +21,46 @@ import (
 // JSON profile form: RFC 3339, UTC, millisecond precision).
 const datetimeLayout = "2006-01-02T15:04:05.000Z"
 
-// QueryOpts are the datastream query parameters (upstream
-// since/since_after/to/limit/downsample_to). The zero value reads the whole
-// series ascending.
+// maxSafeJSONInteger is upstream's safe-longinteger bound (JavaScript's
+// Number.MAX_SAFE_INTEGER): with allow_safe_bigintegers a longinteger leaf
+// stays a number only while |v| ≤ this, else it degrades to a decimal string.
+const maxSafeJSONInteger int64 = 9007199254740991
+
+// ErrPathNotFound marks an object-aggregated series whose concrete path holds
+// no rows at all (upstream answers 404 "Path not found"; the interface root
+// renders {} instead).
+var ErrPathNotFound = errors.New("appengine: path not found")
+
+// QueryOpts are the datastream query parameters (upstream since/since_after/
+// to/limit/downsample_to plus the rendering options). The zero value reads
+// the whole series ascending and renders structured.
 //
 // DownsamplePoints is the request's `downsample_to` value — a target *point
 // count*, which is upstream's semantics. The bucket width is derived locally
 // inside datastreamData once the series' own time span is known.
+//
+// Format is one of structured/table/disjoint_tables ("structured" when the
+// request omitted it). AllowBigIntegers/AllowSafeBigIntegers are nil when the
+// request did not name them; they affect object-document rendering only.
 type QueryOpts struct {
-	Since            *time.Time
-	SinceAfter       *time.Time
-	To               *time.Time
-	Limit            int
-	Descending       bool
-	DownsamplePoints int
+	Since                *time.Time
+	SinceAfter           *time.Time
+	To                   *time.Time
+	Limit                int
+	Descending           bool
+	DownsamplePoints     int
+	Format               string
+	DownsampleKey        string
+	RetrieveMetadata     bool
+	AllowBigIntegers     *bool
+	AllowSafeBigIntegers *bool
+}
+
+// Tabular carries a format=table payload plus its metadata object; serveData
+// detects it and renders {data, metadata} instead of bare data.
+type Tabular struct {
+	Data     any            `json:"-"`
+	Metadata map[string]any `json:"metadata"`
 }
 
 // Sample is one datastream point rendered for the wire.
@@ -97,12 +126,15 @@ func (s *Service) GetData(ctx context.Context, realm, deviceID, ifaceName, path 
 // datastreamData reads a datastream endpoint. For an object-aggregated
 // interface it returns the stored JSON document per sample; for individual it
 // re-encodes the typed value per §2.3. A downsample_to opt reduces a numeric
-// individual series to bucket averages.
+// individual series to bucket averages. The requested format shapes both
+// branches, except where noted: the snapshot view and the downsampled view
+// ignore it (documented deviation — upstream has no equivalent of either).
 func (s *Service) datastreamData(ctx context.Context, r *resolved, path string, opts QueryOpts) (any, error) {
 	// Interface-root query (no path) on an individual datastream: the upstream
 	// "data-snapshot" view — the latest sample for every endpoint, rendered as
 	// a nested {segment: {... : {value, timestamp}}} tree (astarte-go walks it
-	// via parseDatastreamMap, keyed on the "value" leaf field).
+	// via parseDatastreamMap, keyed on the "value" leaf field). Format is
+	// ignored here: there is no upstream table rendering of this tree to copy.
 	if path == "" && opts.DownsamplePoints == 0 && r.iface.Aggregation != interfaceschema.AggregationObject {
 		rows, err := s.st.IndividualSnapshot(ctx, r.rid, r.id, r.iface.ID)
 		if err != nil {
@@ -175,28 +207,208 @@ func (s *Service) datastreamData(ctx context.Context, r *resolved, path string, 
 		if err != nil {
 			return nil, err
 		}
-		out := make([]objectSample, len(rows))
-		for i := range rows {
-			out[i] = objectSample{Value: json.RawMessage(rows[i].Value), Timestamp: rows[i].TS}
+		// Upstream pack_result on an EMPTY object series: the interface root
+		// renders {} while a concrete path is a 404 "Path not found" (probed
+		// live; the root's {} is also what keeps 1.2.x disjoint_tables from
+		// crashing there).
+		if len(rows) == 0 {
+			if path == "" {
+				return map[string]any{}, nil
+			}
+			return nil, fmt.Errorf("%w: %s", ErrPathNotFound, path)
 		}
-		return out, nil
+		docs := make([]map[string]any, len(rows))
+		stamps := make([]time.Time, len(rows))
+		for i := range rows {
+			doc, err := unmarshalDoc(rows[i].Value)
+			if err != nil {
+				return nil, err
+			}
+			docs[i] = doc
+			stamps[i] = rows[i].TS
+		}
+		if opts.AllowBigIntegers != nil || opts.AllowSafeBigIntegers != nil {
+			colTypes, err := objectColumnTypes(r.iface.Definition)
+			if err != nil {
+				return nil, err
+			}
+			applyBigIntegerOpts(docs, colTypes, opts)
+		}
+		return renderObject(docs, stamps, opts.Format), nil
 	}
 
 	rows, err := s.st.Series(ctx, q)
 	if err != nil {
 		return nil, err
 	}
-	out := make([]Sample, len(rows))
-	for i := range rows {
-		out[i] = Sample{Value: individualValue(&rows[i]), Timestamp: rows[i].TS}
+	return renderIndividual(rows, path, opts.Format), nil
+}
+
+// renderIndividual shapes one individual series per the requested format.
+// structured is the [{timestamp,value}] envelope Astrate has always emitted;
+// table emits [ts,value] pairs (timestamp FIRST) with column metadata keyed on
+// the path's last segment; disjoint_tables pivots to {"value": [[value,ts]]} —
+// value BEFORE timestamp, upstream's pair order. longinteger leaves stay
+// decimal strings in every format here: upstream always formats individual
+// samples with no bigint options.
+func renderIndividual(rows []store.IndividualRow, path, format string) any {
+	switch format {
+	case "table":
+		name := lastSegment(path)
+		pairs := make([][]any, len(rows))
+		for i := range rows {
+			pairs[i] = []any{rows[i].TS, individualValue(&rows[i])}
+		}
+		return &Tabular{
+			Data: pairs,
+			Metadata: map[string]any{
+				"columns":      map[string]int{"timestamp": 0, name: 1},
+				"table_header": []string{"timestamp", name},
+			},
+		}
+	case "disjoint_tables":
+		pairs := make([][]any, len(rows))
+		for i := range rows {
+			pairs[i] = []any{individualValue(&rows[i]), rows[i].TS}
+		}
+		return map[string]any{"value": pairs}
+	default:
+		out := make([]Sample, len(rows))
+		for i := range rows {
+			out[i] = Sample{Value: individualValue(&rows[i]), Timestamp: rows[i].TS}
+		}
+		return out
+	}
+}
+
+// renderObject shapes object-aggregated documents per the requested format.
+// docs carry json.Number leaves so unrendered values re-marshal exactly as
+// stored. structured flattens each document with its timestamp merged in
+// ([{<name>:v,...,timestamp:t},...]); table aligns rows to the sorted union of
+// the FIRST document's keys and "timestamp" (missing keys render null);
+// disjoint_tables pivots to one [value,timestamp] pair list per column of the
+// first document.
+func renderObject(docs []map[string]any, stamps []time.Time, format string) any {
+	switch format {
+	case "table":
+		header := make([]string, 0, len(docs[0])+1)
+		for k := range docs[0] {
+			header = append(header, k)
+		}
+		if !slices.Contains(header, "timestamp") {
+			header = append(header, "timestamp")
+		}
+		slices.Sort(header)
+		columns := make(map[string]int, len(header))
+		for i, name := range header {
+			columns[name] = i
+		}
+		rows := make([][]any, len(docs))
+		for i, doc := range docs {
+			row := make([]any, len(header))
+			for j, name := range header {
+				if name == "timestamp" {
+					row[j] = stamps[i]
+					continue
+				}
+				row[j] = doc[name]
+			}
+			rows[i] = row
+		}
+		return &Tabular{
+			Data:     rows,
+			Metadata: map[string]any{"columns": columns, "table_header": header},
+		}
+	case "disjoint_tables":
+		out := make(map[string]any, len(docs[0]))
+		for name := range docs[0] {
+			pairs := make([][]any, len(docs))
+			for i, doc := range docs {
+				pairs[i] = []any{doc[name], stamps[i]}
+			}
+			out[name] = pairs
+		}
+		return out
+	default:
+		out := make([]map[string]any, len(docs))
+		for i, doc := range docs {
+			m := make(map[string]any, len(doc)+1)
+			for k, v := range doc {
+				m[k] = v
+			}
+			m["timestamp"] = stamps[i]
+			out[i] = m
+		}
+		return out
+	}
+}
+
+// lastSegment returns the text after the final "/" of an endpoint or path.
+func lastSegment(p string) string {
+	if i := strings.LastIndexByte(p, '/'); i >= 0 {
+		return p[i+1:]
+	}
+	return p
+}
+
+// unmarshalDoc decodes one stored object document, keeping numbers as
+// json.Number so longinteger leaves survive re-marshalling byte-exactly.
+func unmarshalDoc(raw []byte) (map[string]any, error) {
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.UseNumber()
+	var doc map[string]any
+	if err := dec.Decode(&doc); err != nil {
+		return nil, fmt.Errorf("appengine: decoding stored object document: %w", err)
+	}
+	return doc, nil
+}
+
+// objectColumnTypes maps each mapping's LAST segment (the object-document key)
+// to its declared value type, re-parsed from the stored definition.
+func objectColumnTypes(definition []byte) (map[string]interfaceschema.ValueType, error) {
+	iface, err := interfaceschema.ParseInterface(definition)
+	if err != nil {
+		return nil, fmt.Errorf("appengine: re-parsing stored interface definition: %w", err)
+	}
+	out := make(map[string]interfaceschema.ValueType, len(iface.Mappings))
+	for i := range iface.Mappings {
+		out[lastSegment(iface.Mappings[i].Endpoint)] = iface.Mappings[i].Type
 	}
 	return out, nil
 }
 
-// objectSample is one object-aggregated datastream point.
-type objectSample struct {
-	Value     json.RawMessage `json:"value"`
-	Timestamp time.Time       `json:"timestamp"`
+// applyBigIntegerOpts rewrites longinteger leaves across the documents per the
+// request's bigint flags (upstream fetch_biginteger_opts_or_default +
+// AstarteValue.to_json_friendly): allow_bigintegers=false forces decimal
+// strings; allow_safe_bigintegers=true keeps only |v| ≤ maxSafeJSONInteger as
+// numbers; neither flag set leaves the stored representation untouched.
+// Object results only — individual samples never consult these options.
+func applyBigIntegerOpts(docs []map[string]any, colTypes map[string]interfaceschema.ValueType, opts QueryOpts) {
+	for _, doc := range docs {
+		for name, v := range doc {
+			if colTypes[name] != interfaceschema.LongInteger {
+				continue
+			}
+			n, ok := v.(json.Number)
+			if !ok {
+				continue
+			}
+			i, err := strconv.ParseInt(n.String(), 10, 64)
+			if err != nil {
+				// Beyond int64 there is no numeric JSON rendering at all.
+				doc[name] = n.String()
+				continue
+			}
+			switch {
+			case opts.AllowBigIntegers != nil && !*opts.AllowBigIntegers:
+				doc[name] = n.String()
+			case opts.AllowSafeBigIntegers != nil && *opts.AllowSafeBigIntegers:
+				if i > maxSafeJSONInteger || i < -maxSafeJSONInteger {
+					doc[name] = n.String()
+				}
+			}
+		}
+	}
 }
 
 // propertiesData reads a properties interface. With a concrete path it returns
