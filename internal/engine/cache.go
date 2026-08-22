@@ -50,6 +50,12 @@ type Store interface {
 	UpsertProperty(ctx context.Context, p store.Property) error
 	// UnsetProperty applies a property unset (row delete).
 	UnsetProperty(ctx context.Context, realmID int16, deviceID deviceid.ID, interfaceID int64, path string) (bool, error)
+	// GetProperty reads one stored property — the previous-value lookup for
+	// property change triggers.
+	GetProperty(ctx context.Context, realmID int16, deviceID deviceid.ID, interfaceID int64, path string) (*store.Property, error)
+	// LatestIndividual reads the newest sample of one datastream series —
+	// the previous-value lookup for datastream change triggers.
+	LatestIndividual(ctx context.Context, realmID int16, deviceID deviceid.ID, interfaceID int64, path string) (*store.IndividualRow, error)
 	// UpdateIntrospection replaces a device's introspection, returning the
 	// (name, major) pairs that were dropped (docs/ROADMAP.md §7.2 file 6.7).
 	UpdateIntrospection(ctx context.Context, realmID int16, id deviceid.ID, intro map[string]store.InterfaceVersion) (map[string]store.InterfaceVersion, error)

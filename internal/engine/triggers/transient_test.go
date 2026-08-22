@@ -38,6 +38,7 @@ func TestCompileConditionDataTrigger(t *testing.T) {
 	}
 	if !tg.MatchesData(DataEvent{
 		DeviceID:  "dev1",
+		On:        OnIncomingData,
 		Interface: "org.example.Sensors",
 		Major:     1,
 		Path:      "/value",
@@ -46,6 +47,7 @@ func TestCompileConditionDataTrigger(t *testing.T) {
 	}
 	if tg.MatchesData(DataEvent{
 		DeviceID:  "dev1",
+		On:        OnIncomingData,
 		Interface: "org.other.Interface",
 		Major:     1,
 		Path:      "/value",
@@ -82,6 +84,7 @@ func TestCompileConditionWildcardData(t *testing.T) {
 	}
 	if !tg.MatchesData(DataEvent{
 		DeviceID:  "dev1",
+		On:        OnIncomingData,
 		Interface: "org.any.Thing",
 		Major:     1,
 		Path:      "/some/path",

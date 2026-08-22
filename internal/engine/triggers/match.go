@@ -7,10 +7,14 @@
 // (astarte_core SimpleTriggerConfig, v1.2): a "simple_triggers" array of
 // data_trigger / device_trigger conditions plus one "action". Conditions
 // that are valid upstream but outside Astrate's v1 evaluation scope —
-// value_change*, path_created/removed, value_stored,
 // device_empty_cache_received, interface_minor_updated, and group-scoped
 // triggers — compile successfully (so installs round-trip) but never match;
 // they are reported in Trigger.Unsupported so callers can log them.
+//
+// The change-derived data conditions (value_change, value_change_applied,
+// path_created, path_removed, value_stored) follow upstream data_handler.ex
+// semantics; the engine captures the previous-value snapshot pre-write and
+// emits the events post-commit (internal/engine trackPrevious/fireData).
 package triggers
 
 import (
@@ -26,19 +30,19 @@ const (
 	// OnIncomingData fires on every accepted device data publish.
 	OnIncomingData = "incoming_data"
 	// OnValueChange fires when a value differs from the previous one
-	// (accepted, not evaluated in v1).
+	// (upstream execute_pre_change_triggers; Astrate evaluates it
+	// post-commit against the accept-time previous-value snapshot).
 	OnValueChange = "value_change"
-	// OnValueChangeApplied is value_change after persistence (accepted, not
-	// evaluated in v1).
+	// OnValueChangeApplied is value_change after persistence (upstream
+	// execute_post_change_triggers).
 	OnValueChangeApplied = "value_change_applied"
-	// OnPathCreated fires on the first value of a path (accepted, not
-	// evaluated in v1).
+	// OnPathCreated fires on the first value of a path (previous missing,
+	// new value present — upstream Core.Trigger post-change semantics).
 	OnPathCreated = "path_created"
-	// OnPathRemoved fires on property unset of a path (accepted, not
-	// evaluated in v1).
+	// OnPathRemoved fires when an existing property is unset (previous
+	// present, new value absent).
 	OnPathRemoved = "path_removed"
-	// OnValueStored fires after a datastream insert (accepted, not evaluated
-	// in v1).
+	// OnValueStored fires after an accepted individual-datastream insert.
 	OnValueStored = "value_stored"
 	// OnDeviceRegistered fires when a device is registered via the Pairing API.
 	OnDeviceRegistered = "device_registered"
@@ -80,11 +84,22 @@ const anyPath = "/*"
 // this version evaluates them.
 var dataOns = map[string]bool{
 	OnIncomingData:       true,
-	OnValueChange:        false,
-	OnValueChangeApplied: false,
-	OnPathCreated:        false,
-	OnPathRemoved:        false,
-	OnValueStored:        false,
+	OnValueChange:        true,
+	OnValueChangeApplied: true,
+	OnPathCreated:        true,
+	OnPathRemoved:        true,
+	OnValueStored:        true,
+}
+
+// prevOns are the data conditions decided by the previous-value comparison:
+// they need the engine's pre-write snapshot (upstream get_value_change_
+// triggers). value_stored is deliberately absent — it fires on every
+// accepted insert and needs no lookup.
+var prevOns = map[string]bool{
+	OnValueChange:        true,
+	OnValueChangeApplied: true,
+	OnPathCreated:        true,
+	OnPathRemoved:        true,
 }
 
 // deviceOns enumerates the device_trigger conditions; the value records
@@ -149,9 +164,14 @@ func (t *Trigger) Policy() *Policy {
 
 // DataEvent is the match input for an accepted data publish: the typed
 // decoded value rides along for value conditions (nil for property unset).
+// On selects which condition set evaluates: one of the On* data constants
+// (incoming_data, value_change, value_change_applied, path_created,
+// path_removed, value_stored) — a matcher only reacts to its own condition.
 type DataEvent struct {
 	// DeviceID is the encoded publishing device ID.
 	DeviceID string
+	// On is the condition name being evaluated.
+	On string
 	// Interface and Major identify the interface the publish validated
 	// against.
 	Interface string
@@ -177,6 +197,7 @@ type DeviceEvent struct {
 
 // dataMatcher is one compiled data_trigger condition.
 type dataMatcher struct {
+	on        string // the condition this matcher reacts to
 	deviceID  string // "" or "*" = any
 	iface     string // "*" = any
 	major     int    // valid when iface != "*"
@@ -294,6 +315,7 @@ func (t *Trigger) compileData(c *simpleTriggerConfig) error {
 	}
 
 	m := dataMatcher{
+		on:        c.On,
 		deviceID:  c.DeviceID,
 		iface:     iface,
 		anyPath:   c.MatchPath == anyPath,
@@ -418,9 +440,34 @@ func (t *Trigger) MatchesDevice(ev DeviceEvent) bool {
 	return false
 }
 
+// TracksChanges reports whether any evaluated data condition of this trigger
+// reacts to one of the previous-value-derived conditions (value_change*,
+// path_created/removed) for this event's device, interface, and path — the
+// gate that keeps the engine's pre-write previous-value lookup off messages
+// nobody is watching (upstream get_value_change_triggers).
+func (t *Trigger) TracksChanges(ev DataEvent) bool {
+	for i := range t.data {
+		m := &t.data[i]
+		if !m.evaluated || !prevOns[m.on] {
+			continue
+		}
+		if !deviceIDMatches(m.deviceID, ev.DeviceID) {
+			continue
+		}
+		if m.iface != anyToken && (m.iface != ev.Interface || m.major != ev.Major) {
+			continue
+		}
+		if !m.anyPath && !pathMatches(m.pathSegs, ev.Path) {
+			continue
+		}
+		return true
+	}
+	return false
+}
+
 // matches evaluates one data condition.
 func (m *dataMatcher) matches(ev DataEvent) bool {
-	if !m.evaluated {
+	if !m.evaluated || m.on != ev.On {
 		return false
 	}
 	if !deviceIDMatches(m.deviceID, ev.DeviceID) {
@@ -431,6 +478,10 @@ func (m *dataMatcher) matches(ev DataEvent) bool {
 	}
 	if !m.anyPath && !pathMatches(m.pathSegs, ev.Path) {
 		return false
+	}
+	if ev.On == OnPathRemoved {
+		// Upstream evaluates removals without a value: no operator applies.
+		return true
 	}
 	return valueMatches(m.operator, ev.Value, m.known)
 }

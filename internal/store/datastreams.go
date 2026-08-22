@@ -240,6 +240,29 @@ func (s *Store) Series(ctx context.Context, q SeriesQuery) ([]IndividualRow, err
 	return scanIndividualRows(rows)
 }
 
+// LatestIndividual reads the newest sample of one individual-datastream
+// series (ORDER BY ts DESC LIMIT 1) — the previous-value lookup feeding the
+// engine's value_change*/path_created trigger evaluation. ErrNotFound when
+// the path never received a sample.
+func (s *Store) LatestIndividual(ctx context.Context, realmID int16, deviceID deviceid.ID, interfaceID int64, path string) (*IndividualRow, error) {
+	rows, err := s.pool.Query(ctx,
+		`SELECT `+individualSelect+` FROM individual_datastreams
+		 WHERE realm_id = $1 AND device_id = $2 AND interface_id = $3 AND path = $4
+		 ORDER BY ts DESC LIMIT 1`,
+		realmID, uuidParam(deviceID), interfaceID, path)
+	if err != nil {
+		return nil, fmt.Errorf("store: querying latest sample %s: %w", path, err)
+	}
+	rs, err := scanIndividualRows(rows)
+	if err != nil {
+		return nil, err
+	}
+	if len(rs) == 0 {
+		return nil, fmt.Errorf("%w: series %s", ErrNotFound, path)
+	}
+	return &rs[0], nil
+}
+
 // IndividualSnapshot returns the most recent sample for each distinct path of
 // an individual-datastream interface — the AppEngine interface-root snapshot
 // ("data-snapshot") view upstream renders as a nested tree. Paths that never

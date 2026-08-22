@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"reflect"
 	"strconv"
 	"strings"
 	"time"
@@ -31,6 +32,11 @@ type batcher struct {
 	eng      *Engine
 	shardIdx int
 	ops      []PersistOp
+
+	// pendingPrev chains previous-value snapshots inside one unflushed batch
+	// (see trackPrevious). Owned by the shard goroutine; dropped after every
+	// flush attempt completes.
+	pendingPrev map[prevKey]prevSnap
 }
 
 // newBatcher builds the batcher of one shard.
@@ -62,6 +68,7 @@ func (b *batcher) flush(ctx context.Context) {
 	// tolerated by design — at-least-once, docs/DESIGN.md §5.3).
 	b.flushOps(ctx, b.ops)
 	b.ops = nil
+	b.pendingPrev = nil
 }
 
 // flushOps drives the retry loop for one slice of ops.
@@ -403,4 +410,50 @@ func jsonableSlice[T any](xs []T) (any, error) {
 		out[i] = jv
 	}
 	return out, nil
+}
+
+// prevIndividualJSON renders the previous-value lookup result (the newest
+// individual-datastream row) into its canonical §2.3 JSON form — the same
+// conventions as encodeValueJSON, so equal values compare equal across the
+// typed columns and the freshly encoded payload. The bool reports whether
+// the row carried a value at all.
+func prevIndividualJSON(r *store.IndividualRow) ([]byte, bool, error) {
+	switch {
+	case r.ValueDouble != nil:
+		js, err := encodeValueJSON(*r.ValueDouble)
+		return js, true, err
+	case r.ValueInteger != nil:
+		js, err := encodeValueJSON(*r.ValueInteger)
+		return js, true, err
+	case r.ValueLonginteger != nil:
+		js, err := encodeValueJSON(*r.ValueLonginteger)
+		return js, true, err
+	case r.ValueBoolean != nil:
+		js, err := encodeValueJSON(*r.ValueBoolean)
+		return js, true, err
+	case r.ValueString != nil:
+		js, err := encodeValueJSON(*r.ValueString)
+		return js, true, err
+	case r.ValueBinaryblob != nil:
+		js, err := encodeValueJSON(r.ValueBinaryblob)
+		return js, true, err
+	case r.ValueDatetime != nil:
+		js, err := encodeValueJSON(*r.ValueDatetime)
+		return js, true, err
+	case r.ValueArray != nil:
+		return r.ValueArray, true, nil // already canonical §2.3 jsonb
+	default:
+		return nil, false, fmt.Errorf("engine: datastream row without a value column")
+	}
+}
+
+// jsonEqual compares two canonical §2.3 JSON renderings semantically: both
+// sides go through encoding/json's generic form so numeric widths (int32 vs
+// float64 vs json.Number) and whitespace never decide a change.
+func jsonEqual(a, b []byte) bool {
+	var va, vb any
+	if json.Unmarshal(a, &va) != nil || json.Unmarshal(b, &vb) != nil {
+		return false
+	}
+	return reflect.DeepEqual(va, vb)
 }

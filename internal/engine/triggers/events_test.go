@@ -47,6 +47,17 @@ func TestEventGoldens(t *testing.T) {
 			"com.ex.Sensors:1:0;com.ex.Geo:0:1")},
 		{name: "interface_added.json", body: NewInterfaceAddedEvent("com.ex.Sensors", 1, 2)},
 		{name: "interface_removed.json", body: NewInterfaceRemovedEvent("com.ex.Sensors", 1)},
+		{name: "value_change.json", body: NewValueChangeEvent(
+			"org.astarte-platform.genericsensors.Values", "/streamTest/value", 0.2, 0.3)},
+		{name: "value_change_created.json", body: NewValueChangeEvent(
+			"com.example.Props", "/setting", nil, "on")},
+		{name: "value_change_applied.json", body: NewValueChangeAppliedEvent(
+			"org.astarte-platform.genericsensors.Values", "/streamTest/value", 0.2, 0.3)},
+		{name: "path_created.json", body: NewPathCreatedEvent(
+			"org.astarte-platform.genericsensors.Values", "/streamTest/value", 0.5)},
+		{name: "path_removed.json", body: NewPathRemovedEvent("com.example.Props", "/setting")},
+		{name: "value_stored.json", body: NewValueStoredEvent(
+			"com.astrate.test.Minimal", "/value", 22.5)},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

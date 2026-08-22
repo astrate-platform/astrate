@@ -203,6 +203,7 @@ func (rm *Room) dispatch() {
 			case stream.KindIncomingData:
 				matched = w.tg.MatchesData(triggers.DataEvent{
 					DeviceID:  ev.DeviceID,
+					On:        triggers.OnIncomingData,
 					Interface: ev.Interface,
 					Major:     ev.InterfaceMajor,
 					Path:      ev.Path,

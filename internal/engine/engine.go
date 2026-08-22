@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"time"
 
@@ -155,6 +156,7 @@ func (e *Engine) fireData(rs *realmSchema, op *PersistOp) {
 
 	if len(rs.triggers) > 0 {
 		match := triggers.DataEvent{
+			On:        triggers.OnIncomingData,
 			DeviceID:  deviceID,
 			Interface: op.Interface.Name,
 			Major:     op.Interface.Major,
@@ -176,6 +178,30 @@ func (e *Engine) fireData(rs *realmSchema, op *PersistOp) {
 				})
 			}
 		}
+
+		if op.Kind == OpIndividual {
+			stored := match
+			stored.On = triggers.OnValueStored
+			body := triggers.NewValueStoredEvent(op.Interface.Name, op.Path, value)
+			for _, tr := range rs.triggers {
+				if tr.MatchesData(stored) {
+					e.exec.Enqueue(triggers.Delivery{
+						Realm:   rs.name,
+						Trigger: tr,
+						Event: triggers.SimpleEvent{
+							Timestamp:   op.TS,
+							DeviceID:    deviceID,
+							TriggerName: tr.Name,
+							Event:       body,
+						},
+					})
+				}
+			}
+		}
+
+		if op.Tracked {
+			e.fireDataChanges(rs, op, value)
+		}
 	}
 
 	e.bus.Publish(stream.Event{
@@ -188,6 +214,71 @@ func (e *Engine) fireData(rs *realmSchema, op *PersistOp) {
 		Value:          value,
 		Timestamp:      op.TS,
 	})
+}
+
+// fireDataChanges emits the previous-value-derived events for one committed
+// op — upstream Core.Trigger's pre/post-change semantics, evaluated here
+// strictly post-persist against the accept-time snapshot:
+//
+//   - value_change fires when the value differs from the previous one;
+//   - path_created when the path had none and now receives a value;
+//   - path_removed when an existing property is unset;
+//   - value_change_applied mirrors value_change (same comparison, same seam).
+func (e *Engine) fireDataChanges(rs *realmSchema, op *PersistOp, value any) {
+	newJSON, err := encodeValueJSON(op.Value)
+	if err != nil {
+		return // already counted at capture time; nothing new to report
+	}
+	var old any
+	if op.PrevExists {
+		old = decodeCanonicalJSON(op.Prev)
+	}
+	changed := !op.PrevExists || !jsonEqual(newJSON, op.Prev)
+	created := !op.PrevExists && op.Value != nil
+	removed := op.PrevExists && op.Value == nil
+
+	deviceID := op.DeviceID.String()
+	emit := func(on string, body any) {
+		match := triggers.DataEvent{
+			On:        on,
+			DeviceID:  deviceID,
+			Interface: op.Interface.Name,
+			Major:     op.Interface.Major,
+			Path:      op.Path,
+			Value:     op.Value,
+		}
+		for _, tr := range rs.triggers {
+			if tr.MatchesData(match) {
+				e.exec.Enqueue(triggers.Delivery{
+					Realm:   rs.name,
+					Trigger: tr,
+					Event: triggers.SimpleEvent{
+						Timestamp:   op.TS,
+						DeviceID:    deviceID,
+						TriggerName: tr.Name,
+						Event:       body,
+					},
+				})
+			}
+		}
+	}
+
+	if changed {
+		emit(triggers.OnValueChange,
+			triggers.NewValueChangeEvent(op.Interface.Name, op.Path, old, value))
+	}
+	if created {
+		emit(triggers.OnPathCreated,
+			triggers.NewPathCreatedEvent(op.Interface.Name, op.Path, value))
+	}
+	if removed {
+		emit(triggers.OnPathRemoved,
+			triggers.NewPathRemovedEvent(op.Interface.Name, op.Path))
+	}
+	if changed {
+		emit(triggers.OnValueChangeApplied,
+			triggers.NewValueChangeAppliedEvent(op.Interface.Name, op.Path, old, value))
+	}
 }
 
 // fireDevice evaluates device triggers for one device-scoped event.
@@ -332,6 +423,19 @@ func (e *Engine) handleDeviceDeletion(realmName, hwID string, at time.Time, on, 
 	e.bus.Publish(stream.Event{
 		Kind: kind, Realm: rs.name, DeviceID: hwID, Timestamp: at,
 	})
+}
+
+// decodeCanonicalJSON parses a stored §2.3 JSON rendering into its generic
+// form for event payloads (numbers as float64, arrays and maps nested).
+func decodeCanonicalJSON(js []byte) any {
+	if len(js) == 0 {
+		return nil
+	}
+	var v any
+	if err := json.Unmarshal(js, &v); err != nil {
+		return nil
+	}
+	return v
 }
 
 // eventValue renders a decoded payload value into its canonical

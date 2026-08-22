@@ -181,6 +181,7 @@ func TestEngine(t *testing.T) {
 	t.Run("AckAfterCommit", func(t *testing.T) { testAckAfterCommit(t, rig) })
 	t.Run("InvalidationListen", func(t *testing.T) { testInvalidationListen(t, rig) })
 	t.Run("InvalidationCallback", func(t *testing.T) { testInvalidationCallback(t, rig) })
+	t.Run("ChangeTriggers", func(t *testing.T) { testEngineChangeTriggers(t, rig) })
 }
 
 // testTypedColumns: one publish per scalar type (BSON and JSON) must land in

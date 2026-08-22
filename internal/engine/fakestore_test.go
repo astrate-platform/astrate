@@ -133,6 +133,13 @@ type fakeStore struct {
 	unsets  []unsetCall
 	hints   map[deviceKey]string
 
+	// latest is the in-memory individual-datastreams table for the
+	// previous-value lookups: newest sample per series.
+	latest map[latestKey]store.IndividualRow
+	// propLookups / latestLookups count previous-value round-trips.
+	propLookups   atomic.Int64
+	latestLookups atomic.Int64
+
 	// properties is the in-memory property table for the M6b control and
 	// server-data paths, keyed by (interfaceID, path) per device.
 	properties map[propsKey]map[store.PropertyRef]store.Property
@@ -155,6 +162,14 @@ type propsKey struct {
 	id      deviceid.ID
 }
 
+// latestKey addresses one individual-datastream series.
+type latestKey struct {
+	realmID  int16
+	deviceID deviceid.ID
+	ifaceID  int64
+	path     string
+}
+
 // purgeCall records one PurgeDeviceOwnedExcept invocation.
 type purgeCall struct {
 	realmID  int16
@@ -168,6 +183,7 @@ func newFakeStore() *fakeStore {
 		devices:         make(map[deviceKey]*store.Device),
 		hints:           make(map[deviceKey]string),
 		properties:      make(map[propsKey]map[store.PropertyRef]store.Property),
+		latest:          make(map[latestKey]store.IndividualRow),
 		triggersByRealm: make(map[int16][]store.Trigger),
 		policiesByRealm: make(map[int16][]store.TriggerPolicy),
 		notifyCh:        make(chan store.Notification, 16),
@@ -313,6 +329,12 @@ func (f *fakeStore) AppendDatastreams(_ context.Context, batch store.DatastreamB
 
 	f.mu.Lock()
 	f.batches = append(f.batches, batch)
+	for _, r := range batch.Individual {
+		k := latestKey{realmID: r.RealmID, deviceID: r.DeviceID, ifaceID: r.InterfaceID, path: r.Path}
+		if cur, ok := f.latest[k]; !ok || !r.TS.Before(cur.TS) {
+			f.latest[k] = r
+		}
+	}
 	f.mu.Unlock()
 	return nil
 }
@@ -338,6 +360,33 @@ func (f *fakeStore) UnsetProperty(_ context.Context, realmID int16, deviceID dev
 	delete(f.properties[key], ref)
 	f.mu.Unlock()
 	return existed, nil
+}
+
+// GetProperty reads one stored property (previous-value lookups and the
+// server-data/control paths).
+func (f *fakeStore) GetProperty(_ context.Context, realmID int16, deviceID deviceid.ID, interfaceID int64, path string) (*store.Property, error) {
+	f.propLookups.Add(1)
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	p, ok := f.properties[propsKey{realmID: realmID, id: deviceID}][store.PropertyRef{InterfaceID: interfaceID, Path: path}]
+	if !ok {
+		return nil, fmt.Errorf("%w: property %s", store.ErrNotFound, path)
+	}
+	cp := p
+	return &cp, nil
+}
+
+// LatestIndividual reads the newest sample of one series.
+func (f *fakeStore) LatestIndividual(_ context.Context, realmID int16, deviceID deviceid.ID, interfaceID int64, path string) (*store.IndividualRow, error) {
+	f.latestLookups.Add(1)
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	r, ok := f.latest[latestKey{realmID: realmID, deviceID: deviceID, ifaceID: interfaceID, path: path}]
+	if !ok {
+		return nil, fmt.Errorf("%w: series %s", store.ErrNotFound, path)
+	}
+	cp := r
+	return &cp, nil
 }
 
 func (f *fakeStore) UpdateIntrospection(_ context.Context, realmID int16, id deviceid.ID, intro map[string]store.InterfaceVersion) (map[string]store.InterfaceVersion, error) {

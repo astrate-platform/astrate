@@ -112,6 +112,7 @@ func dataTrigger(t *testing.T, condition string) *Trigger {
 func valuesEvent() DataEvent {
 	return DataEvent{
 		DeviceID:  "f0VMRgIBAQAAAAAAAAAAAA",
+		On:        OnIncomingData,
 		Interface: "org.astarte-platform.genericsensors.Values",
 		Major:     1,
 		Path:      "/streamTest/value",
@@ -186,7 +187,7 @@ func TestMatchDataOperators(t *testing.T) {
 			"known_value": ` + known + `}`
 	}
 	ev := func(v any) DataEvent {
-		return DataEvent{DeviceID: "d", Interface: "com.example.A", Major: 1, Path: "/v", Value: v}
+		return DataEvent{DeviceID: "d", On: OnIncomingData, Interface: "com.example.A", Major: 1, Path: "/v", Value: v}
 	}
 
 	cases := []struct {
@@ -280,16 +281,11 @@ func TestMatchDevice(t *testing.T) {
 }
 
 // TestCompileAcceptsUnsupported: upstream-valid-but-unevaluated conditions
-// compile (installs round-trip), report themselves, and never match.
+// compile (installs round-trip), report themselves, and never match. The
+// change-derived data conditions are evaluated since the previous-value
+// activation; only group-scoping and the two dormant device conditions
+// remain unevaluated.
 func TestCompileAcceptsUnsupported(t *testing.T) {
-	tr := compile(t, fixtureValueChange)
-	if len(tr.Unsupported) == 0 {
-		t.Fatal("value_change compiled without an Unsupported report")
-	}
-	if tr.MatchesData(DataEvent{Interface: "com.example.Sensors", Major: 1, Path: "/a", Value: 1.0}) {
-		t.Error("unevaluated condition matched")
-	}
-
 	// Group-scoped triggers compile and never match.
 	grouped := dataTrigger(t, `{
 		"type": "data_trigger", "on": "incoming_data",
@@ -299,7 +295,7 @@ func TestCompileAcceptsUnsupported(t *testing.T) {
 	if len(grouped.Unsupported) == 0 {
 		t.Error("group-scoped trigger compiled without an Unsupported report")
 	}
-	if grouped.MatchesData(DataEvent{DeviceID: "d", Interface: "com.example.A", Major: 1, Path: "/v", Value: 1.0}) {
+	if grouped.MatchesData(DataEvent{DeviceID: "d", On: OnIncomingData, Interface: "com.example.A", Major: 1, Path: "/v", Value: 1.0}) {
 		t.Error("group-scoped trigger matched")
 	}
 }

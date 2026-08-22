@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/astrate-platform/astrate/internal/broker"
+	"github.com/astrate-platform/astrate/internal/engine/triggers"
 	"github.com/astrate-platform/astrate/internal/store"
 	"github.com/astrate-platform/astrate/pkg/deviceid"
 	"github.com/astrate-platform/astrate/pkg/interfaceschema"
@@ -127,6 +128,16 @@ type PersistOp struct {
 	TS time.Time
 	// ReceptionTS is the broker reception timestamp.
 	ReceptionTS time.Time
+
+	// Previous-value snapshot for the change-derived trigger conditions,
+	// captured at accept time by trackPrevious when a trigger is actually
+	// watching this endpoint: Prev holds the canonical §2.3 JSON of the
+	// previous value, PrevExists reports whether there was one, Tracked
+	// marks that a snapshot was taken at all (untracked ops skip change
+	// events but still fire incoming_data).
+	Tracked    bool
+	PrevExists bool
+	Prev       []byte
 
 	// ack releases the broker acknowledgment; the batcher calls it after
 	// commit (docs/DESIGN.md §5.3), or immediately if the op is consumed
@@ -320,7 +331,121 @@ func (e *Engine) processData(ctx context.Context, sh *shard, m broker.InboundMes
 	default:
 		op.Kind = OpIndividual
 	}
+	e.trackPrevious(ctx, sh, realm, &op)
 	sh.batch.add(op)
+}
+
+// prevKey addresses one series/property for the intra-batch previous-value
+// chain.
+type prevKey struct {
+	realmID  int16
+	deviceID deviceid.ID
+	ifaceID  int64
+	path     string
+}
+
+// prevSnap is the state one pending op leaves behind for the next publish
+// on the same path within the same batch: two ops that share a flush see
+// each other exactly as a serial processor would, without reading rows that
+// are not committed yet.
+type prevSnap struct {
+	exists bool
+	json   []byte
+}
+
+// trackPrevious captures the pre-write previous-value snapshot an op needs
+// for the change-derived conditions (value_change*, path_created/removed).
+// It mirrors upstream data_handler.ex: the lookup runs only when an
+// installed trigger could actually fire those conditions for this endpoint;
+// properties resolve their current row, datastreams their newest sample.
+// Failures degrade to untracked — incoming_data still fires, change events
+// don't; a lookup error never rejects a message.
+func (e *Engine) trackPrevious(ctx context.Context, sh *shard, rs *realmSchema, op *PersistOp) {
+	if op.Kind == OpObject {
+		return // object-aggregated publishes stay outside v1's change scope
+	}
+	gate := triggers.DataEvent{
+		DeviceID:  op.DeviceID.String(),
+		Interface: op.Interface.Name,
+		Major:     op.Interface.Major,
+		Path:      op.Path,
+	}
+	watched := false
+	for _, tr := range rs.triggers {
+		if tr.TracksChanges(gate) {
+			watched = true
+			break
+		}
+	}
+	if !watched {
+		return
+	}
+
+	newJSON, err := encodeValueJSON(op.Value)
+	if err != nil {
+		// Impossible for pipeline-validated values; be loud, skip tracking.
+		e.met.internalErrors.Inc()
+		e.log.Error("previous-value snapshot skipped: value does not render",
+			"realm", op.Realm, "device", op.DeviceID.String(), "path", op.Path, "err", err)
+		return
+	}
+
+	key := prevKey{realmID: op.RealmID, deviceID: op.DeviceID, ifaceID: op.Interface.ID, path: op.Path}
+	var (
+		prev      []byte
+		prevFound bool
+	)
+	if snap, ok := sh.batch.pendingPrev[key]; ok {
+		prev, prevFound = snap.json, snap.exists
+	} else {
+		switch op.Kind {
+		case OpPropertySet, OpPropertyUnset:
+			p, err := e.st.GetProperty(ctx, op.RealmID, op.DeviceID, op.Interface.ID, op.Path)
+			switch {
+			case err == nil:
+				prev, prevFound = p.Value, true
+			case errors.Is(err, store.ErrNotFound):
+				// First-ever set (or re-unset): nothing there before.
+			default:
+				e.lookupFailed(op, err)
+				return
+			}
+		case OpIndividual:
+			r, err := e.st.LatestIndividual(ctx, op.RealmID, op.DeviceID, op.Interface.ID, op.Path)
+			switch {
+			case err == nil:
+				prev, prevFound, err = prevIndividualJSON(r)
+				if err != nil {
+					e.met.internalErrors.Inc()
+					e.log.Error("previous-value snapshot skipped: unreadable row",
+						"realm", op.Realm, "device", op.DeviceID.String(), "path", op.Path, "err", err)
+					return
+				}
+			case errors.Is(err, store.ErrNotFound):
+				// First sample on this path.
+			default:
+				e.lookupFailed(op, err)
+				return
+			}
+		}
+	}
+
+	op.Tracked = true
+	op.PrevExists = prevFound
+	op.Prev = prev
+
+	if sh.batch.pendingPrev == nil {
+		sh.batch.pendingPrev = make(map[prevKey]prevSnap)
+	}
+	sh.batch.pendingPrev[key] = prevSnap{exists: op.Kind != OpPropertyUnset, json: newJSON}
+}
+
+// lookupFailed records a degraded previous-value lookup.
+func (e *Engine) lookupFailed(op *PersistOp, err error) {
+	e.met.internalErrors.Inc()
+	e.log.Warn("previous-value lookup failed; change events skipped",
+		"realm", op.Realm, "device", op.DeviceID.String(),
+		"interface", op.Interface.Name, "path", op.Path, "err", err)
 }
 
 // objectPathOK validates an object-aggregation publish path: appending any

@@ -76,6 +76,108 @@ func NewIncomingDataEvent(iface, path string, value any) IncomingDataEvent {
 	return IncomingDataEvent{Type: OnIncomingData, Interface: iface, Path: path, Value: value}
 }
 
+// ValueChangeEvent is the value_change event body (upstream
+// SimpleEvents.ValueChangeEvent): old and new value of one changed path.
+// The engine emits it post-commit against the accept-time previous-value
+// snapshot; a missing previous renders as null.
+type ValueChangeEvent struct {
+	// Type is always "value_change".
+	Type string `json:"type"`
+	// Interface is the interface name.
+	Interface string `json:"interface"`
+	// Path is the concrete data path.
+	Path string `json:"path"`
+	// OldValue is the previous value (null when the path had none).
+	OldValue any `json:"old_value"`
+	// NewValue is the published value.
+	NewValue any `json:"new_value"`
+}
+
+// NewValueChangeEvent builds a value_change event body.
+func NewValueChangeEvent(iface, path string, oldValue, newValue any) ValueChangeEvent {
+	return ValueChangeEvent{
+		Type: OnValueChange, Interface: iface, Path: path,
+		OldValue: oldValue, NewValue: newValue,
+	}
+}
+
+// ValueChangeAppliedEvent is the value_change_applied event body —
+// value_change's post-persistence twin (upstream
+// SimpleEvents.ValueChangeAppliedEvent). Astrate evaluates both after the
+// commit, so the pair carries identical payloads.
+type ValueChangeAppliedEvent struct {
+	// Type is always "value_change_applied".
+	Type string `json:"type"`
+	// Interface is the interface name.
+	Interface string `json:"interface"`
+	// Path is the concrete data path.
+	Path string `json:"path"`
+	// OldValue is the previous value (null when the path had none).
+	OldValue any `json:"old_value"`
+	// NewValue is the persisted value.
+	NewValue any `json:"new_value"`
+}
+
+// NewValueChangeAppliedEvent builds a value_change_applied event body.
+func NewValueChangeAppliedEvent(iface, path string, oldValue, newValue any) ValueChangeAppliedEvent {
+	return ValueChangeAppliedEvent{
+		Type: OnValueChangeApplied, Interface: iface, Path: path,
+		OldValue: oldValue, NewValue: newValue,
+	}
+}
+
+// PathCreatedEvent is the path_created event body: first accepted value of
+// a path (upstream SimpleEvents.PathCreatedEvent).
+type PathCreatedEvent struct {
+	// Type is always "path_created".
+	Type string `json:"type"`
+	// Interface is the interface name.
+	Interface string `json:"interface"`
+	// Path is the concrete data path.
+	Path string `json:"path"`
+	// Value is the first published value.
+	Value any `json:"value"`
+}
+
+// NewPathCreatedEvent builds a path_created event body.
+func NewPathCreatedEvent(iface, path string, value any) PathCreatedEvent {
+	return PathCreatedEvent{Type: OnPathCreated, Interface: iface, Path: path, Value: value}
+}
+
+// PathRemovedEvent is the path_removed event body: an existing property was
+// unset. It carries no value (upstream SimpleEvents.PathRemovedEvent).
+type PathRemovedEvent struct {
+	// Type is always "path_removed".
+	Type string `json:"type"`
+	// Interface is the interface name.
+	Interface string `json:"interface"`
+	// Path is the concrete data path.
+	Path string `json:"path"`
+}
+
+// NewPathRemovedEvent builds a path_removed event body.
+func NewPathRemovedEvent(iface, path string) PathRemovedEvent {
+	return PathRemovedEvent{Type: OnPathRemoved, Interface: iface, Path: path}
+}
+
+// ValueStoredEvent is the value_stored event body: one accepted
+// individual-datastream insert (upstream SimpleEvents.ValueStoredEvent).
+type ValueStoredEvent struct {
+	// Type is always "value_stored".
+	Type string `json:"type"`
+	// Interface is the interface name.
+	Interface string `json:"interface"`
+	// Path is the concrete data path.
+	Path string `json:"path"`
+	// Value is the stored value.
+	Value any `json:"value"`
+}
+
+// NewValueStoredEvent builds a value_stored event body.
+func NewValueStoredEvent(iface, path string, value any) ValueStoredEvent {
+	return ValueStoredEvent{Type: OnValueStored, Interface: iface, Path: path, Value: value}
+}
+
 // DeviceRegisteredEvent is the device_registered event body.
 type DeviceRegisteredEvent struct {
 	// Type is always "device_registered".
