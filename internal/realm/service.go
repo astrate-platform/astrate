@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"log/slog"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/astrate-platform/astrate/internal/engine/triggers"
@@ -31,6 +32,24 @@ var ErrValidation = errors.New("realm: validation failed")
 // whose mapping TTL exceeds the realm's datastream_maximum_storage_retention
 // ceiling (upstream error_name maximum_database_retention_exceeded, #72).
 var ErrMaximumDatabaseRetentionExceeded = errors.New("realm: maximum_database_retention_exceeded")
+
+var (
+	// ErrNameMismatch is a PUT whose body interface_name disagrees with the
+	// URL (upstream name_not_matching, #62).
+	ErrNameMismatch = errors.New("realm: interface name does not match")
+	// ErrMajorMismatch is a PUT whose body version_major disagrees with the
+	// URL (upstream major_version_not_matching, #62).
+	ErrMajorMismatch = errors.New("realm: interface major does not match")
+	// ErrNameCollision rejects an install whose name equals an installed one
+	// modulo case and hyphens (upstream interface_name_collision, #62).
+	ErrNameCollision = errors.New("realm: interface name collision")
+)
+
+// errMajorNotFound marks a PUT/DELETE lookup miss on the (name, major) pair:
+// upstream answers those 404 "Interface major not found" rather than
+// "Interface not found" (#62). The HTTP layer matches it first; a bare
+// store.ErrNotFound still renders "Interface not found".
+var errMajorNotFound = errors.New("realm: interface major not found")
 
 // Invalidator is the in-process cache-invalidation callback the engine
 // satisfies (*engine.Engine's RefreshInterfaces / RefreshTriggers). After a
@@ -146,6 +165,12 @@ func (s *Service) InstallInterface(ctx context.Context, realm string, def []byte
 	if canon != nil {
 		def = canon
 	}
+	// Upstream rejects names that differ from an installed one only by case
+	// or hyphens (#62); identical raw names are skipped here so a duplicate
+	// install keeps its store.ErrAlreadyExists shape.
+	if err := s.checkNameCollision(ctx, r.ID, iface.Name); err != nil {
+		return nil, err
+	}
 	if err := s.checkRetentionCeiling(r, iface); err != nil {
 		return nil, err
 	}
@@ -160,8 +185,10 @@ func (s *Service) InstallInterface(ctx context.Context, realm string, def []byte
 // UpdateInterface applies a minor upgrade, enforcing the additive-only
 // upstream parity rules via interfaceschema.CheckMinorUpgrade (no mutated
 // mapping attributes, same type/ownership/aggregation, strictly higher
-// minor). The interface major must already exist.
-func (s *Service) UpdateInterface(ctx context.Context, realm string, def []byte) (*store.StoredInterface, error) {
+// minor). urlName/urlMajor are the interface identity from the URL path: the
+// parsed body must agree with both (upstream 409s the mismatches, #62), and
+// a lookup miss on that identity yields the "major not found" marker.
+func (s *Service) UpdateInterface(ctx context.Context, realm, urlName string, urlMajor int, def []byte) (*store.StoredInterface, error) {
 	r, err := s.st.GetRealmByName(ctx, realm)
 	if err != nil {
 		return nil, err
@@ -173,11 +200,20 @@ func (s *Service) UpdateInterface(ctx context.Context, realm string, def []byte)
 	if canon != nil {
 		def = canon
 	}
+	if next.Name != urlName {
+		return nil, fmt.Errorf("%w: body declares %q, URL says %q", ErrNameMismatch, next.Name, urlName)
+	}
+	if next.Major != urlMajor {
+		return nil, fmt.Errorf("%w: body declares %d, URL says %d", ErrMajorMismatch, next.Major, urlMajor)
+	}
 	if err := s.checkRetentionCeiling(r, next); err != nil {
 		return nil, err
 	}
 	stored, err := s.st.GetInterface(ctx, r.ID, next.Name, next.Major)
 	if err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			return nil, fmt.Errorf("%w: %w", errMajorNotFound, err)
+		}
 		return nil, err
 	}
 	prev, err := interfaceschema.ParseInterface(stored.Definition)
@@ -185,7 +221,8 @@ func (s *Service) UpdateInterface(ctx context.Context, realm string, def []byte)
 		return nil, fmt.Errorf("realm: stored interface %s v%d does not parse: %w", next.Name, next.Major, err)
 	}
 	if err := interfaceschema.CheckMinorUpgrade(prev, next); err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrValidation, err)
+		// Wrapped so the classification sentinels survive to the HTTP layer.
+		return nil, fmt.Errorf("%w: %w", ErrValidation, err)
 	}
 	si, err := s.st.UpdateInterface(ctx, r.ID, def)
 	if err != nil {
@@ -213,17 +250,58 @@ func (s *Service) checkRetentionCeiling(r *store.Realm, iface *interfaceschema.I
 }
 
 // DeleteInterface removes an interface major. The store enforces the upstream
-// draining rules (store.ErrInterfaceMajorNotZero, store.ErrInterfaceInUse).
+// draining rules (store.ErrInterfaceMajorNotZero, store.ErrInterfaceInUse);
+// a lookup miss is marked errMajorNotFound for the HTTP layer (#62).
 func (s *Service) DeleteInterface(ctx context.Context, realm, name string, major int) error {
 	rid, err := s.realmID(ctx, realm)
 	if err != nil {
 		return err
 	}
 	if err := s.st.DeleteInterface(ctx, rid, name, major); err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			return fmt.Errorf("%w: %w", errMajorNotFound, err)
+		}
 		return err
 	}
 	s.interfacesChanged(ctx, rid, realm)
 	return nil
+}
+
+// checkNameCollision rejects a new interface whose name equals an installed
+// one modulo case and hyphens (upstream interface_name_collision, #62).
+// Identical raw names are skipped so the duplicate install keeps its
+// store.ErrAlreadyExists path.
+func (s *Service) checkNameCollision(ctx context.Context, rid int16, name string) error {
+	ifaces, err := s.st.LoadRealmInterfaces(ctx, rid)
+	if err != nil {
+		return err
+	}
+	norm := normaliseIfaceName(name)
+	for _, si := range ifaces {
+		if si.Name == name {
+			continue
+		}
+		if normaliseIfaceName(si.Name) == norm {
+			return fmt.Errorf("%w: installed interface %q differs from %q only by case or hyphens",
+				ErrNameCollision, si.Name, name)
+		}
+	}
+	return nil
+}
+
+// normaliseIfaceName lowercases name and drops '-', upstream's collision key
+// for interface names.
+func normaliseIfaceName(name string) string {
+	return strings.Map(func(r rune) rune {
+		switch {
+		case r == '-':
+			return -1
+		case 'A' <= r && r <= 'Z':
+			return r + ('a' - 'A')
+		default:
+			return r
+		}
+	}, name)
 }
 
 // ListInterfaces returns the distinct interface names installed in the realm

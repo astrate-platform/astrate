@@ -34,9 +34,11 @@ func mustParse(t *testing.T, doc string) *interfaceschema.Interface {
 
 func TestCheckMinorUpgradeTable(t *testing.T) {
 	cases := []struct {
-		name    string
-		next    string
-		wantSub string // "" = accepted
+		name      string
+		oldDoc    string // "" = baseV10
+		next      string
+		wantSub   string // "" = accepted
+		wantClass error  // classification sentinel the rejection must wrap
 	}{
 		{
 			name: "additive mapping with minor bump",
@@ -88,7 +90,31 @@ func TestCheckMinorUpgradeTable(t *testing.T) {
 					{"endpoint": "/%{sensor_id}/status", "type": "string"}
 				]
 			}`,
-			wantSub: "minor version must increase",
+			wantSub:   "minor version was not increased",
+			wantClass: interfaceschema.ErrMinorNotIncreased,
+		},
+		{
+			name: "minor downgraded",
+			oldDoc: `{
+				"interface_name": "com.astrate.test.Upgrade",
+				"version_major": 1, "version_minor": 1,
+				"type": "datastream", "ownership": "device",
+				"mappings": [
+					{"endpoint": "/%{sensor_id}/value", "type": "double", "reliability": "guaranteed"},
+					{"endpoint": "/%{sensor_id}/status", "type": "string"}
+				]
+			}`,
+			next: `{
+				"interface_name": "com.astrate.test.Upgrade",
+				"version_major": 1, "version_minor": 0,
+				"type": "datastream", "ownership": "device",
+				"mappings": [
+					{"endpoint": "/%{sensor_id}/value", "type": "double", "reliability": "guaranteed"},
+					{"endpoint": "/%{sensor_id}/status", "type": "string"}
+				]
+			}`,
+			wantSub:   "downgrade not allowed",
+			wantClass: interfaceschema.ErrDowngradeNotAllowed,
 		},
 		{
 			name: "major changed",
@@ -127,7 +153,8 @@ func TestCheckMinorUpgradeTable(t *testing.T) {
 					{"endpoint": "/%{sensor_id}/status", "type": "string"}
 				]
 			}`,
-			wantSub: "type changed",
+			wantSub:   "type changed",
+			wantClass: interfaceschema.ErrIncompatibleEndpointChange,
 		},
 		{
 			name: "ownership changed",
@@ -140,7 +167,8 @@ func TestCheckMinorUpgradeTable(t *testing.T) {
 					{"endpoint": "/%{sensor_id}/status", "type": "string"}
 				]
 			}`,
-			wantSub: "ownership changed",
+			wantSub:   "ownership changed",
+			wantClass: interfaceschema.ErrIncompatibleEndpointChange,
 		},
 		{
 			name: "mapping removed",
@@ -152,7 +180,8 @@ func TestCheckMinorUpgradeTable(t *testing.T) {
 					{"endpoint": "/%{sensor_id}/value", "type": "double", "reliability": "guaranteed"}
 				]
 			}`,
-			wantSub: "removed",
+			wantSub:   "removed",
+			wantClass: interfaceschema.ErrMissingEndpoints,
 		},
 		{
 			name: "value type mutated",
@@ -165,7 +194,8 @@ func TestCheckMinorUpgradeTable(t *testing.T) {
 					{"endpoint": "/%{sensor_id}/status", "type": "string"}
 				]
 			}`,
-			wantSub: "changed type",
+			wantSub:   "changed type",
+			wantClass: interfaceschema.ErrIncompatibleEndpointChange,
 		},
 		{
 			name: "reliability mutated",
@@ -178,7 +208,8 @@ func TestCheckMinorUpgradeTable(t *testing.T) {
 					{"endpoint": "/%{sensor_id}/status", "type": "string"}
 				]
 			}`,
-			wantSub: "changed reliability",
+			wantSub:   "changed reliability",
+			wantClass: interfaceschema.ErrIncompatibleEndpointChange,
 		},
 		{
 			name: "explicit_timestamp mutated",
@@ -192,15 +223,20 @@ func TestCheckMinorUpgradeTable(t *testing.T) {
 					{"endpoint": "/%{sensor_id}/status", "type": "string"}
 				]
 			}`,
-			wantSub: "changed explicit_timestamp",
+			wantSub:   "changed explicit_timestamp",
+			wantClass: interfaceschema.ErrIncompatibleEndpointChange,
 		},
 	}
 
-	old := mustParse(t, baseV10)
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
+			oldDoc := tc.oldDoc
+			if oldDoc == "" {
+				oldDoc = baseV10
+			}
+			prev := mustParse(t, oldDoc)
 			next := mustParse(t, tc.next)
-			err := interfaceschema.CheckMinorUpgrade(old, next)
+			err := interfaceschema.CheckMinorUpgrade(prev, next)
 			if tc.wantSub == "" {
 				if err != nil {
 					t.Fatalf("CheckMinorUpgrade rejected valid upgrade: %v", err)
@@ -215,6 +251,21 @@ func TestCheckMinorUpgradeTable(t *testing.T) {
 			}
 			if !strings.Contains(err.Error(), tc.wantSub) {
 				t.Errorf("error %q does not contain %q", err.Error(), tc.wantSub)
+			}
+			if tc.wantClass != nil && !errors.Is(err, tc.wantClass) {
+				t.Errorf("error %v does not classify as %v", err, tc.wantClass)
+			}
+			if tc.wantClass == nil {
+				for _, other := range []error{
+					interfaceschema.ErrMinorNotIncreased,
+					interfaceschema.ErrDowngradeNotAllowed,
+					interfaceschema.ErrMissingEndpoints,
+					interfaceschema.ErrIncompatibleEndpointChange,
+				} {
+					if errors.Is(err, other) {
+						t.Errorf("unclassified error %v unexpectedly wraps %v", err, other)
+					}
+				}
 			}
 		})
 	}
@@ -236,6 +287,9 @@ func TestCheckMinorUpgradeAggregationChange(t *testing.T) {
 	err := interfaceschema.CheckMinorUpgrade(old, next)
 	if err == nil || !strings.Contains(err.Error(), "aggregation changed") {
 		t.Errorf("err = %v, want aggregation change rejection", err)
+	}
+	if !errors.Is(err, interfaceschema.ErrIncompatibleEndpointChange) {
+		t.Errorf("error %v does not classify as ErrIncompatibleEndpointChange", err)
 	}
 }
 

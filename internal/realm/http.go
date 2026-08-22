@@ -149,7 +149,7 @@ func (a *API) listInterfaces(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Query().Get("detailed") == "true" {
 		docs, err := a.svc.ListInterfacesDetailed(r.Context(), r.PathValue("realm"))
 		if err != nil {
-			a.writeError(w, err)
+			a.writeInterfaceError(w, err)
 			return
 		}
 		_ = astarteapi.WriteData(w, http.StatusOK, docs)
@@ -157,7 +157,7 @@ func (a *API) listInterfaces(w http.ResponseWriter, r *http.Request) {
 	}
 	names, err := a.svc.ListInterfaces(r.Context(), r.PathValue("realm"))
 	if err != nil {
-		a.writeError(w, err)
+		a.writeInterfaceError(w, err)
 		return
 	}
 	_ = astarteapi.WriteData(w, http.StatusOK, names)
@@ -171,7 +171,7 @@ func (a *API) installInterface(w http.ResponseWriter, r *http.Request) {
 	}
 	si, err := a.svc.InstallInterface(r.Context(), r.PathValue("realm"), def)
 	if err != nil {
-		a.writeError(w, err)
+		a.writeInterfaceError(w, err)
 		return
 	}
 	_ = astarteapi.WriteData(w, http.StatusCreated, json.RawMessage(si.Definition))
@@ -180,7 +180,7 @@ func (a *API) installInterface(w http.ResponseWriter, r *http.Request) {
 func (a *API) listInterfaceMajors(w http.ResponseWriter, r *http.Request) {
 	majors, err := a.svc.ListInterfaceMajors(r.Context(), r.PathValue("realm"), r.PathValue("name"))
 	if err != nil {
-		a.writeError(w, err)
+		a.writeInterfaceError(w, err)
 		return
 	}
 	_ = astarteapi.WriteData(w, http.StatusOK, majors)
@@ -193,14 +193,15 @@ func (a *API) getInterface(w http.ResponseWriter, r *http.Request) {
 	}
 	def, err := a.svc.GetInterface(r.Context(), r.PathValue("realm"), r.PathValue("name"), major)
 	if err != nil {
-		a.writeError(w, err)
+		a.writeInterfaceError(w, err)
 		return
 	}
 	_ = astarteapi.WriteData(w, http.StatusOK, def)
 }
 
 func (a *API) updateInterface(w http.ResponseWriter, r *http.Request) {
-	if _, ok := majorParam(w, r); !ok {
+	major, ok := majorParam(w, r)
+	if !ok {
 		return
 	}
 	var def json.RawMessage
@@ -208,8 +209,8 @@ func (a *API) updateInterface(w http.ResponseWriter, r *http.Request) {
 		_ = astarteapi.WriteBadRequest(w)
 		return
 	}
-	if _, err := a.svc.UpdateInterface(r.Context(), r.PathValue("realm"), def); err != nil {
-		a.writeError(w, err)
+	if _, err := a.svc.UpdateInterface(r.Context(), r.PathValue("realm"), r.PathValue("name"), major, def); err != nil {
+		a.writeInterfaceError(w, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -221,7 +222,7 @@ func (a *API) deleteInterface(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := a.svc.DeleteInterface(r.Context(), r.PathValue("realm"), r.PathValue("name"), major); err != nil {
-		a.writeError(w, err)
+		a.writeInterfaceError(w, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -310,6 +311,60 @@ func majorParam(w http.ResponseWriter, r *http.Request) (int, bool) {
 		return 0, false
 	}
 	return major, true
+}
+
+// writeInterfaceError maps interface-service/store errors onto the upstream
+// 1.2 responses measured through the tunnel (#62): specific statuses with
+// frozen {"errors":{"detail":...}} bodies. Only the six interface handlers
+// route here on purpose — triggers and policies keep the generic writeError,
+// so none of these details can leak onto those surfaces.
+func (a *API) writeInterfaceError(w http.ResponseWriter, err error) {
+	var ve *interfaceschema.ViolationsError
+	switch {
+	case errors.Is(err, ErrMaximumDatabaseRetentionExceeded):
+		_ = astarteapi.WriteFieldErrors(w, http.StatusUnprocessableEntity,
+			map[string][]string{"error_name": {"maximum_database_retention_exceeded"}})
+	case errors.As(err, &ve):
+		writeViolations(w, ve)
+	case errors.Is(err, errMajorNotFound):
+		_ = astarteapi.WriteError(w, http.StatusNotFound, "Interface major not found")
+	case errors.Is(err, ErrNameCollision):
+		_ = astarteapi.WriteError(w, http.StatusConflict,
+			"Interface name collision detected. Make sure that the difference "+
+				"between two interface names is not limited to the casing or "+
+				"the presence of hyphens.")
+	case errors.Is(err, ErrNameMismatch):
+		_ = astarteapi.WriteError(w, http.StatusConflict,
+			"Interface name doesn't match the one in the interface json")
+	case errors.Is(err, ErrMajorMismatch):
+		_ = astarteapi.WriteError(w, http.StatusConflict,
+			"Interface major version doesn't match the one in the interface json")
+	case errors.Is(err, interfaceschema.ErrMinorNotIncreased):
+		_ = astarteapi.WriteError(w, http.StatusConflict,
+			"Interface minor version was not increased")
+	case errors.Is(err, interfaceschema.ErrDowngradeNotAllowed):
+		_ = astarteapi.WriteError(w, http.StatusConflict,
+			"Interface downgrade not allowed")
+	case errors.Is(err, interfaceschema.ErrMissingEndpoints):
+		_ = astarteapi.WriteError(w, http.StatusConflict,
+			"Interface update has missing endpoints")
+	case errors.Is(err, interfaceschema.ErrIncompatibleEndpointChange):
+		_ = astarteapi.WriteError(w, http.StatusConflict,
+			"Interface update contains incompatible endpoint changes")
+	case errors.Is(err, store.ErrAlreadyExists):
+		_ = astarteapi.WriteError(w, http.StatusConflict, "Interface already exists")
+	case errors.Is(err, store.ErrInterfaceMajorNotZero):
+		_ = astarteapi.WriteError(w, http.StatusForbidden, "Interface can't be deleted")
+	case errors.Is(err, store.ErrInterfaceInUse):
+		_ = astarteapi.WriteError(w, http.StatusForbidden,
+			"Interface can't be deleted since it's currently used")
+	case errors.Is(err, ErrValidation):
+		_ = astarteapi.WriteError(w, http.StatusUnprocessableEntity, validationDetail(err))
+	case errors.Is(err, store.ErrNotFound):
+		_ = astarteapi.WriteError(w, http.StatusNotFound, "Interface not found")
+	default:
+		_ = astarteapi.WriteInternalServerError(w)
+	}
 }
 
 // writeError maps service/store errors onto upstream-shaped responses.

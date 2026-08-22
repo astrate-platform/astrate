@@ -160,9 +160,12 @@ func TestRealmManagement(t *testing.T) {
 		}
 	})
 	t.Run("MappingMutationRejected", func(t *testing.T) {
-		// Changing /value's type is not an additive upgrade (CheckMinorUpgrade).
-		if rec := r.req(t, http.MethodPut, "/interfaces/"+rmIface+"/1", ifaceV1x, r.rmaToken); rec.Code != http.StatusUnprocessableEntity {
-			t.Errorf("mapping mutation: got %d, want 422 (%s)", rec.Code, rec.Body)
+		// Changing /value's type is not an additive upgrade; upstream 1.2
+		// answers with its measured 409 detail (#62).
+		want := `{"errors":{"detail":"Interface update contains incompatible endpoint changes"}}`
+		rec := r.req(t, http.MethodPut, "/interfaces/"+rmIface+"/1", ifaceV1x, r.rmaToken)
+		if rec.Code != http.StatusConflict || rec.Body.String() != want {
+			t.Errorf("mapping mutation: got %d %s, want 409 %s", rec.Code, rec.Body, want)
 		}
 	})
 
@@ -179,9 +182,11 @@ func TestRealmManagement(t *testing.T) {
 
 	t.Run("DeleteRules", func(t *testing.T) {
 		ctx := context.Background()
-		// Major != 0 can't be deleted.
-		if rec := r.req(t, http.MethodDelete, "/interfaces/"+rmIface+"/1", "", r.rmaToken); rec.Code != http.StatusUnprocessableEntity {
-			t.Errorf("delete major 1: got %d, want 422", rec.Code)
+		// Major != 0 can't be deleted — upstream 403s this (#62).
+		want := `{"errors":{"detail":"Interface can't be deleted"}}`
+		rec := r.req(t, http.MethodDelete, "/interfaces/"+rmIface+"/1", "", r.rmaToken)
+		if rec.Code != http.StatusForbidden || rec.Body.String() != want {
+			t.Errorf("delete major 1: got %d %s, want 403 %s", rec.Code, rec.Body, want)
 		}
 		// Install a draft (major 0), reference it in an introspection → can't delete.
 		if rec := r.req(t, http.MethodPost, "/interfaces", draftV0, r.rmaToken); rec.Code != http.StatusCreated {
@@ -195,8 +200,10 @@ func TestRealmManagement(t *testing.T) {
 			map[string]store.InterfaceVersion{rmDraft: {Major: 0, Minor: 1}}); err != nil {
 			t.Fatal(err)
 		}
-		if rec := r.req(t, http.MethodDelete, "/interfaces/"+rmDraft+"/0", "", r.rmaToken); rec.Code != http.StatusUnprocessableEntity {
-			t.Errorf("delete introspected draft: got %d, want 422", rec.Code)
+		wantInUse := `{"errors":{"detail":"Interface can't be deleted since it's currently used"}}`
+		rec = r.req(t, http.MethodDelete, "/interfaces/"+rmDraft+"/0", "", r.rmaToken)
+		if rec.Code != http.StatusForbidden || rec.Body.String() != wantInUse {
+			t.Errorf("delete introspected draft: got %d %s, want 403 %s", rec.Code, rec.Body, wantInUse)
 		}
 		// Drop it from the introspection → now deletable.
 		if _, err := r.st.UpdateIntrospection(ctx, r.realmID, dev, map[string]store.InterfaceVersion{}); err != nil {
@@ -317,6 +324,150 @@ func TestRealmManagementRetentionCeiling(t *testing.T) {
 	decodeData(t, r.req(t, http.MethodGet, "/interfaces/"+retIface, "", r.rmaToken), &majors)
 	if len(majors) != 1 || majors[0] != 0 {
 		t.Errorf("majors after refused update = %v, want [0]", majors)
+	}
+}
+
+// TestRealmManagementErrorCodes pins the install/update/delete error taxonomy
+// measured against upstream 1.2 through the tunnel (#62): every rejection row
+// compares the exact {"errors":{"detail":...}} body, interleaved with success
+// twins proving nothing got stuck. Steps share one rig and run in order.
+func TestRealmManagementErrorCodes(t *testing.T) {
+	r := newRig(t)
+
+	const (
+		bodyDup           = `{"errors":{"detail":"Interface already exists"}}`
+		bodyCollision     = `{"errors":{"detail":"Interface name collision detected. Make sure that the difference between two interface names is not limited to the casing or the presence of hyphens."}}`
+		bodyNameMismatch  = `{"errors":{"detail":"Interface name doesn't match the one in the interface json"}}`
+		bodyMajorMismatch = `{"errors":{"detail":"Interface major version doesn't match the one in the interface json"}}`
+		bodyMinorSame     = `{"errors":{"detail":"Interface minor version was not increased"}}`
+		bodyDowngrade     = `{"errors":{"detail":"Interface downgrade not allowed"}}`
+		bodyMutated       = `{"errors":{"detail":"Interface update contains incompatible endpoint changes"}}`
+		bodyDropped       = `{"errors":{"detail":"Interface update has missing endpoints"}}`
+		bodyMajorNotFound = `{"errors":{"detail":"Interface major not found"}}`
+		bodyNotFound      = `{"errors":{"detail":"Interface not found"}}`
+		bodyCantDelete    = `{"errors":{"detail":"Interface can't be deleted"}}`
+		bodyInUse         = `{"errors":{"detail":"Interface can't be deleted since it's currently used"}}`
+		bodyTriggerDup    = `{"errors":{"detail":"Already exists"}}`
+	)
+
+	sensors := func(minor int, mappings string) string {
+		return fmt.Sprintf(`{"interface_name":"com.ex.M7a.Sensors","version_major":1,"version_minor":%d,`+
+			`"type":"datastream","ownership":"device","mappings":[%s]}`, minor, mappings)
+	}
+	named := func(name string) string {
+		return fmt.Sprintf(`{"interface_name":"%s","version_major":1,"version_minor":0,`+
+			`"type":"datastream","ownership":"device","mappings":[{"endpoint":"/value","type":"double"}]}`, name)
+	}
+
+	var draftDevice deviceid.ID
+	setupDraftInUse := func(t *testing.T) {
+		t.Helper()
+		if rec := r.req(t, http.MethodPost, "/interfaces", draftV0, r.rmaToken); rec.Code != http.StatusCreated {
+			t.Fatalf("setup install draft: got %d (%s)", rec.Code, rec.Body)
+		}
+		dev, _ := deviceid.Random()
+		if err := r.st.RegisterDevice(context.Background(), r.realmID, dev, "h"); err != nil {
+			t.Fatal(err)
+		}
+		draftDevice = dev
+		if _, err := r.st.UpdateIntrospection(context.Background(), r.realmID, dev,
+			map[string]store.InterfaceVersion{rmDraft: {Major: 0, Minor: 1}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	clearDraftIntrospection := func(t *testing.T) {
+		t.Helper()
+		if _, err := r.st.UpdateIntrospection(context.Background(), r.realmID, draftDevice,
+			map[string]store.InterfaceVersion{}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	steps := []struct {
+		name       string
+		method     string
+		path       string
+		body       string
+		setup      func(t *testing.T)
+		wantStatus int
+		wantBody   string // "" = don't compare (success twins)
+	}{
+		{"get_unknown_name", http.MethodGet, "/interfaces/com.ex.M7a.Absent", "",
+			nil, http.StatusNotFound, bodyNotFound},
+		{"get_unknown_major", http.MethodGet, "/interfaces/com.ex.M7a.Absent/0", "",
+			nil, http.StatusNotFound, bodyNotFound},
+
+		{"fresh_install_twin", http.MethodPost, "/interfaces", ifaceV1,
+			nil, http.StatusCreated, ""},
+		{"duplicate_install", http.MethodPost, "/interfaces", ifaceV1,
+			nil, http.StatusConflict, bodyDup},
+
+		{"install_case_collision", http.MethodPost, "/interfaces", named("com.ex.M7A.sensors"),
+			nil, http.StatusConflict, bodyCollision},
+		// Upstream's collision key lowercases and strips '-' only (queries.ex
+		// normalize_interface_name): dropping the dot yields a genuinely
+		// distinct interface, while a hyphenated middle label collides.
+		{"install_dotless_distinct_twin", http.MethodPost, "/interfaces", named("com.ex.M7aSensors"),
+			nil, http.StatusCreated, ""},
+		{"install_hyphen_collision", http.MethodPost, "/interfaces", named("com.ex.M-7a.Sensors"),
+			nil, http.StatusConflict, bodyCollision},
+		{"distinct_name_twin", http.MethodPost, "/interfaces", named("com.ex.M7a.Distinct"),
+			nil, http.StatusCreated, ""},
+
+		{"put_name_mismatch", http.MethodPut, "/interfaces/" + rmIface + "/1",
+			named("com.ex.Mismatched"), nil, http.StatusConflict, bodyNameMismatch},
+		{"put_major_mismatch", http.MethodPut, "/interfaces/" + rmIface + "/1",
+			fmt.Sprintf(`{"interface_name":"%s","version_major":2,"version_minor":0,"type":"datastream",`+
+				`"ownership":"device","mappings":[{"endpoint":"/value","type":"double"}]}`, rmIface),
+			nil, http.StatusConflict, bodyMajorMismatch},
+
+		{"put_same_minor", http.MethodPut, "/interfaces/" + rmIface + "/1", sensors(0, `{"endpoint":"/value","type":"double"}`),
+			nil, http.StatusConflict, bodyMinorSame},
+		{"additive_twin_after_same_minor", http.MethodPut, "/interfaces/" + rmIface + "/1", ifaceV1b,
+			nil, http.StatusNoContent, ""},
+		{"put_downgrade", http.MethodPut, "/interfaces/" + rmIface + "/1", sensors(0, `{"endpoint":"/value","type":"double"}`),
+			nil, http.StatusConflict, bodyDowngrade},
+		{"put_mutated_mapping_type", http.MethodPut, "/interfaces/" + rmIface + "/1",
+			sensors(2, `{"endpoint":"/value","type":"integer"},{"endpoint":"/count","type":"integer"}`),
+			nil, http.StatusConflict, bodyMutated},
+		{"additive_twin_after_mutation", http.MethodPut, "/interfaces/" + rmIface + "/1",
+			sensors(2, `{"endpoint":"/value","type":"double"},{"endpoint":"/count","type":"integer"},{"endpoint":"/extra","type":"boolean"}`),
+			nil, http.StatusNoContent, ""},
+		{"put_dropped_endpoint", http.MethodPut, "/interfaces/" + rmIface + "/1", sensors(3, `{"endpoint":"/value","type":"double"}`),
+			nil, http.StatusConflict, bodyDropped},
+
+		{"put_uninstalled_major", http.MethodPut, "/interfaces/" + rmIface + "/7",
+			fmt.Sprintf(`{"interface_name":"%s","version_major":7,"version_minor":0,"type":"datastream",`+
+				`"ownership":"device","mappings":[{"endpoint":"/value","type":"double"}]}`, rmIface),
+			nil, http.StatusNotFound, bodyMajorNotFound},
+		{"delete_unknown_interface", http.MethodDelete, "/interfaces/com.ex.M7a.Absent/0", "",
+			nil, http.StatusNotFound, bodyMajorNotFound},
+		{"delete_major_not_zero_unused", http.MethodDelete, "/interfaces/com.ex.M7a.Distinct/1", "",
+			nil, http.StatusForbidden, bodyCantDelete},
+		{"delete_introspected_draft", http.MethodDelete, "/interfaces/" + rmDraft + "/0", "",
+			setupDraftInUse, http.StatusForbidden, bodyInUse},
+		{"delete_draft_after_introspection_cleared", http.MethodDelete, "/interfaces/" + rmDraft + "/0", "",
+			clearDraftIntrospection, http.StatusNoContent, ""},
+
+		{"trigger_create_twin", http.MethodPost, "/triggers", triggerJSON,
+			nil, http.StatusCreated, ""},
+		{"duplicate_trigger_keeps_generic_detail", http.MethodPost, "/triggers", triggerJSON,
+			nil, http.StatusConflict, bodyTriggerDup},
+	}
+
+	for _, step := range steps {
+		t.Run(step.name, func(t *testing.T) {
+			if step.setup != nil {
+				step.setup(t)
+			}
+			rec := r.req(t, step.method, step.path, step.body, r.rmaToken)
+			if rec.Code != step.wantStatus {
+				t.Errorf("got status %d body %s, want %d %s", rec.Code, rec.Body, step.wantStatus, step.wantBody)
+			}
+			if step.wantBody != "" && rec.Body.String() != step.wantBody {
+				t.Errorf("got body %s, want %s", rec.Body, step.wantBody)
+			}
+		})
 	}
 }
 

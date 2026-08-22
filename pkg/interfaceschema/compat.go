@@ -9,6 +9,17 @@ import (
 // callers can classify upgrade failures with errors.Is.
 var ErrIncompatibleUpgrade = errors.New("incompatible interface upgrade")
 
+// Classification sentinels for CheckMinorUpgrade rejections (#62). Every
+// classified rejection wraps ErrIncompatibleUpgrade (so existing errors.Is
+// callers keep working) AND exactly one sentinel below, which the HTTP layer
+// maps onto the measured upstream detail string.
+var (
+	ErrMinorNotIncreased          = errors.New("minor version was not increased")
+	ErrDowngradeNotAllowed        = errors.New("downgrade not allowed")
+	ErrMissingEndpoints           = errors.New("update has missing endpoints")
+	ErrIncompatibleEndpointChange = errors.New("update contains incompatible endpoint changes")
+)
+
 // CheckMinorUpgrade enforces the Astarte minor-version compatibility rule
 // exactly as Realm Management does on interface update (docs/DESIGN.md §2.6
 // versioning parity): next must keep the same name, major version, type,
@@ -29,19 +40,25 @@ func CheckMinorUpgrade(old, next *Interface) error {
 		return fmt.Errorf("%w: major version changed from %d to %d (new majors are new interfaces)",
 			ErrIncompatibleUpgrade, old.Major, next.Major)
 	}
-	if next.Minor <= old.Minor {
-		return fmt.Errorf("%w: minor version must increase (%d.%d -> %d.%d)",
-			ErrIncompatibleUpgrade, old.Major, old.Minor, next.Major, next.Minor)
+	if next.Minor == old.Minor {
+		return fmt.Errorf("%w: %w: %d.%d -> %d.%d",
+			ErrIncompatibleUpgrade, ErrMinorNotIncreased, old.Major, old.Minor, next.Major, next.Minor)
+	}
+	if next.Minor < old.Minor {
+		return fmt.Errorf("%w: %w: %d.%d -> %d.%d",
+			ErrIncompatibleUpgrade, ErrDowngradeNotAllowed, old.Major, old.Minor, next.Major, next.Minor)
 	}
 	if next.Type != old.Type {
-		return fmt.Errorf("%w: type changed from %s to %s", ErrIncompatibleUpgrade, old.Type, next.Type)
+		return fmt.Errorf("%w: %w: type changed from %s to %s",
+			ErrIncompatibleUpgrade, ErrIncompatibleEndpointChange, old.Type, next.Type)
 	}
 	if next.Ownership != old.Ownership {
-		return fmt.Errorf("%w: ownership changed from %s to %s", ErrIncompatibleUpgrade, old.Ownership, next.Ownership)
+		return fmt.Errorf("%w: %w: ownership changed from %s to %s",
+			ErrIncompatibleUpgrade, ErrIncompatibleEndpointChange, old.Ownership, next.Ownership)
 	}
 	if next.Aggregation != old.Aggregation {
-		return fmt.Errorf("%w: aggregation changed from %s to %s",
-			ErrIncompatibleUpgrade, old.Aggregation, next.Aggregation)
+		return fmt.Errorf("%w: %w: aggregation changed from %s to %s",
+			ErrIncompatibleUpgrade, ErrIncompatibleEndpointChange, old.Aggregation, next.Aggregation)
 	}
 
 	nextByEndpoint := make(map[string]*Mapping, len(next.Mappings))
@@ -60,11 +77,11 @@ func CheckMinorUpgrade(old, next *Interface) error {
 		}
 		nm, ok := nextByEndpoint[key]
 		if !ok {
-			return fmt.Errorf("%w: mapping %q removed (minor upgrades are additive only)",
-				ErrIncompatibleUpgrade, om.Endpoint)
+			return fmt.Errorf("%w: %w: mapping %q removed (minor upgrades are additive only)",
+				ErrIncompatibleUpgrade, ErrMissingEndpoints, om.Endpoint)
 		}
 		if err := sameMappingAttributes(om, nm); err != nil {
-			return err
+			return fmt.Errorf("%w: %w", ErrIncompatibleUpgrade, err)
 		}
 	}
 	return nil
@@ -104,7 +121,7 @@ func sameMappingAttributes(om, nm *Mapping) error {
 	}
 	if attr != "" {
 		return fmt.Errorf("%w: mapping %q changed %s (existing mappings are immutable)",
-			ErrIncompatibleUpgrade, om.Endpoint, attr)
+			ErrIncompatibleEndpointChange, om.Endpoint, attr)
 	}
 	return nil
 }
