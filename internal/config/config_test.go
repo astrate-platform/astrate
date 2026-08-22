@@ -283,3 +283,71 @@ func cut(s string, sep byte) (string, string, bool) {
 	}
 	return s, "", false
 }
+
+func TestHousekeepingDefaultRetentionEnv(t *testing.T) {
+	const (
+		prefixed = "ASTRATE_HOUSEKEEPING_DEFAULT_DATASTREAM_MAXIMUM_STORAGE_RETENTION"
+		bare     = "HOUSEKEEPING_DEFAULT_DATASTREAM_MAXIMUM_STORAGE_RETENTION"
+	)
+	body := `
+[database]
+dsn = "x"
+[mqtt]
+insecure_dev_mode = true
+`
+	load := func(t *testing.T) (Config, error) {
+		t.Helper()
+		return Load(writeTOML(t, body))
+	}
+
+	t.Run("absent leaves nil", func(t *testing.T) {
+		t.Setenv(prefixed, "")
+		t.Setenv(bare, "")
+		cfg, err := load(t)
+		if err != nil {
+			t.Fatalf("Load: %v", err)
+		}
+		if cfg.Housekeeping.DefaultDatastreamMaximumStorageRetention != nil {
+			t.Errorf("default retention without env = %d, want nil",
+				*cfg.Housekeeping.DefaultDatastreamMaximumStorageRetention)
+		}
+	})
+	t.Run("prefixed name parses", func(t *testing.T) {
+		t.Setenv(bare, "")
+		t.Setenv(prefixed, "86400")
+		cfg, err := load(t)
+		if err != nil {
+			t.Fatalf("Load: %v", err)
+		}
+		if cfg.Housekeeping.DefaultDatastreamMaximumStorageRetention == nil ||
+			*cfg.Housekeeping.DefaultDatastreamMaximumStorageRetention != 86400 {
+			t.Errorf("default retention = %v, want 86400", cfg.Housekeeping.DefaultDatastreamMaximumStorageRetention)
+		}
+	})
+	t.Run("bare upstream name wins", func(t *testing.T) {
+		t.Setenv(prefixed, "111")
+		t.Setenv(bare, "222")
+		cfg, err := load(t)
+		if err != nil {
+			t.Fatalf("Load: %v", err)
+		}
+		if cfg.Housekeeping.DefaultDatastreamMaximumStorageRetention == nil ||
+			*cfg.Housekeeping.DefaultDatastreamMaximumStorageRetention != 222 {
+			t.Errorf("default retention = %v, want 222 (bare name)", cfg.Housekeeping.DefaultDatastreamMaximumStorageRetention)
+		}
+	})
+	t.Run("malformed fails loud", func(t *testing.T) {
+		t.Setenv(prefixed, "")
+		t.Setenv(bare, "soon")
+		if _, err := load(t); err == nil {
+			t.Error("malformed retention env: got nil error")
+		}
+	})
+	t.Run("negative fails loud", func(t *testing.T) {
+		t.Setenv(prefixed, "")
+		t.Setenv(bare, "-5")
+		if _, err := load(t); err == nil {
+			t.Error("negative retention env: got nil error")
+		}
+	})
+}

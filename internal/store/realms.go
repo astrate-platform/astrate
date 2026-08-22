@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -13,26 +14,40 @@ import (
 // the AES-256-GCM box produced by KeySealer; the store never sees the
 // plaintext key (sealing happens in the pairing/CA layer).
 type Realm struct {
-	ID                      int16
-	Name                    string
-	JWTPublicKeysPEM        []string
-	CACertificatePEM        string
-	CAPrivateKeySealed      []byte
-	DeviceRegistrationLimit *int32
-	CreatedAt               time.Time
+	ID                                int16
+	Name                              string
+	JWTPublicKeysPEM                  []string
+	CACertificatePEM                  string
+	CAPrivateKeySealed                []byte
+	DeviceRegistrationLimit           *int32
+	DatastreamMaximumStorageRetention *int64
+	CreatedAt                         time.Time
 }
 
 // NewRealm carries the fields needed to create a realm. CA material is
 // mandatory: a realm without a CA cannot pair devices.
 type NewRealm struct {
-	Name                    string
-	JWTPublicKeysPEM        []string
-	CACertificatePEM        string
-	CAPrivateKeySealed      []byte
-	DeviceRegistrationLimit *int32
+	Name                              string
+	JWTPublicKeysPEM                  []string
+	CACertificatePEM                  string
+	CAPrivateKeySealed                []byte
+	DeviceRegistrationLimit           *int32
+	DatastreamMaximumStorageRetention *int64
 }
 
-const realmColumns = `id, name, jwt_public_keys, ca_certificate, ca_private_key, device_registration_limit, created_at`
+const realmColumns = `id, name, jwt_public_keys, ca_certificate, ca_private_key, device_registration_limit, datastream_maximum_storage_retention, created_at`
+
+// ensureRealmRetentionColumn adds the realm-level datastream retention ceiling
+// as an idempotent startup step. This is a stopgap while migrations/* is frozen:
+// a future 000011 migration should adopt the column (ADD COLUMN IF NOT EXISTS
+// makes either order safe).
+func (s *Store) ensureRealmRetentionColumn(ctx context.Context) error {
+	if _, err := s.pool.Exec(ctx,
+		`ALTER TABLE realms ADD COLUMN IF NOT EXISTS datastream_maximum_storage_retention bigint`); err != nil {
+		return fmt.Errorf("store: adding realms.datastream_maximum_storage_retention: %w", err)
+	}
+	return nil
+}
 
 // CreateRealm inserts the realm row together with its CA material in one
 // transaction (docs/ROADMAP.md §3.1 file 2.8) and returns the stored realm.
@@ -42,10 +57,10 @@ func (s *Store) CreateRealm(ctx context.Context, nr NewRealm) (*Realm, error) {
 		keys = []string{}
 	}
 	row := s.pool.QueryRow(ctx, `
-		INSERT INTO realms (name, jwt_public_keys, ca_certificate, ca_private_key, device_registration_limit)
-		VALUES ($1, $2, $3, $4, $5)
+		INSERT INTO realms (name, jwt_public_keys, ca_certificate, ca_private_key, device_registration_limit, datastream_maximum_storage_retention)
+		VALUES ($1, $2, $3, $4, $5, $6)
 		RETURNING `+realmColumns,
-		nr.Name, keys, nr.CACertificatePEM, nr.CAPrivateKeySealed, nr.DeviceRegistrationLimit)
+		nr.Name, keys, nr.CACertificatePEM, nr.CAPrivateKeySealed, nr.DeviceRegistrationLimit, nr.DatastreamMaximumStorageRetention)
 
 	realm, err := scanRealm(row)
 	switch pgErrCode(err) {
@@ -124,6 +139,57 @@ func (s *Store) SetRealmJWTPublicKeys(ctx context.Context, name string, keysPEM 
 	return nil
 }
 
+// RealmPatch carries optional realm updates; each Patch* flag gates its
+// value field, and Clear* flags write NULL (Clear beats Set).
+type RealmPatch struct {
+	PatchJWTPublicKeyPEM   bool
+	SetJWTPublicKeyPEM     string
+	PatchRegistrationLimit bool
+	SetRegistrationLimit   int32
+	ClearRegistrationLimit bool
+	PatchRetention         bool
+	SetRetention           int64 // seconds; SetRetention=0 with PatchRetention means clear too
+	ClearRetention         bool
+}
+
+// UpdateRealm applies the patched fields to one realm in a single UPDATE built
+// from only the touched columns. An unknown realm yields ErrNotFound wrapped
+// like the other realm methods.
+func (s *Store) UpdateRealm(ctx context.Context, name string, p RealmPatch) error {
+	sets := []string{}
+	args := []any{name} // $1 is the WHERE name
+	add := func(col string, v any) {
+		sets = append(sets, fmt.Sprintf("%s = $%d", col, len(args)+1))
+		args = append(args, v)
+	}
+	if p.PatchJWTPublicKeyPEM {
+		add("jwt_public_keys", []string{p.SetJWTPublicKeyPEM})
+	}
+	if p.ClearRegistrationLimit {
+		add("device_registration_limit", nil)
+	} else if p.PatchRegistrationLimit {
+		add("device_registration_limit", p.SetRegistrationLimit)
+	}
+	if p.ClearRetention || (p.PatchRetention && p.SetRetention <= 0) {
+		add("datastream_maximum_storage_retention", nil)
+	} else if p.PatchRetention {
+		add("datastream_maximum_storage_retention", p.SetRetention)
+	}
+	if len(sets) == 0 {
+		return nil
+	}
+
+	tag, err := s.pool.Exec(ctx,
+		`UPDATE realms SET `+strings.Join(sets, ", ")+` WHERE name = $1`, args...)
+	if err != nil {
+		return fmt.Errorf("store: updating realm %q: %w", name, err)
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("%w: realm %q", ErrNotFound, name)
+	}
+	return nil
+}
+
 // SetRealmCA replaces the realm's CA certificate and sealed private key
 // (re-keying flow, docs/DESIGN.md §4.3).
 func (s *Store) SetRealmCA(ctx context.Context, name, caCertPEM string, caKeySealed []byte) error {
@@ -177,7 +243,8 @@ func (s *Store) DeleteRealm(ctx context.Context, name string) error {
 func scanRealm(row pgx.Row) (*Realm, error) {
 	var r Realm
 	if err := row.Scan(&r.ID, &r.Name, &r.JWTPublicKeysPEM, &r.CACertificatePEM,
-		&r.CAPrivateKeySealed, &r.DeviceRegistrationLimit, &r.CreatedAt); err != nil {
+		&r.CAPrivateKeySealed, &r.DeviceRegistrationLimit,
+		&r.DatastreamMaximumStorageRetention, &r.CreatedAt); err != nil {
 		return nil, err
 	}
 	return &r, nil

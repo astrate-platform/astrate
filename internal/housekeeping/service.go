@@ -22,9 +22,10 @@ var ErrValidation = errors.New("housekeeping: validation failed")
 
 // RealmView is the API projection of a realm: never the CA private key.
 type RealmView struct {
-	Name                    string
-	JWTPublicKeyPEM         string
-	DeviceRegistrationLimit *int32
+	Name                              string
+	JWTPublicKeyPEM                   string
+	DeviceRegistrationLimit           *int32
+	DatastreamMaximumStorageRetention *int64
 }
 
 // Reloader is the broker port a realm mutation notifies so a freshly-created
@@ -42,6 +43,11 @@ type Service struct {
 	sealer   *store.KeySealer
 	reloader Reloader
 	log      *slog.Logger
+
+	// defaultRetention is the realm-level datastream retention ceiling
+	// injected at creation when the caller omits the field (issue #73).
+	// nil disables injection: an explicit value always wins.
+	defaultRetention *int64
 }
 
 // NewService builds the service. reloader (the broker) may be nil; log
@@ -51,6 +57,16 @@ func NewService(st *store.Store, sealer *store.KeySealer, reloader Reloader, log
 		log = slog.Default()
 	}
 	return &Service{st: st, sealer: sealer, reloader: reloader, log: log}
+}
+
+// WithDefaultDatastreamMaximumStorageRetention sets the realm-level datastream
+// retention ceiling (seconds) injected at creation when the caller omits the
+// field (#73). nil (the zero behavior) disables injection: an explicit value
+// always wins, and deployments that never configure it behave exactly as
+// before.
+func (s *Service) WithDefaultDatastreamMaximumStorageRetention(defaultRetention *int64) *Service {
+	s.defaultRetention = defaultRetention
+	return s
 }
 
 // notifyBrokerReload asks the broker to rebuild its per-realm CA pools. A
@@ -69,8 +85,11 @@ func (s *Service) notifyBrokerReload(ctx context.Context, realm string) {
 // default 10-year lifetime), seal its private key, and persist the realm row
 // plus CA material in one store transaction (docs/ROADMAP.md §8.1 file 7.3).
 // A blank/invalid name or missing JWT key yields ErrValidation; a duplicate
-// realm yields store.ErrAlreadyExists.
-func (s *Service) CreateRealm(ctx context.Context, name, jwtPublicKeyPEM string, regLimit *int32) (*RealmView, error) {
+// realm yields store.ErrAlreadyExists. retention is the realm-level
+// datastream storage ceiling in seconds; when the caller omits it and a
+// default was configured on the service, the default is injected (#73) — an
+// explicit value always wins.
+func (s *Service) CreateRealm(ctx context.Context, name, jwtPublicKeyPEM string, regLimit *int32, retention *int64) (*RealmView, error) {
 	if name == "" {
 		return nil, fmt.Errorf("%w: realm_name can't be blank", ErrValidation)
 	}
@@ -79,6 +98,12 @@ func (s *Service) CreateRealm(ctx context.Context, name, jwtPublicKeyPEM string,
 	}
 	if regLimit != nil && *regLimit < 0 {
 		return nil, fmt.Errorf("%w: device_registration_limit must be non-negative", ErrValidation)
+	}
+	if retention != nil && *retention < 0 {
+		return nil, fmt.Errorf("%w: datastream_maximum_storage_retention must be non-negative", ErrValidation)
+	}
+	if retention == nil {
+		retention = s.defaultRetention
 	}
 
 	realmCA, err := ca.Generate(name, 0)
@@ -91,11 +116,12 @@ func (s *Service) CreateRealm(ctx context.Context, name, jwtPublicKeyPEM string,
 	}
 
 	r, err := s.st.CreateRealm(ctx, store.NewRealm{
-		Name:                    name,
-		JWTPublicKeysPEM:        []string{jwtPublicKeyPEM},
-		CACertificatePEM:        realmCA.CertificatePEM(),
-		CAPrivateKeySealed:      sealed,
-		DeviceRegistrationLimit: regLimit,
+		Name:                              name,
+		JWTPublicKeysPEM:                  []string{jwtPublicKeyPEM},
+		CACertificatePEM:                  realmCA.CertificatePEM(),
+		CAPrivateKeySealed:                sealed,
+		DeviceRegistrationLimit:           regLimit,
+		DatastreamMaximumStorageRetention: retention,
 	})
 	if err != nil {
 		if errors.Is(err, store.ErrInvalidRealmName) {
@@ -105,6 +131,44 @@ func (s *Service) CreateRealm(ctx context.Context, name, jwtPublicKeyPEM string,
 	}
 	s.notifyBrokerReload(ctx, name)
 	return view(r), nil
+}
+
+// RealmUpdate carries a PATCH payload; each Patch* flag gates its value
+// field, Clear* flags unset it (Clear beats Set).
+type RealmUpdate struct {
+	PatchJWTPublicKeyPEM   bool
+	SetJWTPublicKeyPEM     string
+	PatchRegistrationLimit bool
+	SetRegistrationLimit   int32
+	ClearRegistrationLimit bool
+	PatchRetention         bool
+	SetRetention           int64
+	ClearRetention         bool
+}
+
+// UpdateRealm applies an update to one realm after validating the touched
+// fields (upstream PATCH /housekeeping/v1/realms/{realm}); an unknown realm
+// yields store.ErrNotFound.
+func (s *Service) UpdateRealm(ctx context.Context, name string, p RealmUpdate) error {
+	if p.PatchJWTPublicKeyPEM && p.SetJWTPublicKeyPEM == "" {
+		return fmt.Errorf("%w: jwt_public_key_pem can't be blank", ErrValidation)
+	}
+	if p.PatchRegistrationLimit && p.SetRegistrationLimit < 0 {
+		return fmt.Errorf("%w: device_registration_limit must be non-negative", ErrValidation)
+	}
+	if p.PatchRetention && p.SetRetention < 0 {
+		return fmt.Errorf("%w: datastream_maximum_storage_retention must be non-negative", ErrValidation)
+	}
+	return s.st.UpdateRealm(ctx, name, store.RealmPatch{
+		PatchJWTPublicKeyPEM:   p.PatchJWTPublicKeyPEM,
+		SetJWTPublicKeyPEM:     p.SetJWTPublicKeyPEM,
+		PatchRegistrationLimit: p.PatchRegistrationLimit,
+		SetRegistrationLimit:   p.SetRegistrationLimit,
+		ClearRegistrationLimit: p.ClearRegistrationLimit,
+		PatchRetention:         p.PatchRetention,
+		SetRetention:           p.SetRetention,
+		ClearRetention:         p.ClearRetention,
+	})
 }
 
 // GetRealm returns one realm's public view (upstream GET
@@ -148,5 +212,10 @@ func view(r *store.Realm) *RealmView {
 	if len(r.JWTPublicKeysPEM) > 0 {
 		key = r.JWTPublicKeysPEM[0]
 	}
-	return &RealmView{Name: r.Name, JWTPublicKeyPEM: key, DeviceRegistrationLimit: r.DeviceRegistrationLimit}
+	return &RealmView{
+		Name:                              r.Name,
+		JWTPublicKeyPEM:                   key,
+		DeviceRegistrationLimit:           r.DeviceRegistrationLimit,
+		DatastreamMaximumStorageRetention: r.DatastreamMaximumStorageRetention,
+	}
 }

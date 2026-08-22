@@ -146,6 +146,123 @@ func testRealms(t *testing.T, s *Store) {
 		}
 	})
 
+	t.Run("RetentionRoundTrip", func(t *testing.T) {
+		masterKey := make([]byte, MasterKeySize)
+		if _, err := rand.Read(masterKey); err != nil {
+			t.Fatal(err)
+		}
+		ks, err := NewKeySealer(masterKey)
+		if err != nil {
+			t.Fatalf("NewKeySealer: %v", err)
+		}
+		sealed, err := ks.Seal([]byte("-----BEGIN EC PRIVATE KEY-----\nx\n-----END EC PRIVATE KEY-----\n"))
+		if err != nil {
+			t.Fatalf("Seal: %v", err)
+		}
+		retention := int64(86400)
+		created, err := s.CreateRealm(ctx, NewRealm{
+			Name:                              uniqueRealmName(t),
+			JWTPublicKeysPEM:                  []string{"pem-key-1"},
+			CACertificatePEM:                  "ca-cert-pem",
+			CAPrivateKeySealed:                sealed,
+			DatastreamMaximumStorageRetention: &retention,
+		})
+		if err != nil {
+			t.Fatalf("CreateRealm: %v", err)
+		}
+		got, err := s.GetRealmByName(ctx, created.Name)
+		if err != nil {
+			t.Fatalf("GetRealmByName: %v", err)
+		}
+		if got.DatastreamMaximumStorageRetention == nil || *got.DatastreamMaximumStorageRetention != 86400 {
+			t.Errorf("retention round-trip: got %v", got.DatastreamMaximumStorageRetention)
+		}
+
+		// A realm created without the field keeps it NULL.
+		bare, err := s.GetRealmByName(ctx, mustCreateRealm(t, s).Name)
+		if err != nil {
+			t.Fatalf("GetRealmByName: %v", err)
+		}
+		if bare.DatastreamMaximumStorageRetention != nil {
+			t.Errorf("retention default = %v, want nil", *bare.DatastreamMaximumStorageRetention)
+		}
+	})
+
+	t.Run("UpdateRealmPatches", func(t *testing.T) {
+		realm := mustCreateRealm(t, s)
+
+		if err := s.UpdateRealm(ctx, realm.Name, RealmPatch{PatchJWTPublicKeyPEM: true, SetJWTPublicKeyPEM: "patched-key"}); err != nil {
+			t.Fatalf("patch jwt key: %v", err)
+		}
+		got, err := s.GetRealmByName(ctx, realm.Name)
+		if err != nil {
+			t.Fatalf("GetRealmByName: %v", err)
+		}
+		if len(got.JWTPublicKeysPEM) != 1 || got.JWTPublicKeysPEM[0] != "patched-key" {
+			t.Errorf("jwt keys after patch: %v", got.JWTPublicKeysPEM)
+		}
+
+		if err := s.UpdateRealm(ctx, realm.Name, RealmPatch{PatchRegistrationLimit: true, SetRegistrationLimit: 7}); err != nil {
+			t.Fatalf("patch registration limit: %v", err)
+		}
+		retention := int64(3600)
+		if err := s.UpdateRealm(ctx, realm.Name, RealmPatch{PatchRetention: true, SetRetention: retention}); err != nil {
+			t.Fatalf("patch retention: %v", err)
+		}
+		got, err = s.GetRealmByName(ctx, realm.Name)
+		if err != nil {
+			t.Fatalf("GetRealmByName: %v", err)
+		}
+		if got.DeviceRegistrationLimit == nil || *got.DeviceRegistrationLimit != 7 {
+			t.Errorf("registration limit after patch: got %v", got.DeviceRegistrationLimit)
+		}
+		if got.DatastreamMaximumStorageRetention == nil || *got.DatastreamMaximumStorageRetention != 3600 {
+			t.Errorf("retention after patch: got %v", got.DatastreamMaximumStorageRetention)
+		}
+
+		// Untouched fields survive a partial patch.
+		if len(got.JWTPublicKeysPEM) != 1 || got.JWTPublicKeysPEM[0] != "patched-key" {
+			t.Errorf("jwt keys clobbered by later patch: %v", got.JWTPublicKeysPEM)
+		}
+
+		// Clear* writes NULL; retention also clears on a zero Set.
+		if err := s.UpdateRealm(ctx, realm.Name, RealmPatch{ClearRegistrationLimit: true}); err != nil {
+			t.Fatalf("clear registration limit: %v", err)
+		}
+		if err := s.UpdateRealm(ctx, realm.Name, RealmPatch{ClearRetention: true}); err != nil {
+			t.Fatalf("clear retention: %v", err)
+		}
+		got, err = s.GetRealmByName(ctx, realm.Name)
+		if err != nil {
+			t.Fatalf("GetRealmByName: %v", err)
+		}
+		if got.DeviceRegistrationLimit != nil {
+			t.Errorf("cleared registration limit = %v, want nil", *got.DeviceRegistrationLimit)
+		}
+		if got.DatastreamMaximumStorageRetention != nil {
+			t.Errorf("cleared retention = %v, want nil", *got.DatastreamMaximumStorageRetention)
+		}
+
+		retention = 60
+		if err := s.UpdateRealm(ctx, realm.Name, RealmPatch{PatchRetention: true, SetRetention: retention}); err != nil {
+			t.Fatalf("set retention again: %v", err)
+		}
+		if err := s.UpdateRealm(ctx, realm.Name, RealmPatch{PatchRetention: true, SetRetention: 0}); err != nil {
+			t.Fatalf("zero-set retention: %v", err)
+		}
+		got, err = s.GetRealmByName(ctx, realm.Name)
+		if err != nil {
+			t.Fatalf("GetRealmByName: %v", err)
+		}
+		if got.DatastreamMaximumStorageRetention != nil {
+			t.Errorf("retention after zero-set = %v, want nil", *got.DatastreamMaximumStorageRetention)
+		}
+
+		if err := s.UpdateRealm(ctx, "nosuchrealm", RealmPatch{PatchRetention: true, SetRetention: 5}); !errors.Is(err, ErrNotFound) {
+			t.Errorf("patch of unknown realm: got %v, want ErrNotFound", err)
+		}
+	})
+
 	t.Run("CascadeDelete", func(t *testing.T) {
 		realm := mustCreateRealm(t, s)
 		device := mustRegisterDevice(t, s, realm.ID)

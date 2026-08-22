@@ -111,6 +111,11 @@ type PairingConfig struct {
 type HousekeepingConfig struct {
 	JWTPublicKeys     []string `toml:"jwt_public_keys"`
 	JWTPublicKeyFiles []string `toml:"jwt_public_key_files"`
+	// DefaultDatastreamMaximumStorageRetention is the realm-level datastream
+	// storage ceiling (seconds) injected at realm creation when the caller
+	// omits the field (#73). When unset (nil) no default is injected and
+	// existing deployments behave exactly as before.
+	DefaultDatastreamMaximumStorageRetention *int64 `toml:"default_datastream_maximum_storage_retention"`
 }
 
 // StorageConfig holds runtime storage policy. Retention applies a global
@@ -199,7 +204,9 @@ func Load(path string) (Config, error) {
 			return Config{}, fmt.Errorf("config: reading %s: %w", path, err)
 		}
 	}
-	applyEnv(&cfg)
+	if err := applyEnv(&cfg); err != nil {
+		return Config{}, err
+	}
 	if err := cfg.validate(); err != nil {
 		return Config{}, err
 	}
@@ -207,8 +214,9 @@ func Load(path string) (Config, error) {
 }
 
 // applyEnv overlays the operationally critical fields from ASTRATE_* variables
-// (the documented overrides — full reflection is intentionally avoided).
-func applyEnv(cfg *Config) {
+// (the documented overrides — full reflection is intentionally avoided). A
+// malformed value for a fail-loud field is an error.
+func applyEnv(cfg *Config) error {
 	str := func(env string, dst *string) {
 		if v, ok := os.LookupEnv(env); ok {
 			*dst = v
@@ -247,6 +255,28 @@ func applyEnv(cfg *Config) {
 			cfg.Engine.Shards = n
 		}
 	}
+
+	// The realm default-retention override (#73) accepts both the ASTRATE_-
+	// prefixed name and the upstream bare one; the bare name wins when both
+	// are set. Absent vars leave the field nil: no injection, no behaviour
+	// change for existing deployments.
+	retention := ""
+	for _, env := range []string{
+		"ASTRATE_HOUSEKEEPING_DEFAULT_DATASTREAM_MAXIMUM_STORAGE_RETENTION",
+		"HOUSEKEEPING_DEFAULT_DATASTREAM_MAXIMUM_STORAGE_RETENTION",
+	} {
+		if v, ok := os.LookupEnv(env); ok && v != "" {
+			retention = v
+		}
+	}
+	if retention != "" {
+		n, err := strconv.ParseInt(retention, 10, 64)
+		if err != nil || n < 0 {
+			return fmt.Errorf("config: housekeeping.default_datastream_maximum_storage_retention %q must be a non-negative integer", retention)
+		}
+		cfg.Housekeeping.DefaultDatastreamMaximumStorageRetention = &n
+	}
+	return nil
 }
 
 // validate rejects an unusable configuration.

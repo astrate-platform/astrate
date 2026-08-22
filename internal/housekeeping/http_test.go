@@ -37,6 +37,11 @@ type hkRig struct {
 
 func newHKRig(t *testing.T) *hkRig {
 	t.Helper()
+	return newHKRigWithDefault(t, nil)
+}
+
+func newHKRigWithDefault(t *testing.T, defaultRetention *int64) *hkRig {
+	t.Helper()
 	ctx := context.Background()
 	pool := testutil.StartTimescale(t)
 	st, err := store.New(ctx, pool.Config().ConnString())
@@ -63,7 +68,7 @@ func newHKRig(t *testing.T) *hkRig {
 	instancePub := pubPEM(t, &instanceKey.PublicKey)
 
 	mux := http.NewServeMux()
-	NewAPI(NewService(st, sealer, nil, discardLogger()), auth.NewMiddleware(st), []string{instancePub}).Mount(mux)
+	NewAPI(NewService(st, sealer, nil, discardLogger()).WithDefaultDatastreamMaximumStorageRetention(defaultRetention), auth.NewMiddleware(st), []string{instancePub}).Mount(mux)
 
 	return &hkRig{
 		st: st, sealer: sealer, mux: mux,
@@ -166,9 +171,180 @@ func TestHousekeeping(t *testing.T) {
 	})
 }
 
+// TestHousekeepingPatchRealm drives #74 against the live wire shapes measured
+// on upstream Astarte v1.2.0 (see .trickle-phase.md): every happy path answers
+// 200 with an EMPTY body and its effect is re-read via GET.
+func TestHousekeepingPatchRealm(t *testing.T) {
+	r := newHKRig(t)
+	realmName := "pk" + randSuffix(t)
+	createBody := `{"realm_name":` + jsonStr(realmName) + `,"jwt_public_key_pem":` + jsonStr(r.realmKey) + `}`
+	if rec := r.req(t, http.MethodPost, "/realms", createBody, r.haToken); rec.Code != http.StatusCreated {
+		t.Fatalf("create: got %d, want 201 (%s)", rec.Code, rec.Body)
+	}
+
+	patch := func(t *testing.T, rawBody string) *httptest.ResponseRecorder {
+		t.Helper()
+		return r.req(t, http.MethodPatch, "/realms/"+realmName, rawBody, r.haToken)
+	}
+	getBody := func(t *testing.T) realmBody {
+		t.Helper()
+		var body realmBody
+		decodeData(t, r.req(t, http.MethodGet, "/realms/"+realmName, "", r.haToken), &body)
+		return body
+	}
+	wantFieldErrors := func(t *testing.T, rawBody, want string) {
+		t.Helper()
+		rec := patch(t, rawBody)
+		if rec.Code != http.StatusUnprocessableEntity {
+			t.Fatalf("patch %s: got %d, want 422", rawBody, rec.Code)
+		}
+		if got := rec.Body.String(); got != want {
+			t.Errorf("patch %s: body = %s, want %s", rawBody, got, want)
+		}
+	}
+
+	t.Run("Auth401WithoutToken", func(t *testing.T) {
+		if rec := r.req(t, http.MethodPatch, "/realms/"+realmName, `{"device_registration_limit":7}`, ""); rec.Code != http.StatusUnauthorized {
+			t.Errorf("no token: got %d, want 401", rec.Code)
+		}
+	})
+
+	t.Run("PatchRetention", func(t *testing.T) {
+		if rec := patch(t, `{"datastream_maximum_storage_retention":86400}`); rec.Code != http.StatusOK || rec.Body.Len() != 0 {
+			t.Fatalf("patch retention: got %d %q, want 200 empty", rec.Code, rec.Body)
+		}
+		if body := getBody(t); body.DatastreamMaximumStorageRetention == nil || *body.DatastreamMaximumStorageRetention != 86400 {
+			t.Errorf("retention after patch = %v, want 86400", body.DatastreamMaximumStorageRetention)
+		}
+	})
+
+	t.Run("PatchRegistrationLimit", func(t *testing.T) {
+		if rec := patch(t, `{"device_registration_limit":7}`); rec.Code != http.StatusOK || rec.Body.Len() != 0 {
+			t.Fatalf("patch limit: got %d %q, want 200 empty", rec.Code, rec.Body)
+		}
+		body := getBody(t)
+		if body.DeviceRegistrationLimit == nil || *body.DeviceRegistrationLimit != 7 {
+			t.Errorf("limit after patch = %v, want 7", body.DeviceRegistrationLimit)
+		}
+	})
+
+	t.Run("PatchJWTPublicKeyPEM", func(t *testing.T) {
+		newKey := pubPEM(t, mustRSAKey(t))
+		pemJSON, _ := json.Marshal(newKey)
+		if rec := patch(t, `{"jwt_public_key_pem":`+string(pemJSON)+`}`); rec.Code != http.StatusOK || rec.Body.Len() != 0 {
+			t.Fatalf("patch pem: got %d %q, want 200 empty", rec.Code, rec.Body)
+		}
+		if body := getBody(t); body.JWTPublicKeyPEM != newKey {
+			t.Error("pem after patch mismatch")
+		}
+	})
+
+	t.Run("NullUnsets", func(t *testing.T) {
+		if rec := patch(t, `{"device_registration_limit":null,"datastream_maximum_storage_retention":null}`); rec.Code != http.StatusOK || rec.Body.Len() != 0 {
+			t.Fatalf("patch nulls: got %d %q, want 200 empty", rec.Code, rec.Body)
+		}
+		body := getBody(t)
+		if body.DeviceRegistrationLimit != nil || body.DatastreamMaximumStorageRetention != nil {
+			t.Errorf("fields after null patch = %v/%v, want nil/nil", body.DeviceRegistrationLimit, body.DatastreamMaximumStorageRetention)
+		}
+	})
+
+	t.Run("ZeroRetentionUnsets", func(t *testing.T) {
+		if rec := patch(t, `{"datastream_maximum_storage_retention":60}`); rec.Code != http.StatusOK {
+			t.Fatalf("set retention: got %d (%s)", rec.Code, rec.Body)
+		}
+		if rec := patch(t, `{"datastream_maximum_storage_retention":0}`); rec.Code != http.StatusOK || rec.Body.Len() != 0 {
+			t.Fatalf("zero-set retention: got %d %q, want 200 empty", rec.Code, rec.Body)
+		}
+		if body := getBody(t); body.DatastreamMaximumStorageRetention != nil {
+			t.Errorf("retention after zero patch = %v, want nil", *body.DatastreamMaximumStorageRetention)
+		}
+	})
+
+	t.Run("Rejections", func(t *testing.T) {
+		wantFieldErrors(t, `{"datastream_maximum_storage_retention":-5}`,
+			`{"errors":{"datastream_maximum_storage_retention":["is invalid"]}}`)
+		wantFieldErrors(t, `{"device_registration_limit":-1}`,
+			`{"errors":{"device_registration_limit":["is invalid"]}}`)
+		wantFieldErrors(t, `{"jwt_public_key_pem":""}`,
+			`{"errors":{"jwt_public_key_pem":["can't be blank"]}}`)
+		wantFieldErrors(t, `{"replication_factor":3}`,
+			`{"errors":{"error_name":["invalid_update_parameters"]}}`)
+		// Rejected patches must not have mutated anything.
+		if body := getBody(t); body.JWTPublicKeyPEM == "" {
+			t.Error("realm lost its jwt key after rejected patches")
+		}
+	})
+
+	t.Run("UnknownRealm404", func(t *testing.T) {
+		rec := r.req(t, http.MethodPatch, "/realms/nope"+randSuffix(t), `{"device_registration_limit":7}`, r.haToken)
+		if rec.Code != http.StatusNotFound {
+			t.Errorf("unknown realm: got %d, want 404", rec.Code)
+		}
+	})
+}
+
+// TestHousekeepingRetentionDefault covers #73: HOUSEKEEPING_DEFAULT_...
+// injects at creation ONLY when the caller omits the field.
+func TestHousekeepingRetentionDefault(t *testing.T) {
+	def := int64(3600)
+	r := newHKRigWithDefault(t, &def)
+
+	create := func(t *testing.T, name string, retentionJSON string) {
+		t.Helper()
+		body := `{"realm_name":` + jsonStr(name) + `,"jwt_public_key_pem":` + jsonStr(r.realmKey) + retentionJSON + `}`
+		if rec := r.req(t, http.MethodPost, "/realms", body, r.haToken); rec.Code != http.StatusCreated {
+			t.Fatalf("create %s: got %d, want 201 (%s)", name, rec.Code, rec.Body)
+		}
+	}
+	retentionOf := func(t *testing.T, name string) *int64 {
+		t.Helper()
+		var body realmBody
+		decodeData(t, r.req(t, http.MethodGet, "/realms/"+name, "", r.haToken), &body)
+		return body.DatastreamMaximumStorageRetention
+	}
+
+	t.Run("ExplicitValueBeatsDefault", func(t *testing.T) {
+		name := "pd" + randSuffix(t)
+		create(t, name, `,"datastream_maximum_storage_retention":60`)
+		if got := retentionOf(t, name); got == nil || *got != 60 {
+			t.Errorf("explicit retention = %v, want 60", got)
+		}
+	})
+	t.Run("OmittedInjectsDefault", func(t *testing.T) {
+		name := "pi" + randSuffix(t)
+		create(t, name, "")
+		if got := retentionOf(t, name); got == nil || *got != def {
+			t.Errorf("injected retention = %v, want %d", got, def)
+		}
+	})
+	t.Run("NoDefaultStaysNull", func(t *testing.T) {
+		r := newHKRig(t)
+		name := "pn" + randSuffix(t)
+		body := `{"realm_name":` + jsonStr(name) + `,"jwt_public_key_pem":` + jsonStr(r.realmKey) + `}`
+		if rec := r.req(t, http.MethodPost, "/realms", body, r.haToken); rec.Code != http.StatusCreated {
+			t.Fatalf("create: got %d, want 201 (%s)", rec.Code, rec.Body)
+		}
+		var rb realmBody
+		decodeData(t, r.req(t, http.MethodGet, "/realms/"+name, "", r.haToken), &rb)
+		if rb.DatastreamMaximumStorageRetention != nil {
+			t.Errorf("retention without default = %v, want nil", *rb.DatastreamMaximumStorageRetention)
+		}
+	})
+}
+
 // --- helpers ----------------------------------------------------------------
 
 func discardLogger() *slog.Logger { return slog.New(slog.NewTextHandler(io.Discard, nil)) }
+
+func mustRSAKey(t *testing.T) *rsa.PublicKey {
+	t.Helper()
+	k, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return &k.PublicKey
+}
 
 func mintToken(t *testing.T, key *rsa.PrivateKey, claims jwt.MapClaims) string {
 	t.Helper()

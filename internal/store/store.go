@@ -86,6 +86,10 @@ func New(ctx context.Context, dsn string) (*Store, error) {
 		pool.Close()
 		return nil, err
 	}
+	if err := s.ensureRealmRetentionColumn(ctx); err != nil {
+		pool.Close()
+		return nil, err
+	}
 	if err := s.probeCapabilities(ctx); err != nil {
 		pool.Close()
 		return nil, err

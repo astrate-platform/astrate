@@ -321,7 +321,7 @@ func mountAPIs(cfg config.Config, st *store.Store, e *engine.Engine, b *broker.B
 	if err != nil {
 		return nil, nil, err
 	}
-	hkSvc := housekeeping.NewService(st, sealer, b, log)
+	hkSvc := housekeeping.NewService(st, sealer, b, log).WithDefaultDatastreamMaximumStorageRetention(cfg.Housekeeping.DefaultDatastreamMaximumStorageRetention)
 	housekeeping.NewAPI(hkSvc, mw, hkKeys).Mount(mux)
 	realmSvc := realm.NewService(st, e, log).WithDisconnecter(b)
 	realmSvc.OnDeletionStart = e.HandleDeviceDeletionStarted
@@ -399,7 +399,7 @@ func autoProvisionRealm(ctx context.Context, st *store.Store, hk *housekeeping.S
 	if err != nil {
 		return err
 	}
-	if _, err := hk.CreateRealm(ctx, cfg.Realm.Name, key, cfg.Realm.DeviceRegistrationLimit); err != nil {
+	if _, err := hk.CreateRealm(ctx, cfg.Realm.Name, key, cfg.Realm.DeviceRegistrationLimit, nil); err != nil {
 		return fmt.Errorf("auto-provisioning realm %q: %w", cfg.Realm.Name, err)
 	}
 	log.Info("auto-provisioned realm", "realm", cfg.Realm.Name)
