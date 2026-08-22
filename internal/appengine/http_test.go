@@ -418,7 +418,8 @@ func TestAppEngine(t *testing.T) {
 
 	t.Run("PatchDevice", func(t *testing.T) {
 		var ds DeviceStatus
-		decodeData(t, r.req(t, http.MethodPatch, r.dpath(""), `{"aliases":{"label":"renamed"}}`, r.token), &ds)
+		decodeData(t, r.reqCT(t, http.MethodPatch, r.dpath(""),
+			`{"aliases":{"label":"renamed"}}`, r.token, "application/merge-patch+json"), &ds)
 		if ds.Aliases["label"] != "renamed" {
 			t.Errorf("alias after patch = %v", ds.Aliases)
 		}

@@ -44,6 +44,11 @@ Guarded by the conformance suite against the official clients:
   AppEngine device/data/query shapes, including body-`links` device-list
   pagination (`?details=true&limit&from_token` with the cursor in
   `links.next`) and `/stats/devices`.
+- AppEngine device PATCH contract: honored only with `Content-Type:
+  application/merge-patch+json` (anything else reproduces upstream's unmapped
+  `:patch_mimetype_not_supported` fallback → 500), plus the alias/attribute
+  error taxonomy (`Invalid alias`, `Alias already in use`, `Alias tag not
+  found`, `Invalid attributes`, `Attribute key not found`).
 - The Astarte Dashboard v1.2.2 runs unmodified against Astrate (compose
   `full` profile, `http://localhost:4040`), Device Live Events included since
   the M11 Channels socket (deviation 1).

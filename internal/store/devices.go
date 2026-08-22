@@ -337,6 +337,29 @@ func (s *Store) AddDeviceStats(ctx context.Context, realmID int16, id deviceid.I
 	return nil
 }
 
+// AliasValuesTaken reports whether any device other than id in the realm
+// carries one of the given alias values — the upstream find_all_aliases
+// ownership check behind PATCH /devices/{id}'s alias_already_in_use.
+func (s *Store) AliasValuesTaken(ctx context.Context, realmID int16, id deviceid.ID, values []string) (bool, error) {
+	var one int32
+	err := s.pool.QueryRow(ctx, `
+		SELECT 1 FROM devices d
+		WHERE d.realm_id = $1 AND d.id <> $2
+		  AND EXISTS (
+			SELECT 1 FROM jsonb_each_text(d.aliases) AS e(tag, value)
+			WHERE e.value = ANY($3)
+		  )
+		LIMIT 1`,
+		realmID, uuidParam(id), values).Scan(&one)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("store: checking alias ownership in realm %d: %w", realmID, err)
+	}
+	return true, nil
+}
+
 // PatchDeviceAliases merges patch into the alias map: non-nil values
 // add/replace the tag, nil values remove it (JSON Merge Patch semantics).
 func (s *Store) PatchDeviceAliases(ctx context.Context, realmID int16, id deviceid.ID, patch map[string]*string) error {

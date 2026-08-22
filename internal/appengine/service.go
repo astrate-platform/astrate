@@ -24,6 +24,17 @@ const DefaultDeviceLimit = 100
 // ErrValidation wraps a well-formed request that violates a rule (maps to 422).
 var ErrValidation = errors.New("appengine: validation failed")
 
+// Device-PATCH error taxonomy, frozen to upstream astarte_appengine_api 1.2.2
+// (FallbackController + ErrorView): the detail strings are what astartectl and
+// the dashboard match on.
+var (
+	ErrInvalidAlias         = errors.New("Invalid alias")
+	ErrAliasAlreadyInUse    = errors.New("Alias already in use")
+	ErrAliasTagNotFound     = errors.New("Alias tag not found")
+	ErrInvalidAttributes    = errors.New("Invalid attributes")
+	ErrAttributeKeyNotFound = errors.New("Attribute key not found")
+)
+
 // ServerData is the engine port for server-owned writes (docs/ROADMAP.md §8.2
 // file 7.7). *engine.Engine satisfies it; tests substitute a fake.
 type ServerData interface {
@@ -254,8 +265,45 @@ func (s *Service) PatchDevice(ctx context.Context, realm, deviceID string, p Dev
 	if err != nil {
 		return nil, fmt.Errorf("%w: device %s", store.ErrNotFound, deviceID)
 	}
-	if _, err := s.st.GetDevice(ctx, rid, id); err != nil {
+	d, err := s.st.GetDevice(ctx, rid, id)
+	if err != nil {
 		return nil, err
+	}
+	// Validation order mirrors upstream merge_device_status: alias format,
+	// alias ownership realm-wide, attribute format, then the changeset's
+	// missing-tag/key rejections at apply time.
+	for tag, value := range p.Aliases {
+		if tag == "" || (value != nil && *value == "") {
+			return nil, ErrInvalidAlias
+		}
+	}
+	if len(p.Aliases) > 0 {
+		taken, err := s.aliasValuesTaken(ctx, rid, id, d, p.Aliases)
+		if err != nil {
+			return nil, err
+		}
+		if taken {
+			return nil, ErrAliasAlreadyInUse
+		}
+	}
+	for key := range p.Attributes {
+		if key == "" {
+			return nil, ErrInvalidAttributes
+		}
+	}
+	for tag, value := range p.Aliases {
+		if value == nil {
+			if _, ok := d.Aliases[tag]; !ok {
+				return nil, ErrAliasTagNotFound
+			}
+		}
+	}
+	for key, value := range p.Attributes {
+		if value == nil {
+			if _, ok := d.Attributes[key]; !ok {
+				return nil, ErrAttributeKeyNotFound
+			}
+		}
 	}
 	if len(p.Aliases) > 0 {
 		if err := s.st.PatchDeviceAliases(ctx, rid, id, p.Aliases); err != nil {
@@ -272,11 +320,34 @@ func (s *Service) PatchDevice(ctx context.Context, realm, deviceID string, p Dev
 			return nil, err
 		}
 	}
-	d, err := s.st.GetDevice(ctx, rid, id)
+	d2, err := s.st.GetDevice(ctx, rid, id)
 	if err != nil {
 		return nil, err
 	}
-	return s.deviceStatus(ctx, rid, d)
+	return s.deviceStatus(ctx, rid, d2)
+}
+
+// aliasValuesTaken reports whether any alias value the patch touches is owned
+// by another device in the realm (upstream find_all_aliases ownership check).
+// Deleted tags only contribute their value when the device actually holds
+// them, matching upstream's Map.take over the current aliases.
+func (s *Service) aliasValuesTaken(ctx context.Context, rid int16, id deviceid.ID,
+	d *store.Device, patch map[string]*string,
+) (bool, error) {
+	values := make([]string, 0, len(patch))
+	for tag, value := range patch {
+		if value != nil {
+			values = append(values, *value)
+			continue
+		}
+		if v, ok := d.Aliases[tag]; ok {
+			values = append(values, v)
+		}
+	}
+	if len(values) == 0 {
+		return false, nil
+	}
+	return s.st.AliasValuesTaken(ctx, rid, id, values)
 }
 
 // --- groups -----------------------------------------------------------------

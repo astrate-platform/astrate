@@ -138,6 +138,14 @@ type devicePatchBody struct {
 }
 
 func (a *API) patchDevice(w http.ResponseWriter, r *http.Request) {
+	// Upstream honors PATCH only with exactly this content type (a header
+	// comparison, so no charset parameters). Anything else fails its merge
+	// with :patch_mimetype_not_supported — which no FallbackController clause
+	// maps, so Phoenix surfaces an unmapped 500. Replicated as-is.
+	if r.Header.Get("Content-Type") != "application/merge-patch+json" {
+		_ = astarteapi.WriteInternalServerError(w)
+		return
+	}
 	var body devicePatchBody
 	if err := astarteapi.DecodeData(r.Body, maxBodyBytes, &body); err != nil {
 		_ = astarteapi.WriteBadRequest(w)
@@ -315,6 +323,16 @@ func parseQueryOpts(r *http.Request) (QueryOpts, error) {
 // writeError maps service/store errors onto upstream-shaped responses.
 func (a *API) writeError(w http.ResponseWriter, err error) {
 	switch {
+	case errors.Is(err, ErrInvalidAlias):
+		_ = astarteapi.WriteError(w, http.StatusBadRequest, "Invalid alias")
+	case errors.Is(err, ErrAliasAlreadyInUse):
+		_ = astarteapi.WriteError(w, http.StatusConflict, "Alias already in use")
+	case errors.Is(err, ErrAliasTagNotFound):
+		_ = astarteapi.WriteError(w, http.StatusBadRequest, "Alias tag not found")
+	case errors.Is(err, ErrInvalidAttributes):
+		_ = astarteapi.WriteError(w, http.StatusBadRequest, "Invalid attributes")
+	case errors.Is(err, ErrAttributeKeyNotFound):
+		_ = astarteapi.WriteError(w, http.StatusUnprocessableEntity, "Attribute key not found")
 	case errors.Is(err, ErrValidation):
 		_ = astarteapi.WriteError(w, http.StatusUnprocessableEntity, validationDetail(err))
 	case errors.Is(err, store.ErrAlreadyExists):
