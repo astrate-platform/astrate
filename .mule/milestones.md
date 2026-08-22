@@ -102,26 +102,38 @@ over a full rewrite (e.g. original Astarte Dashboard; Edgehog under investigatio
 
 ---
 
-## v3.0 — CLEA architecture, piece 1
+## v3.0 — upstream Astarte feature parity (1.2.2 → 1.3/1.4)
 
-Reference: https://docs.clea.ai/ — the CLEA architecture is bigger than one milestone, so
-each remaining tag (3.0, 4.0, …) takes one piece of it until the whole thing is covered.
+Scope decided by Giulio on 2026-08-22. The original v3.0 candidate (building the
+remaining SECO suite pieces) was dropped for legal reasons, and Edgehog is already
+fully compatible with Astrate (verified in #28) — so this milestone takes the body of
+work produced by the 2026-08-22 upstream-parity investigation instead:
 
-**Which piece is v3.0 is not yet decided.** The recipe's first and only job on this
-milestone, until it stops being TBD, is to read the CLEA docs, propose a short list of
-candidate pieces with a one-line scope each, and write that list to
-`.mule/for-giulio.md` as a decision to make. Do not file implementation issues for a piece
-that has not been chosen.
+- Source document: `.mule/research/upstream-parity-2026-08-22.md` (upstream v1.3.3 /
+  v1.4.0-rc.5 diffed service-by-service against our emulated 1.2.2 level).
+- Backlog: GitHub issues **#47–#89** (`upstream-parity` label), plus the parked
+  **#90** APICompatVersion decision (milestone-4.0 label — pull into this milestone's
+  final phase, after the 1.3-surface audit it requires).
 
-Status: not started, scope undecided. Do not investigate while v2.0 is open.
+Shape of the milestone: work through #47–#89 in the research doc's priority order
+(retention ceiling → alias/group surfaces → query formats → wire capabilities →
+validation/error-code fidelity), escalating every issue marked "decide" to
+`.mule/for-giulio.md` instead of choosing unilaterally. Deliberately parked items
+(FDO #78, lua_map #87, pipeline DSL #86, keyAgreement #51) stay out unless Giulio
+pulls them in.
+
+Status: not started. First recipe job: triage #47–#89 into an ordered plan (which are
+audits vs features vs decisions), file sub-issues where work splits, escalate the
+"decide" set in one batch.
 
 ---
 
-## v4.0+ — remaining CLEA pieces
+## v4.0+ — next
 
-Placeholder. Once v3.0's piece is chosen and scoped, add a `## vX.0 — CLEA, piece N` section
-here for the next one, following the same shape. The recipe should propose the next
-section's draft (name + one-line scope) as a `for-giulio.md` entry once v3.0 is `DONE`,
-rather than leaving this placeholder to rot.
+Placeholder. Scope undecided: candidates once v3.0 is DONE include the remaining
+`upstream-parity` backlog items parked today, or whatever emerges from upstream
+releases after v1.4 ships. The recipe should propose the next section's draft
+(name + one-line scope) as a `for-giulio.md` entry once v3.0 is `DONE`, rather than
+leaving this placeholder to rot.
 
 Status: not started, scope undecided.
