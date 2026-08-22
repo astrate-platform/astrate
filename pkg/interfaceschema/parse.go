@@ -18,6 +18,19 @@ const (
 	MaxMappings = 1024
 	// MaxEndpointDepth is the maximum number of endpoint levels.
 	MaxEndpointDepth = 64
+	// MaxDescriptionLength is the maximum description length at interface and
+	// mapping level (probe-verified against upstream 1.2.0, issue #61).
+	MaxDescriptionLength = 1000
+	// MaxDocLength is the maximum doc length at interface and mapping level
+	// (probe-verified against upstream 1.2.0, issue #61).
+	MaxDocLength = 100000
+	// MinDatabaseRetentionTTL is the smallest legal database_retention_ttl,
+	// in seconds (upstream rejects anything below; issue #61).
+	MinDatabaseRetentionTTL = 60
+	// MaxDatabaseRetentionTTL is the exclusive upper bound for
+	// database_retention_ttl, in seconds: twenty years (issue #61). A TTL of
+	// exactly this value is rejected with "must be less than".
+	MaxDatabaseRetentionTTL = 630720000
 )
 
 // ErrInvalid is wrapped by every ParseInterface failure, so callers can
@@ -84,59 +97,135 @@ type Mapping struct {
 }
 
 // interfaceJSON is the strict wire decoding target; pointers detect absence.
+// The omitempty tags only matter on re-encode: after a legacy-alias
+// normalisation the same struct is marshalled back as the canonical document
+// (ParseInterfaceCanonical), where absent optionals must stay absent.
 type interfaceJSON struct {
 	InterfaceName *string        `json:"interface_name"`
 	VersionMajor  *int           `json:"version_major"`
 	VersionMinor  *int           `json:"version_minor"`
 	Type          *InterfaceType `json:"type"`
-	Ownership     *Ownership     `json:"ownership"`
-	Aggregation   *Aggregation   `json:"aggregation"`
-	Description   string         `json:"description"`
-	Doc           string         `json:"doc"`
-	Mappings      []mappingJSON  `json:"mappings"`
+	Ownership     *Ownership     `json:"ownership,omitempty"`
+	// Quality is the upstream legacy alias of ownership (issue #61): accepted
+	// alone, a violation next to it, never stored — the canonical value lands
+	// in Ownership during normalisation.
+	Quality *Ownership `json:"quality,omitempty"`
+	// Aggregate is the upstream legacy alias of aggregation (issue #61).
+	Aggregate   *bool         `json:"aggregate,omitempty"`
+	Aggregation *Aggregation  `json:"aggregation,omitempty"`
+	Description string        `json:"description,omitempty"`
+	Doc         string        `json:"doc,omitempty"`
+	Mappings    []mappingJSON `json:"mappings"`
+
+	// aliases records whether any legacy alias field was consumed, so
+	// canonical re-encoding is produced only when the wire form differs from
+	// the canonical one. Not part of the wire format.
+	aliases bool `json:"-"`
 }
 
 // mappingJSON is the strict wire decoding target for one mapping.
 type mappingJSON struct {
-	Endpoint                *string                  `json:"endpoint"`
+	Endpoint *string `json:"endpoint,omitempty"`
+	// Path is the upstream legacy alias of endpoint (issue #61): accepted in
+	// place of it, silently ignored next to it (endpoint wins), never stored.
+	Path                    *string                  `json:"path,omitempty"`
 	Type                    *ValueType               `json:"type"`
-	Reliability             *Reliability             `json:"reliability"`
-	Retention               *Retention               `json:"retention"`
-	Expiry                  *int64                   `json:"expiry"`
-	DatabaseRetentionPolicy *DatabaseRetentionPolicy `json:"database_retention_policy"`
-	DatabaseRetentionTTL    *int64                   `json:"database_retention_ttl"`
-	AllowUnset              *bool                    `json:"allow_unset"`
-	ExplicitTimestamp       *bool                    `json:"explicit_timestamp"`
-	Description             string                   `json:"description"`
-	Doc                     string                   `json:"doc"`
+	Reliability             *Reliability             `json:"reliability,omitempty"`
+	Retention               *Retention               `json:"retention,omitempty"`
+	Expiry                  *int64                   `json:"expiry,omitempty"`
+	DatabaseRetentionPolicy *DatabaseRetentionPolicy `json:"database_retention_policy,omitempty"`
+	DatabaseRetentionTTL    *int64                   `json:"database_retention_ttl,omitempty"`
+	AllowUnset              *bool                    `json:"allow_unset,omitempty"`
+	ExplicitTimestamp       *bool                    `json:"explicit_timestamp,omitempty"`
+	Description             string                   `json:"description,omitempty"`
+	Doc                     string                   `json:"doc,omitempty"`
 }
 
 // ParseInterface strictly decodes and validates an Astarte interface JSON
 // document. Unknown fields, malformed values, and every structural rule
 // violation (name syntax, versioning, endpoint syntax and uniqueness,
 // aggregation and per-type field constraints) are rejected with an error
-// wrapping ErrInvalid.
+// wrapping ErrInvalid. Rejections for the rules whose upstream wire shape was
+// probe-verified (issue #61) additionally carry a *ViolationsError in the
+// error chain.
 func ParseInterface(data []byte) (*Interface, error) {
+	iface, _, err := ParseInterfaceCanonical(data)
+	return iface, err
+}
+
+// ParseInterfaceCanonical parses like ParseInterface and additionally returns
+// the canonical re-encoding of the document when any upstream legacy alias
+// field (interface quality/aggregate, mapping path — issue #61) was consumed
+// during normalisation: canon == nil means data already uses canonical field
+// names only and can be stored as-is. Storing canon instead of data is what
+// makes GET render the canonical form the way upstream does.
+func ParseInterfaceCanonical(data []byte) (*Interface, []byte, error) {
 	dec := json.NewDecoder(bytes.NewReader(data))
 	dec.DisallowUnknownFields()
 	var raw interfaceJSON
 	if err := dec.Decode(&raw); err != nil {
-		return nil, fmt.Errorf("%w: %w", ErrInvalid, err)
+		return nil, nil, fmt.Errorf("%w: %w", ErrInvalid, err)
 	}
 	if _, err := dec.Token(); err != io.EOF {
-		return nil, fmt.Errorf("%w: trailing data after interface document", ErrInvalid)
+		return nil, nil, fmt.Errorf("%w: trailing data after interface document", ErrInvalid)
 	}
 
 	iface, err := buildInterface(&raw)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %w", ErrInvalid, err)
+		var ve *ViolationsError
+		if errors.As(err, &ve) {
+			return nil, nil, err // the combined value already wraps ErrInvalid
+		}
+		return nil, nil, fmt.Errorf("%w: %w", ErrInvalid, err)
 	}
-	return iface, nil
+	if !raw.aliases {
+		return iface, nil, nil
+	}
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(&raw); err != nil {
+		return nil, nil, fmt.Errorf("%w: %w", ErrInvalid, err)
+	}
+	canon := buf.Bytes()
+	return iface, canon[:len(canon)-1], nil // json.Encoder appends '\n'
 }
 
 // buildInterface applies defaults and every validation rule to the raw
-// decoded document.
+// decoded document. Rule violations whose upstream wire envelope was
+// probe-verified (issue #61) accumulate in a ViolationsError and abort the
+// parse as a combined ErrInvalid + *ViolationsError value once every mapping
+// has been examined, so one response can report all offending fields; every
+// other rule keeps its plain immediate rejection.
 func buildInterface(raw *interfaceJSON) (*Interface, error) {
+	vc := &ViolationsError{}
+
+	// Legacy aliases (issue #61): normalise before any rule runs. quality is
+	// accepted only without ownership (both → violation on ownership);
+	// aggregate only without aggregation (both → violation on aggregation).
+	if raw.Quality != nil {
+		raw.aliases = true
+		if raw.Ownership != nil {
+			vc.add("ownership", "ownership and quality are mutually exclusive")
+		} else {
+			raw.Ownership = raw.Quality
+		}
+		raw.Quality = nil
+	}
+	if raw.Aggregate != nil {
+		raw.aliases = true
+		if raw.Aggregation != nil {
+			vc.add("aggregation", "aggregation and aggregate are mutually exclusive")
+		} else {
+			agg := AggregationIndividual
+			if *raw.Aggregate {
+				agg = AggregationObject
+			}
+			raw.Aggregation = &agg
+		}
+		raw.Aggregate = nil
+	}
+
 	switch {
 	case raw.InterfaceName == nil:
 		return nil, errors.New(`missing "interface_name"`)
@@ -193,14 +282,40 @@ func buildInterface(raw *interfaceJSON) (*Interface, error) {
 		return nil, fmt.Errorf("interface declares %d mappings, maximum is %d", len(raw.Mappings), MaxMappings)
 	}
 
+	// Interface-level length bounds (#61), after alias normalisation.
+	vc.MappingCount = len(raw.Mappings)
+	if len(raw.Description) > MaxDescriptionLength {
+		vc.add("description", tooLongMessage(MaxDescriptionLength))
+	}
+	if len(raw.Doc) > MaxDocLength {
+		vc.add("doc", tooLongMessage(MaxDocLength))
+	}
+
 	endpoints := make([][]endpointSegment, 0, len(raw.Mappings))
 	for i := range raw.Mappings {
-		m, segs, err := buildMapping(&raw.Mappings[i], iface.Type)
+		mj := &raw.Mappings[i]
+		if mj.Path != nil {
+			// Mapping path alias (issue #61): endpoint wins when both are
+			// present (measured upstream behaviour); otherwise path becomes
+			// the endpoint.
+			raw.aliases = true
+			if mj.Endpoint == nil {
+				mj.Endpoint = mj.Path
+			}
+			mj.Path = nil
+		}
+		m, segs, err := buildMapping(mj, iface.Type, i, vc)
 		if err != nil {
 			return nil, err
 		}
 		iface.Mappings = append(iface.Mappings, m)
 		endpoints = append(endpoints, segs)
+	}
+
+	// Abort on any collected violation before the structural checks below:
+	// their plain messages would shadow the field-shaped ones.
+	if err := vc.errOrNil(); err != nil {
+		return nil, err
 	}
 
 	if err := checkEndpointUniqueness(iface, endpoints); err != nil {
@@ -214,9 +329,17 @@ func buildInterface(raw *interfaceJSON) (*Interface, error) {
 	return iface, nil
 }
 
+// tooLongMessage is upstream's exact length-violation message for a bound.
+func tooLongMessage(bound int) string {
+	return fmt.Sprintf("should be at most %d character(s)", bound)
+}
+
 // buildMapping validates one raw mapping against the per-type field rules
 // and returns it with defaults applied, plus its parsed endpoint segments.
-func buildMapping(raw *mappingJSON, ifaceType InterfaceType) (Mapping, []endpointSegment, error) {
+// Violations whose upstream wire envelope was probe-verified (issue #61) are
+// appended to vc (with the mapping's declared index) instead of aborting, so
+// sibling mappings still get checked; plain errors return immediately.
+func buildMapping(raw *mappingJSON, ifaceType InterfaceType, index int, vc *ViolationsError) (Mapping, []endpointSegment, error) {
 	var m Mapping
 	if raw.Endpoint == nil {
 		return m, nil, errors.New(`mapping is missing "endpoint"`)
@@ -234,6 +357,14 @@ func buildMapping(raw *mappingJSON, ifaceType InterfaceType) (Mapping, []endpoin
 		Type:        *raw.Type,
 		Description: raw.Description,
 		Doc:         raw.Doc,
+	}
+
+	// Mapping-level length bounds (#61), both interface types.
+	if len(raw.Description) > MaxDescriptionLength {
+		vc.addMapping(index, "description", tooLongMessage(MaxDescriptionLength))
+	}
+	if len(raw.Doc) > MaxDocLength {
+		vc.addMapping(index, "doc", tooLongMessage(MaxDocLength))
 	}
 
 	if ifaceType == Properties {
@@ -280,11 +411,24 @@ func buildMapping(raw *mappingJSON, ifaceType InterfaceType) (Mapping, []endpoin
 	}
 	switch m.DatabaseRetentionPolicy {
 	case UseTTL:
-		if raw.DatabaseRetentionTTL == nil || *raw.DatabaseRetentionTTL < 1 {
+		if raw.DatabaseRetentionTTL == nil {
+			// Plain error, not a violation: this envelope was not probed.
 			return m, nil, fmt.Errorf(
 				`mapping %q: database_retention_policy "use_ttl" requires database_retention_ttl >= 1`, m.Endpoint)
 		}
-		m.DatabaseRetentionTTL = *raw.DatabaseRetentionTTL
+		// Probe-verified band (issue #61): [60, 630720000), replacing the old
+		// ">= 1" rule.
+		ttl := *raw.DatabaseRetentionTTL
+		switch {
+		case ttl < MinDatabaseRetentionTTL:
+			vc.addMapping(index, "database_retention_ttl",
+				fmt.Sprintf("must be greater than or equal to %d", MinDatabaseRetentionTTL))
+		case ttl >= MaxDatabaseRetentionTTL:
+			vc.addMapping(index, "database_retention_ttl",
+				fmt.Sprintf("must be less than %d", MaxDatabaseRetentionTTL))
+		default:
+			m.DatabaseRetentionTTL = ttl
+		}
 	case NoTTL:
 		if raw.DatabaseRetentionTTL != nil {
 			return m, nil, fmt.Errorf(

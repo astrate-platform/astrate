@@ -320,6 +320,88 @@ func TestRealmManagementRetentionCeiling(t *testing.T) {
 	}
 }
 
+// TestRealmManagementViolationEnvelopes pins the probe-frozen 422 bodies of
+// the #61 rules: exact bytes, deterministic field order, and the full-length
+// aligned mappings array.
+func TestRealmManagementViolationEnvelopes(t *testing.T) {
+	r := newRig(t)
+
+	t.Run("DescriptionTooLong", func(t *testing.T) {
+		def := fmt.Sprintf(`{"interface_name":"com.ex.M7a.Long","version_major":0,"version_minor":1,`+
+			`"type":"datastream","ownership":"device","description":"%s",`+
+			`"mappings":[{"endpoint":"/value","type":"double"}]}`, strings.Repeat("x", 1001))
+		want := `{"errors":{"description":["should be at most 1000 character(s)"]}}`
+		rec := r.req(t, http.MethodPost, "/interfaces", def, r.rmaToken)
+		if rec.Code != http.StatusUnprocessableEntity || rec.Body.String() != want {
+			t.Errorf("got %d %s, want 422 %s", rec.Code, rec.Body, want)
+		}
+	})
+
+	t.Run("SecondMappingViolatesAlignedArray", func(t *testing.T) {
+		def := fmt.Sprintf(`{"interface_name":"com.ex.M7a.Two","version_major":0,"version_minor":1,`+
+			`"type":"datastream","ownership":"device","mappings":[`+
+			`{"endpoint":"/a","type":"double"},`+
+			`{"endpoint":"/b","type":"double","description":"%s"}]}`, strings.Repeat("x", 1001))
+		want := `{"errors":{"mappings":[{},{"description":["should be at most 1000 character(s)"]}]}}`
+		rec := r.req(t, http.MethodPost, "/interfaces", def, r.rmaToken)
+		if rec.Code != http.StatusUnprocessableEntity || rec.Body.String() != want {
+			t.Errorf("got %d %s, want 422 %s", rec.Code, rec.Body, want)
+		}
+	})
+}
+
+// TestRealmManagementLegacyAliases pins issue #61 end-to-end: an interface
+// posted entirely in upstream's legacy alias form installs, and GET renders
+// the canonical fields because the service stores the canonical re-encoding.
+func TestRealmManagementLegacyAliases(t *testing.T) {
+	r := newRig(t)
+
+	const legacy = `{"interface_name":"com.ex.M7a.Legacy","version_major":0,"version_minor":1,` +
+		`"type":"properties","quality":"device","aggregate":false,` +
+		`"mappings":[{"path":"/value","type":"string"}]}`
+	if rec := r.req(t, http.MethodPost, "/interfaces", legacy, r.rmaToken); rec.Code != http.StatusCreated {
+		t.Fatalf("install legacy-alias interface: got %d, want 201 (%s)", rec.Code, rec.Body)
+	}
+
+	var stored struct {
+		Quality   any    `json:"quality"`
+		Ownership string `json:"ownership"`
+		Mappings  []struct {
+			Path     any    `json:"path"`
+			Endpoint string `json:"endpoint"`
+		} `json:"mappings"`
+	}
+	decodeData(t, r.req(t, http.MethodGet, "/interfaces/com.ex.M7a.Legacy/0", "", r.rmaToken), &stored)
+	if stored.Ownership != "device" || stored.Quality != nil {
+		t.Errorf("stored ownership = %q quality = %v, want device / absent", stored.Ownership, stored.Quality)
+	}
+	if len(stored.Mappings) != 1 || stored.Mappings[0].Endpoint != "/value" || stored.Mappings[0].Path != nil {
+		t.Errorf("stored mapping = %+v, want canonical endpoint /value without path", stored.Mappings)
+	}
+}
+
+// TestRealmManagementTTLBand pins the probe-verified [60, 630720000) band on
+// the wire: 59 is rejected with the exact upstream body, 60 installs.
+func TestRealmManagementTTLBand(t *testing.T) {
+	r := newRig(t)
+
+	ttlDef := func(name string, ttl int) string {
+		return fmt.Sprintf(`{"interface_name":"%s","version_major":0,"version_minor":1,`+
+			`"type":"datastream","ownership":"device","mappings":[`+
+			`{"endpoint":"/value","type":"double","database_retention_policy":"use_ttl",`+
+			`"database_retention_ttl":%d}]}`, name, ttl)
+	}
+
+	low := ttlDef("com.ex.M7a.TTLLow", 59)
+	want := `{"errors":{"mappings":[{"database_retention_ttl":["must be greater than or equal to 60"]}]}}`
+	if rec := r.req(t, http.MethodPost, "/interfaces", low, r.rmaToken); rec.Code != http.StatusUnprocessableEntity || rec.Body.String() != want {
+		t.Errorf("ttl 59: got %d %s, want 422 %s", rec.Code, rec.Body, want)
+	}
+	if rec := r.req(t, http.MethodPost, "/interfaces", ttlDef("com.ex.M7a.TTLMin", 60), r.rmaToken); rec.Code != http.StatusCreated {
+		t.Errorf("ttl 60: got %d, want 201 (%s)", rec.Code, rec.Body)
+	}
+}
+
 // --- helpers ----------------------------------------------------------------
 
 func discardLogger() *slog.Logger { return slog.New(slog.NewTextHandler(io.Discard, nil)) }

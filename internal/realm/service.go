@@ -129,15 +129,22 @@ func (s *Service) realmID(ctx context.Context, realm string) (int16, error) {
 
 // InstallInterface validates and installs a new interface major
 // (docs/ROADMAP.md §8.1). A duplicate (name, major) yields
-// store.ErrAlreadyExists; a schema violation yields ErrValidation.
+// store.ErrAlreadyExists; a schema violation yields ErrValidation — carrying
+// a *interfaceschema.ViolationsError when the rejection has a probe-verified
+// upstream wire shape (#61). Documents posted with legacy alias fields
+// (quality/aggregate/path) are stored canonically so GET renders them the
+// way upstream does.
 func (s *Service) InstallInterface(ctx context.Context, realm string, def []byte) (*store.StoredInterface, error) {
 	r, err := s.st.GetRealmByName(ctx, realm)
 	if err != nil {
 		return nil, err
 	}
-	iface, err := interfaceschema.ParseInterface(def)
+	iface, canon, err := interfaceschema.ParseInterfaceCanonical(def)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrValidation, err)
+		return nil, fmt.Errorf("%w: %w", ErrValidation, err)
+	}
+	if canon != nil {
+		def = canon
 	}
 	if err := s.checkRetentionCeiling(r, iface); err != nil {
 		return nil, err
@@ -159,9 +166,12 @@ func (s *Service) UpdateInterface(ctx context.Context, realm string, def []byte)
 	if err != nil {
 		return nil, err
 	}
-	next, err := interfaceschema.ParseInterface(def)
+	next, canon, err := interfaceschema.ParseInterfaceCanonical(def)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrValidation, err)
+		return nil, fmt.Errorf("%w: %w", ErrValidation, err)
+	}
+	if canon != nil {
+		def = canon
 	}
 	if err := s.checkRetentionCeiling(r, next); err != nil {
 		return nil, err
@@ -238,6 +248,36 @@ func (s *Service) ListInterfaces(ctx context.Context, realm string) ([]string, e
 	}
 	sort.Strings(names)
 	return names, nil
+}
+
+// ListInterfacesDetailed renders the additive 1.4-style detailed listing
+// (issue #66): one fully materialised document per installed interface
+// major, sorted by (name, major). The names-only listing upstream 1.2
+// serves stays on ListInterfaces.
+func (s *Service) ListInterfacesDetailed(ctx context.Context, realm string) ([]json.RawMessage, error) {
+	rid, err := s.realmID(ctx, realm)
+	if err != nil {
+		return nil, err
+	}
+	ifaces, err := s.st.LoadRealmInterfaces(ctx, rid)
+	if err != nil {
+		return nil, err
+	}
+	sort.Slice(ifaces, func(i, j int) bool {
+		if ifaces[i].Name != ifaces[j].Name {
+			return ifaces[i].Name < ifaces[j].Name
+		}
+		return ifaces[i].Major < ifaces[j].Major
+	})
+	docs := make([]json.RawMessage, 0, len(ifaces))
+	for _, si := range ifaces {
+		doc, err := renderDetailedInterface(si.Definition)
+		if err != nil {
+			return nil, fmt.Errorf("realm: stored interface %s v%d does not parse: %w", si.Name, si.Major, err)
+		}
+		docs = append(docs, doc)
+	}
+	return docs, nil
 }
 
 // ListInterfaceMajors returns the installed major versions of one interface

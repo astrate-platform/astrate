@@ -1,6 +1,7 @@
 package realm
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -9,6 +10,7 @@ import (
 	"github.com/astrate-platform/astrate/internal/auth"
 	"github.com/astrate-platform/astrate/internal/store"
 	"github.com/astrate-platform/astrate/pkg/astarteapi"
+	"github.com/astrate-platform/astrate/pkg/interfaceschema"
 )
 
 // maxBodyBytes caps Realm Management request bodies (docs/DESIGN.md §4.5):
@@ -141,6 +143,18 @@ func (a *API) getDatastreamMaximumStorageRetention(w http.ResponseWriter, r *htt
 // --- interfaces -------------------------------------------------------------
 
 func (a *API) listInterfaces(w http.ResponseWriter, r *http.Request) {
+	// ?detailed=true serves the additive 1.4-style detailed listing (#66).
+	// Upstream 1.2.0 ignores the parameter entirely (probed), so every other
+	// value — absent included — keeps today's names-only response unchanged.
+	if r.URL.Query().Get("detailed") == "true" {
+		docs, err := a.svc.ListInterfacesDetailed(r.Context(), r.PathValue("realm"))
+		if err != nil {
+			a.writeError(w, err)
+			return
+		}
+		_ = astarteapi.WriteData(w, http.StatusOK, docs)
+		return
+	}
 	names, err := a.svc.ListInterfaces(r.Context(), r.PathValue("realm"))
 	if err != nil {
 		a.writeError(w, err)
@@ -300,10 +314,13 @@ func majorParam(w http.ResponseWriter, r *http.Request) (int, bool) {
 
 // writeError maps service/store errors onto upstream-shaped responses.
 func (a *API) writeError(w http.ResponseWriter, err error) {
+	var ve *interfaceschema.ViolationsError
 	switch {
 	case errors.Is(err, ErrMaximumDatabaseRetentionExceeded):
 		_ = astarteapi.WriteFieldErrors(w, http.StatusUnprocessableEntity,
 			map[string][]string{"error_name": {"maximum_database_retention_exceeded"}})
+	case errors.As(err, &ve):
+		writeViolations(w, ve)
 	case errors.Is(err, ErrValidation):
 		_ = astarteapi.WriteError(w, http.StatusUnprocessableEntity, validationDetail(err))
 	case errors.Is(err, store.ErrAlreadyExists):
@@ -319,6 +336,139 @@ func (a *API) writeError(w http.ResponseWriter, err error) {
 	default:
 		_ = astarteapi.WriteInternalServerError(w)
 	}
+}
+
+// writeViolations renders a *ViolationsError as upstream's Phoenix-changeset
+// 422 body (probe-frozen shapes, issue #61): interface-level violations as
+// {"errors":{"<field>":["<msg>",...]}} and mapping-level ones as one entry
+// per declared mapping in the "mappings" array — {} for clean mappings,
+// {"<field>":[...]} for offending ones. Keys are emitted hand-built in
+// collection order: Go map marshalling would scramble key order and make
+// bodies non-deterministic.
+func writeViolations(w http.ResponseWriter, ve *interfaceschema.ViolationsError) {
+	body := renderViolationsBody(ve)
+	w.Header().Set("Content-Type", astarteapi.ContentType)
+	w.WriteHeader(http.StatusUnprocessableEntity)
+	_, _ = w.Write(body)
+}
+
+// renderViolationsBody encodes the {"errors": {...}} object. Interface-level
+// fields come first in collection order, the mappings array last.
+func renderViolationsBody(ve *interfaceschema.ViolationsError) []byte {
+	var buf bytes.Buffer
+	buf.WriteString(`{"errors":{`)
+	first := true
+	piece := func(key string, value []byte) {
+		if !first {
+			buf.WriteByte(',')
+		}
+		first = false
+		buf.Write(quoteJSON(key))
+		buf.WriteByte(':')
+		buf.Write(value)
+	}
+
+	// Interface-level violations, merged per field preserving first-seen order.
+	type fieldErrors struct {
+		field string
+		msgs  []string
+	}
+	var tops []fieldErrors
+	topIndex := make(map[string]int)
+	for i := range ve.Violations {
+		v := &ve.Violations[i]
+		if v.MappingIndex >= 0 {
+			continue
+		}
+		if at, ok := topIndex[v.Field]; ok {
+			tops[at].msgs = append(tops[at].msgs, v.Messages...)
+			continue
+		}
+		topIndex[v.Field] = len(tops)
+		tops = append(tops, fieldErrors{field: v.Field, msgs: append([]string(nil), v.Messages...)})
+	}
+	for _, f := range tops {
+		piece(f.field, marshalStrings(f.msgs))
+	}
+
+	// Mapping-level violations as the full-length aligned array.
+	if ve.MappingCount > 0 {
+		type entry struct {
+			fields []string
+			msgs   map[string][]string
+		}
+		entries := make([]entry, ve.MappingCount)
+		hasMappings := false
+		for i := range ve.Violations {
+			v := &ve.Violations[i]
+			if v.MappingIndex < 0 || v.MappingIndex >= len(entries) {
+				continue
+			}
+			hasMappings = true
+			e := &entries[v.MappingIndex]
+			if e.msgs == nil {
+				e.msgs = make(map[string][]string)
+			}
+			if _, ok := e.msgs[v.Field]; !ok {
+				e.fields = append(e.fields, v.Field)
+			}
+			e.msgs[v.Field] = append(e.msgs[v.Field], v.Messages...)
+		}
+		if hasMappings {
+			var arr bytes.Buffer
+			arr.WriteByte('[')
+			for i := range entries {
+				if i > 0 {
+					arr.WriteByte(',')
+				}
+				e := &entries[i]
+				if e.msgs == nil {
+					arr.WriteString("{}")
+					continue
+				}
+				arr.WriteByte('{')
+				for j, f := range e.fields {
+					if j > 0 {
+						arr.WriteByte(',')
+					}
+					arr.Write(quoteJSON(f))
+					arr.WriteByte(':')
+					arr.Write(marshalStrings(e.msgs[f]))
+				}
+				arr.WriteByte('}')
+			}
+			arr.WriteByte(']')
+			piece("mappings", arr.Bytes())
+		}
+	}
+
+	buf.WriteString(`}}`)
+	return buf.Bytes()
+}
+
+// quoteJSON encodes s as a JSON string without HTML escaping, matching the
+// astarteapi envelope style. Cannot fail for a string input.
+func quoteJSON(s string) []byte {
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	_ = enc.Encode(s) // always appends '\n'
+	out := buf.Bytes()
+	return out[:len(out)-1]
+}
+
+// marshalStrings renders msgs as a JSON array of strings.
+func marshalStrings(msgs []string) []byte {
+	var buf bytes.Buffer
+	buf.WriteByte('[')
+	for i, msg := range msgs {
+		if i > 0 {
+			buf.WriteByte(',')
+		}
+		buf.Write(quoteJSON(msg))
+	}
+	buf.WriteByte(']')
+	return buf.Bytes()
 }
 
 // validationDetail strips the ErrValidation sentinel prefix so the response

@@ -4,6 +4,6 @@
   "version_minor": 0,
   "type": "datastream",
   "ownership": "device",
-  "quality": "producer",
+  "bogus_field": 1,
   "mappings": [{"endpoint": "/value", "type": "double"}]
 }
