@@ -351,3 +351,74 @@ func TestNew_CleansUpWhenNotReady(t *testing.T) {
 		t.Fatalf("stops after failed ready = %d, want 1", inst.stops.Load())
 	}
 }
+
+// waitingInstance adds Waiter so the death watcher engages.
+type waitingInstance struct {
+	fakeInstance
+	waitFn func(ctx context.Context) (int, error)
+}
+
+func (w *waitingInstance) Wait(ctx context.Context) (int, error) { return w.waitFn(ctx) }
+
+// TestWatchExit_UnexpectedDeath: when the container exits while the flow is
+// running, the block reports fatal with its name.
+func TestWatchExit_UnexpectedDeath(t *testing.T) {
+	srv := echoServer(t)
+	defer srv.Close()
+
+	notifyCh := make(chan string, 1)
+	inst := &waitingInstance{
+		fakeInstance: fakeInstance{base: srv.URL, id: "deadbeef"},
+		waitFn: func(context.Context) (int, error) {
+			return 137, nil // container died mid-run
+		},
+	}
+	runner := &fakeRunner{inst: inst}
+	b, err := container.New("n1", map[string]any{"image": "x:1"}, flow.Deps{
+		NotifyFatal: func(block string, _ error) { notifyCh <- block },
+	}, runner)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	select {
+	case got := <-notifyCh:
+		if got != "n1" {
+			t.Fatalf("fatal block = %q, want n1", got)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("expected NotifyFatal on unexpected container exit")
+	}
+	b.(flow.Stopper).Stop()
+}
+
+// TestWatchExit_CleanStopIsSilent: a clean Stop must not report fatal even
+// though tearing the container down ends the wait.
+func TestWatchExit_CleanStopIsSilent(t *testing.T) {
+	srv := echoServer(t)
+	defer srv.Close()
+
+	var fired atomic.Bool
+	blockCtx, cancel := context.WithCancel(context.Background())
+	inst := &waitingInstance{
+		fakeInstance: fakeInstance{base: srv.URL, id: "deadbeef"},
+		waitFn: func(ctx context.Context) (int, error) {
+			<-ctx.Done() // wait returns because Stop cancelled it
+			return -1, ctx.Err()
+		},
+	}
+	_ = cancel
+	_ = blockCtx
+	runner := &fakeRunner{inst: inst}
+	b, err := container.New("n1", map[string]any{"image": "x:1"}, flow.Deps{
+		NotifyFatal: func(string, error) { fired.Store(true) },
+	}, runner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b.(flow.Stopper).Stop()
+	time.Sleep(100 * time.Millisecond)
+	if fired.Load() {
+		t.Fatal("clean stop must not trigger NotifyFatal")
+	}
+}

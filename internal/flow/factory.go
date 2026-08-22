@@ -24,6 +24,11 @@ type Deps struct {
 	// FlowName is the durable/named flow instance name (optional). Used by
 	// container labels and similar operator metadata.
 	FlowName string
+	// NotifyFatal, when set, is called by blocks that die at runtime (e.g. a
+	// container block whose container exits unexpectedly) so the service layer
+	// can fail the flow and schedule a restart. Must be safe to call from any
+	// goroutine; blocks must not call it after their Stopper.Stop() ran.
+	NotifyFatal func(block string, cause error)
 }
 
 // Constructor builds one Block from a pipeline node. name is the pipeline

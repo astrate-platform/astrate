@@ -21,10 +21,13 @@ type Flow struct {
 	AutoRestart  bool
 	Status       string
 	ErrorMessage *string
-	CreatedAt    time.Time
-	UpdatedAt    time.Time
-	StartedAt    *time.Time
-	StoppedAt    *time.Time
+	// FailedBlock is the pipeline block whose fatal runtime failure killed
+	// the flow (nil unless status=failed with a known culprit).
+	FailedBlock *string
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+	StartedAt   *time.Time
+	StoppedAt   *time.Time
 }
 
 // FlowRehydrate is a durable auto_restart row plus its realm name for boot.
@@ -34,7 +37,7 @@ type FlowRehydrate struct {
 }
 
 const flowColumns = `id, realm_id, name, pipeline_name, config, auto_restart,
-	status, error_message, created_at, updated_at, started_at, stopped_at`
+	status, error_message, failed_block, created_at, updated_at, started_at, stopped_at`
 
 func scanFlow(scan interface {
 	Scan(dest ...any) error
@@ -42,7 +45,7 @@ func scanFlow(scan interface {
 	var f Flow
 	err := scan.Scan(
 		&f.ID, &f.RealmID, &f.Name, &f.PipelineName, &f.Config, &f.AutoRestart,
-		&f.Status, &f.ErrorMessage, &f.CreatedAt, &f.UpdatedAt, &f.StartedAt, &f.StoppedAt,
+		&f.Status, &f.ErrorMessage, &f.FailedBlock, &f.CreatedAt, &f.UpdatedAt, &f.StartedAt, &f.StoppedAt,
 	)
 	if err != nil {
 		return nil, err
@@ -115,7 +118,7 @@ func (s *Store) ListFlows(ctx context.Context, realmID int16) ([]Flow, error) {
 func (s *Store) ListAutoRestartFlows(ctx context.Context) ([]FlowRehydrate, error) {
 	rows, err := s.pool.Query(ctx,
 		`SELECT f.id, f.realm_id, f.name, f.pipeline_name, f.config, f.auto_restart,
-		        f.status, f.error_message, f.created_at, f.updated_at, f.started_at, f.stopped_at,
+		        f.status, f.error_message, f.failed_block, f.created_at, f.updated_at, f.started_at, f.stopped_at,
 		        r.name
 		 FROM flows f
 		 JOIN realms r ON r.id = f.realm_id
@@ -131,7 +134,7 @@ func (s *Store) ListAutoRestartFlows(ctx context.Context) ([]FlowRehydrate, erro
 		var fr FlowRehydrate
 		err := rows.Scan(
 			&fr.ID, &fr.RealmID, &fr.Name, &fr.PipelineName, &fr.Config, &fr.AutoRestart,
-			&fr.Status, &fr.ErrorMessage, &fr.CreatedAt, &fr.UpdatedAt, &fr.StartedAt, &fr.StoppedAt,
+			&fr.Status, &fr.ErrorMessage, &fr.FailedBlock, &fr.CreatedAt, &fr.UpdatedAt, &fr.StartedAt, &fr.StoppedAt,
 			&fr.RealmName,
 		)
 		if err != nil {
@@ -145,17 +148,20 @@ func (s *Store) ListAutoRestartFlows(ctx context.Context) ([]FlowRehydrate, erro
 	return out, nil
 }
 
-// UpdateFlowRuntime persists status / error / timestamps after start, stop, or fail.
-func (s *Store) UpdateFlowRuntime(ctx context.Context, realmID int16, name, status string, errMsg *string, startedAt, stoppedAt *time.Time) error {
+// UpdateFlowRuntime persists status / error / timestamps after start, stop,
+// or fail. failedBlock is only meaningful with a failed status; passing nil
+// clears it (every successful start/restart does).
+func (s *Store) UpdateFlowRuntime(ctx context.Context, realmID int16, name, status string, errMsg *string, failedBlock *string, startedAt, stoppedAt *time.Time) error {
 	tag, err := s.pool.Exec(ctx,
 		`UPDATE flows SET
 		   status = $3,
 		   error_message = $4,
-		   started_at = COALESCE($5, started_at),
-		   stopped_at = $6,
+		   failed_block = $5,
+		   started_at = COALESCE($6, started_at),
+		   stopped_at = $7,
 		   updated_at = now()
 		 WHERE realm_id = $1 AND name = $2`,
-		realmID, name, status, errMsg, startedAt, stoppedAt)
+		realmID, name, status, errMsg, failedBlock, startedAt, stoppedAt)
 	if err != nil {
 		return fmt.Errorf("store: updating flow runtime %q: %w", name, err)
 	}

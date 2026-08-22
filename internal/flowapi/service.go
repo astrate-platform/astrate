@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/astrate-platform/astrate/internal/engine/stream"
@@ -28,6 +29,11 @@ type Service struct {
 	reg *flow.Registry
 	bus *stream.Bus
 	log *slog.Logger
+
+	// restartMu/restarting dedupe auto-restart loops when several blocks of
+	// the same flow die (or fatal races a manual reload).
+	restartMu  sync.Mutex
+	restarting map[string]bool
 }
 
 // NewService wires store, manager, block registry, and the live bus.
@@ -65,6 +71,7 @@ type FlowView struct {
 	AutoRestart  bool            `json:"auto_restart"`
 	Status       string          `json:"status"`
 	ErrorMessage *string         `json:"error_message"`
+	FailedBlock  *string         `json:"failed_block,omitempty"`
 	RuntimeID    string          `json:"runtime_id,omitempty"`
 	CreatedAt    time.Time       `json:"created_at"`
 	UpdatedAt    time.Time       `json:"updated_at"`
@@ -257,7 +264,7 @@ func (s *Service) RehydrateAutoRestart(ctx context.Context) error {
 		if err := json.Unmarshal(row.Config, &cfgMap); err != nil {
 			msg := fmt.Sprintf("invalid stored config: %v", err)
 			s.log.Error("flow rehydrate failed", "realm", row.RealmName, "name", row.Name, "error", msg)
-			_ = s.st.UpdateFlowRuntime(ctx, row.RealmID, row.Name, "failed", &msg, nil, nil)
+			_ = s.st.UpdateFlowRuntime(ctx, row.RealmID, row.Name, "failed", &msg, nil, nil, nil)
 			continue
 		}
 		if cfgMap == nil {
@@ -296,7 +303,12 @@ func (s *Service) resolveAndBuild(ctx context.Context, realmID int16, realm, nam
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrValidation, err)
 	}
-	blks, err := s.reg.Instantiate(p, flow.Deps{Bus: s.bus, Realm: realm, FlowName: name})
+	blks, err := s.reg.Instantiate(p, flow.Deps{
+		Bus:         s.bus,
+		Realm:       realm,
+		FlowName:    name,
+		NotifyFatal: s.onBlockFatal(realmID, realm, name),
+	})
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrValidation, err)
 	}
@@ -308,7 +320,7 @@ func (s *Service) resolveAndBuild(ctx context.Context, realmID int16, realm, nam
 func (s *Service) startFlowInstance(ctx context.Context, realm string, realmID int16, name, pipelineName string, config map[string]any) (*FlowView, error) {
 	markFailed := func(err error) {
 		msg := err.Error()
-		_ = s.st.UpdateFlowRuntime(ctx, realmID, name, "failed", &msg, nil, nil)
+		_ = s.st.UpdateFlowRuntime(ctx, realmID, name, "failed", &msg, nil, nil, nil)
 	}
 
 	blks, err := s.resolveAndBuild(ctx, realmID, realm, name, pipelineName, config)
@@ -319,7 +331,7 @@ func (s *Service) startFlowInstance(ctx context.Context, realm string, realmID i
 
 	instanceID := flow.InstanceID(realm, name)
 	// Creating status while building live graph (optional observation).
-	_ = s.st.UpdateFlowRuntime(ctx, realmID, name, "creating", nil, nil, nil)
+	_ = s.st.UpdateFlowRuntime(ctx, realmID, name, "creating", nil, nil, nil, nil)
 
 	f, err := s.mgr.StartFlow(ctx, flow.Config{
 		PipelineID: instanceID,
@@ -334,7 +346,7 @@ func (s *Service) startFlowInstance(ctx context.Context, realm string, realmID i
 	}
 
 	now := time.Now().UTC()
-	if err := s.st.UpdateFlowRuntime(ctx, realmID, name, "running", nil, &now, nil); err != nil {
+	if err := s.st.UpdateFlowRuntime(ctx, realmID, name, "running", nil, nil, &now, nil); err != nil {
 		s.log.Error("flow started but failed to persist runtime", "realm", realm, "name", name, "error", err)
 	}
 	s.log.Info("flow started", "realm", realm, "name", name, "pipeline", pipelineName, "runtime_id", f.ID())
@@ -389,7 +401,7 @@ func (s *Service) RestartFlowInstance(ctx context.Context, realm string, realmID
 	var cfgMap map[string]any
 	if err := json.Unmarshal(row.Config, &cfgMap); err != nil {
 		msg := fmt.Sprintf("invalid stored config: %v", err)
-		_ = s.st.UpdateFlowRuntime(ctx, realmID, name, "failed", &msg, nil, nil)
+		_ = s.st.UpdateFlowRuntime(ctx, realmID, name, "failed", &msg, nil, nil, nil)
 		return nil, fmt.Errorf("%w: %s", ErrValidation, msg)
 	}
 	if cfgMap == nil {
@@ -399,11 +411,11 @@ func (s *Service) RestartFlowInstance(ctx context.Context, realm string, realmID
 	blks, err := s.resolveAndBuild(ctx, realmID, realm, name, row.PipelineName, cfgMap)
 	if err != nil {
 		msg := err.Error()
-		_ = s.st.UpdateFlowRuntime(ctx, realmID, name, "failed", &msg, nil, nil)
+		_ = s.st.UpdateFlowRuntime(ctx, realmID, name, "failed", &msg, nil, nil, nil)
 		return nil, err
 	}
 
-	_ = s.st.UpdateFlowRuntime(ctx, realmID, name, "creating", nil, nil, nil)
+	_ = s.st.UpdateFlowRuntime(ctx, realmID, name, "creating", nil, nil, nil, nil)
 	f, err := s.mgr.StartFlow(ctx, flow.Config{
 		PipelineID: instanceID,
 		Blocks:     blks,
@@ -411,17 +423,119 @@ func (s *Service) RestartFlowInstance(ctx context.Context, realm string, realmID
 	if err != nil {
 		if !errors.Is(err, flow.ErrFlowExists) {
 			msg := err.Error()
-			_ = s.st.UpdateFlowRuntime(ctx, realmID, name, "failed", &msg, nil, nil)
+			_ = s.st.UpdateFlowRuntime(ctx, realmID, name, "failed", &msg, nil, nil, nil)
 		}
 		return nil, err
 	}
 
 	now := time.Now().UTC()
-	if err := s.st.UpdateFlowRuntime(ctx, realmID, name, "running", nil, &now, nil); err != nil {
+	if err := s.st.UpdateFlowRuntime(ctx, realmID, name, "running", nil, nil, &now, nil); err != nil {
 		s.log.Error("flow restarted but failed to persist runtime", "realm", realm, "name", name, "error", err)
 	}
 	s.log.Info("flow restarted", "realm", realm, "name", name, "pipeline", row.PipelineName, "runtime_id", f.ID())
 	return s.GetFlow(ctx, realm, name)
+}
+
+// restartBackoffBase/max shape the auto-restart delay ladder for flows whose
+// blocks die at runtime (issue #45): 1s, 2s, 4s, ... capped at 30s, retrying
+// until the flow starts or its durable row is deleted / auto_restart disabled.
+const (
+	restartBackoffBase = time.Second
+	restartBackoffMax  = 30 * time.Second
+)
+
+// onBlockFatal returns the Deps.NotifyFatal callback for one flow instance.
+// A dead block fails the whole flow (records failed_block), tears the live
+// graph down, and — for auto_restart flows — schedules a backoff rebuild.
+func (s *Service) onBlockFatal(realmID int16, realm, name string) func(string, error) {
+	instanceID := flow.InstanceID(realm, name)
+	return func(block string, cause error) {
+		bg := context.Background()
+		s.log.Error("flow block died", "realm", realm, "flow", name, "block", block, "error", cause)
+		msg := fmt.Sprintf("block %q failed: %v", block, cause)
+		if err := s.st.UpdateFlowRuntime(bg, realmID, name, "failed", &msg, &block, nil, nil); err != nil {
+			s.log.Error("failed to persist block death", "realm", realm, "flow", name, "error", err)
+		}
+
+		if err := s.mgr.StopFlow(bg, instanceID); err != nil && !errors.Is(err, flow.ErrFlowNotFound) {
+			s.log.Error("failed to stop flow after block death", "realm", realm, "flow", name, "error", err)
+		}
+		s.mgr.UnregisterFlow(instanceID)
+
+		row, err := s.st.GetFlow(bg, realmID, name)
+		if err != nil {
+			if !errors.Is(err, store.ErrNotFound) {
+				s.log.Error("failed to read flow after block death", "realm", realm, "flow", name, "error", err)
+			}
+			return
+		}
+		if !row.AutoRestart {
+			return
+		}
+		if !s.beginRestart(instanceID) {
+			return // another fatal/restart loop is already rebuilding
+		}
+		go s.restartWithBackoff(realm, realmID, name, instanceID)
+	}
+}
+
+// beginRestart claims the instance for an auto-restart loop; false means one
+// is already active. Use endRestart to release.
+func (s *Service) beginRestart(instanceID string) bool {
+	s.restartMu.Lock()
+	defer s.restartMu.Unlock()
+	if s.restarting == nil {
+		s.restarting = make(map[string]bool)
+	}
+	if s.restarting[instanceID] {
+		return false
+	}
+	s.restarting[instanceID] = true
+	return true
+}
+
+func (s *Service) endRestart(instanceID string) {
+	s.restartMu.Lock()
+	defer s.restartMu.Unlock()
+	delete(s.restarting, instanceID)
+}
+
+// restartWithBackoff keeps re-running RestartFlowInstance until it succeeds,
+// the durable row disappears (flow deleted), or auto_restart is turned off.
+func (s *Service) restartWithBackoff(realm string, realmID int16, name, instanceID string) {
+	defer s.endRestart(instanceID)
+	bg := context.Background()
+	delay := restartBackoffBase
+	for attempt := 0; ; attempt++ {
+		time.Sleep(delay)
+		delay *= 2
+		if delay > restartBackoffMax {
+			delay = restartBackoffMax
+		}
+
+		row, err := s.st.GetFlow(bg, realmID, name)
+		if err != nil {
+			if errors.Is(err, store.ErrNotFound) {
+				return // deleted while we waited; nothing to bring back
+			}
+			s.log.Error("auto-restart aborted: cannot read flow row", "realm", realm, "flow", name, "error", err)
+			return
+		}
+		if !row.AutoRestart {
+			return
+		}
+
+		ctx, cancel := context.WithTimeout(bg, 2*time.Minute)
+		_, err = s.RestartFlowInstance(ctx, realm, realmID, name)
+		cancel()
+		if err == nil {
+			s.log.Info("flow auto-restarted after block death",
+				"realm", realm, "flow", name, "attempt", attempt+1)
+			return
+		}
+		s.log.Warn("flow auto-restart attempt failed",
+			"realm", realm, "flow", name, "attempt", attempt+1, "next_in", delay.String(), "error", err)
+	}
 }
 
 // ReloadFlow re-resolves a flow's pipeline by name and rebuilds the live
@@ -548,7 +662,7 @@ func (s *Service) MarkRunningFlowsStopped(ctx context.Context) {
 		if err != nil {
 			continue
 		}
-		_ = s.st.UpdateFlowRuntime(ctx, id, name, "stopped", nil, nil, &now)
+		_ = s.st.UpdateFlowRuntime(ctx, id, name, "stopped", nil, nil, nil, &now)
 	}
 }
 
@@ -602,6 +716,7 @@ func mergeFlowView(realm string, row *store.Flow, live *flow.Flow) *FlowView {
 		AutoRestart:  row.AutoRestart,
 		Status:       row.Status,
 		ErrorMessage: row.ErrorMessage,
+		FailedBlock:  row.FailedBlock,
 		CreatedAt:    row.CreatedAt,
 		UpdatedAt:    row.UpdatedAt,
 		StartedAt:    row.StartedAt,

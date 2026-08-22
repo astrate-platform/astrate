@@ -56,8 +56,9 @@ type Block struct {
 	bridge *Bridge
 	inst   Instance
 
-	mu      sync.Mutex
-	stopped bool
+	mu          sync.Mutex
+	stopped     bool
+	cancelWatch context.CancelFunc
 }
 
 // Constructor is the catalog entry point (uses defaultRunner).
@@ -128,7 +129,44 @@ func New(name string, config map[string]any, deps flow.Deps, runner Runner) (flo
 		bridge: bridge,
 		inst:   inst,
 	}
+
+	// Death watch (#45): when the flow service asks to be told about block
+	// death and the runner can report container exit, watch in the background.
+	// A clean Stop() marks the block stopped before tearing the container
+	// down, so the watcher stays silent on normal shutdown.
+	if deps.NotifyFatal != nil {
+		if w, ok := inst.(Waiter); ok {
+			watchCtx, watchCancel := context.WithCancel(context.Background())
+			b.cancelWatch = watchCancel
+			go b.watchExit(watchCtx, w, deps.NotifyFatal)
+		}
+	}
+
 	return b, nil
+}
+
+// watchExit blocks until the container exits and, if the block was not being
+// cleanly stopped, reports the death via notify. It never returns normally;
+// it exits silently when ctx is cancelled or the block is stopped.
+func (b *Block) watchExit(ctx context.Context, w Waiter, notify func(string, error)) {
+	code, waitErr := w.Wait(ctx)
+
+	b.mu.Lock()
+	stopped := b.stopped
+	b.mu.Unlock()
+	if stopped || ctx.Err() != nil {
+		return
+	}
+
+	var cause error
+	if waitErr != nil {
+		// The wait command itself failed (e.g. docker daemon blip) while we
+		// were still running: we cannot verify liveness, so treat as fatal.
+		cause = fmt.Errorf("container liveness check failed: %w", waitErr)
+	} else {
+		cause = fmt.Errorf("container exited unexpectedly (exit code %d)", code)
+	}
+	notify(b.name, cause)
 }
 
 func parseConfig(config map[string]any) (Config, error) {
@@ -254,10 +292,17 @@ func (b *Block) Stop() {
 		b.mu.Unlock()
 		return
 	}
+	// Mark stopped before touching the container so the exit watcher sees a
+	// clean shutdown rather than an unexpected death.
 	b.stopped = true
 	inst := b.inst
 	b.inst = nil
+	cancelWatch := b.cancelWatch
+	b.cancelWatch = nil
 	b.mu.Unlock()
+	if cancelWatch != nil {
+		cancelWatch()
+	}
 
 	if inst == nil {
 		return

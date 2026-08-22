@@ -9,6 +9,8 @@ import (
 	"log/slog"
 	"reflect"
 	"strconv"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -152,7 +154,7 @@ func TestReloadAndConfigUpdate(t *testing.T) {
 		t.Fatal(err)
 	}
 	now := time.Now().UTC()
-	if err := st.UpdateFlowRuntime(ctx, r.ID, "f1", "stopped", nil, nil, &now); err != nil {
+	if err := st.UpdateFlowRuntime(ctx, r.ID, "f1", "stopped", nil, nil, nil, &now); err != nil {
 		t.Fatal(err)
 	}
 	stopped, err := svc.UpdateFlowConfig(ctx, realm, "f1", json.RawMessage(`{"iface":"dev.v3"}`))
@@ -221,4 +223,112 @@ func jsonEqual(a, b []byte) bool {
 		return false
 	}
 	return reflect.DeepEqual(va, vb)
+}
+
+// --- #45 phase 1: block-death detection + auto-restart ----------------------
+
+// boomOnce tracks, per flow name, whether the doomed block already died.
+var boomOnce sync.Map
+
+// boomConstructor builds a single-node "source+sink" pipeline block whose
+// container-equivalent dies shortly after start — exactly once per flow.
+func boomConstructor(name string, _ map[string]any, deps flow.Deps) (flow.Block, error) {
+	v, _ := boomOnce.LoadOrStore(deps.FlowName, new(atomic.Bool))
+	fired := v.(*atomic.Bool)
+	if deps.NotifyFatal != nil {
+		go func() {
+			time.Sleep(100 * time.Millisecond)
+			if fired.CompareAndSwap(false, true) {
+				deps.NotifyFatal(name, errors.New("boom: container exited unexpectedly"))
+			}
+		}()
+	}
+	return flow.NewSinkBlock(name, func(*flow.Message) error { return nil }), nil
+}
+
+const boomPipeline = `{"blocks":[{"name":"n1","block_type":"boom"}],"connections":[]}`
+
+// TestBlockDeathFailsFlow covers the non-auto-restart path: a dead block
+// fails the whole flow with failed_block recorded and no live instance left.
+func TestBlockDeathFailsFlow(t *testing.T) {
+	svc, st, realm := newTestService(t)
+	ctx := context.Background()
+
+	reg := blocks.DefaultRegistry()
+	reg.Register("boom", boomConstructor)
+	svc2 := NewService(st, svc.Manager(), reg, stream.New(nil), slog.New(slog.DiscardHandler))
+
+	if _, err := svc2.CreatePipeline(ctx, realm, "boom-pipeline", []byte(boomPipeline)); err != nil {
+		t.Fatal(err)
+	}
+	r, err := st.GetRealmByName(ctx, realm)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc2.CreateAndStartFlow(ctx, realm, CreateFlowRequest{
+		Name: "bfatal", Pipeline: "boom-pipeline", AutoRestart: false,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = svc2.DeleteFlow(ctx, realm, "bfatal") })
+
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		view, err := svc2.GetFlow(ctx, realm, "bfatal")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if view.Status == "failed" {
+			if view.FailedBlock == nil || *view.FailedBlock != "n1" {
+				t.Fatalf("failed_block = %v, want n1", view.FailedBlock)
+			}
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("flow never failed; status=%q", view.Status)
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	// No live graph may survive the death.
+	if _, err := svc.Manager().GetFlowStatus(flow.InstanceID(realm, "bfatal")); err == nil {
+		t.Fatal("live instance still registered after fatal")
+	}
+	_ = r
+}
+
+// TestBlockDeathAutoRestart covers the auto_restart path: the doomed block
+// dies once, the service rebuilds with backoff, and the flow ends up running.
+func TestBlockDeathAutoRestart(t *testing.T) {
+	svc, st, realm := newTestService(t)
+	ctx := context.Background()
+
+	reg := blocks.DefaultRegistry()
+	reg.Register("boom", boomConstructor)
+	svc2 := NewService(st, svc.Manager(), reg, stream.New(nil), slog.New(slog.DiscardHandler))
+
+	if _, err := svc2.CreatePipeline(ctx, realm, "boom-pipeline", []byte(boomPipeline)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc2.CreateAndStartFlow(ctx, realm, CreateFlowRequest{
+		Name: "bretry", Pipeline: "boom-pipeline", AutoRestart: true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = svc2.DeleteFlow(ctx, realm, "bretry") })
+
+	deadline := time.Now().Add(15 * time.Second)
+	for {
+		view, err := svc2.GetFlow(ctx, realm, "bretry")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if view.Status == "running" && view.FailedBlock == nil {
+			return // died once, came back clean
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("flow never recovered: status=%q failed_block=%v", view.Status, view.FailedBlock)
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
 }

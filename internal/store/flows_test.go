@@ -72,7 +72,7 @@ func testFlows(t *testing.T, s *Store) {
 
 	now := time.Now().UTC().Truncate(time.Microsecond)
 	errMsg := "pipeline not found"
-	if err := s.UpdateFlowRuntime(ctx, realm.ID, "prod-webhooks", "failed", &errMsg, nil, nil); err != nil {
+	if err := s.UpdateFlowRuntime(ctx, realm.ID, "prod-webhooks", "failed", &errMsg, nil, nil, nil); err != nil {
 		t.Fatalf("UpdateFlowRuntime failed: %v", err)
 	}
 	got, err = s.GetFlow(ctx, realm.ID, "prod-webhooks")
@@ -83,7 +83,20 @@ func testFlows(t *testing.T, s *Store) {
 		t.Errorf("after fail: status=%q err=%v", got.Status, got.ErrorMessage)
 	}
 
-	if err := s.UpdateFlowRuntime(ctx, realm.ID, "prod-webhooks", "running", nil, &now, nil); err != nil {
+	// failed_block is recorded on failure and cleared on the next start.
+	blocked := "sink-1"
+	if err := s.UpdateFlowRuntime(ctx, realm.ID, "prod-webhooks", "failed", &errMsg, &blocked, nil, nil); err != nil {
+		t.Fatalf("UpdateFlowRuntime with block: %v", err)
+	}
+	got, err = s.GetFlow(ctx, realm.ID, "prod-webhooks")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.FailedBlock == nil || *got.FailedBlock != blocked {
+		t.Errorf("failed_block = %v, want %q", got.FailedBlock, blocked)
+	}
+
+	if err := s.UpdateFlowRuntime(ctx, realm.ID, "prod-webhooks", "running", nil, nil, &now, nil); err != nil {
 		t.Fatalf("UpdateFlowRuntime running: %v", err)
 	}
 	got, err = s.GetFlow(ctx, realm.ID, "prod-webhooks")
@@ -92,6 +105,9 @@ func testFlows(t *testing.T, s *Store) {
 	}
 	if got.Status != "running" || got.ErrorMessage != nil {
 		t.Errorf("after run: status=%q err=%v", got.Status, got.ErrorMessage)
+	}
+	if got.FailedBlock != nil {
+		t.Errorf("failed_block not cleared on start: %v", *got.FailedBlock)
 	}
 	if got.StartedAt == nil {
 		t.Error("started_at not set")
@@ -139,7 +155,7 @@ func testFlows(t *testing.T, s *Store) {
 	if err := s.DeleteFlow(ctx, realm.ID, "batch"); !errors.Is(err, ErrNotFound) {
 		t.Errorf("double delete = %v, want ErrNotFound", err)
 	}
-	if err := s.UpdateFlowRuntime(ctx, realm.ID, "ghost", "stopped", nil, nil, nil); !errors.Is(err, ErrNotFound) {
+	if err := s.UpdateFlowRuntime(ctx, realm.ID, "ghost", "stopped", nil, nil, nil, nil); !errors.Is(err, ErrNotFound) {
 		t.Errorf("update unknown = %v, want ErrNotFound", err)
 	}
 

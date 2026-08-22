@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os/exec"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -36,6 +37,14 @@ type Instance interface {
 // Runner starts containers. PoC default is CLIRunner (docker CLI).
 type Runner interface {
 	Start(ctx context.Context, spec Spec) (Instance, error)
+}
+
+// Waiter is implemented by Instances that can block until their container
+// exits. The block's exit watcher uses it to detect unexpected death (#45).
+type Waiter interface {
+	// Wait blocks until the container exits (or ctx is cancelled) and returns
+	// its exit code.
+	Wait(ctx context.Context) (exitCode int, err error)
 }
 
 // CLIRunner shells out to the docker CLI. Suitable for PoC; MVP may switch
@@ -173,6 +182,20 @@ func (c *cliInstance) Stop(ctx context.Context) error {
 		return fmt.Errorf("container: docker rm -f %s: %s", c.id, msg)
 	}
 	return nil
+}
+
+// Wait blocks in `docker wait` until the container exits and returns its
+// exit code. Cancelling ctx kills the wait command.
+func (c *cliInstance) Wait(ctx context.Context) (int, error) {
+	stdout, _, err := c.runner.run(ctx, "wait", c.id)
+	if err != nil {
+		return -1, err
+	}
+	code, convErr := strconv.Atoi(strings.TrimSpace(stdout))
+	if convErr != nil {
+		return -1, fmt.Errorf("container: docker wait returned %q: %w", stdout, convErr)
+	}
+	return code, nil
 }
 
 // encodeFlowConfigJSON marshals nested config for ASTRATE_FLOW_CONFIG.
