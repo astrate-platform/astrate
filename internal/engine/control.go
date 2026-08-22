@@ -34,9 +34,9 @@ const controlFrameHeader = 4
 
 // handleControl dispatches a device control publish
 // ("<realm>/<device_id>/control/<subpath>", docs/ROADMAP.md §7.2 file 6.8)
-// on the device's shard goroutine. Unknown subpaths are rejected and
-// consumed — the broker ACL only admits the two device-publishable control
-// topics, so anything else here is a defensive path.
+// on the device's shard goroutine. Unknown subpaths are consumed silently —
+// upstream acks them without an error trigger (issue #51), so a future
+// control topic must not wedge older sessions.
 func (e *Engine) handleControl(ctx context.Context, m broker.InboundMessage, realm *realmSchema, subpath string) {
 	switch subpath {
 	case controlEmptyCache:
@@ -44,7 +44,8 @@ func (e *Engine) handleControl(ctx context.Context, m broker.InboundMessage, rea
 	case controlProducerProperties:
 		e.handleProducerProperties(ctx, m, realm)
 	default:
-		e.reject(m, reasonControlUnknown, "unknown control subpath "+subpath)
+		e.log.Warn("ignoring unknown control subpath", "device", m.DeviceID, "subpath", subpath)
+		m.Ack()
 	}
 }
 

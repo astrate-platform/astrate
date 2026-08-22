@@ -304,8 +304,9 @@ func TestProducerPropertiesPurge(t *testing.T) {
 	}
 }
 
-// TestControlRejects: malformed frames and unknown subpaths are rejected
-// under their reasons and consumed.
+// TestControlRejects: malformed frames are rejected under their reason and
+// consumed; an unknown subpath is tolerated — acked silently, no rejection
+// (upstream parity, issue #51).
 func TestControlRejects(t *testing.T) {
 	rig, _, _ := newWiredRig(t, Config{})
 
@@ -323,7 +324,7 @@ func TestControlRejects(t *testing.T) {
 	if !ack.acked() {
 		t.Error("unknown control subpath not consumed")
 	}
-	if got := promtest.ToFloat64(rig.e.met.rejects.WithLabelValues(reasonControlUnknown)); got != 1 {
-		t.Errorf("rejects[%s] = %v, want 1", reasonControlUnknown, got)
+	if got := promtest.ToFloat64(rig.e.met.rejects.WithLabelValues(reasonControlInvalid)); got != 1 {
+		t.Errorf("rejects[%s] = %v, want still 1 (unknown subpath must not reject)", reasonControlInvalid, got)
 	}
 }

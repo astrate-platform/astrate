@@ -41,8 +41,6 @@ const (
 	// reasonIntrospectionInvalid: the introspection payload is oversized or
 	// malformed (docs/ROADMAP.md §7.2 file 6.7).
 	reasonIntrospectionInvalid = "introspection_invalid"
-	// reasonControlUnknown: a control publish on an unknown subpath.
-	reasonControlUnknown = "control_unknown"
 	// reasonControlInvalid: a control payload with a bad zlib frame, a
 	// declared size above the ceiling, or a lying size header (§4.5).
 	reasonControlInvalid = "control_payload_invalid"
@@ -56,7 +54,7 @@ var engineRejectReasons = []string{
 	reasonRealmUnknown, reasonDeviceUnknown, reasonMalformedTopic,
 	reasonInterfaceNotDeclared, reasonInterfaceNotInstalled,
 	reasonOwnershipViolation, reasonUnexpectedPath,
-	reasonIntrospectionInvalid, reasonControlUnknown, reasonControlInvalid,
+	reasonIntrospectionInvalid, reasonControlInvalid,
 	reasonCapabilitiesInvalid,
 }
 
