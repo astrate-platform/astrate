@@ -12,10 +12,12 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"time"
 
 	"github.com/astrate-platform/astrate/internal/store"
 	"github.com/astrate-platform/astrate/pkg/deviceid"
+	"github.com/astrate-platform/astrate/pkg/interfaceschema"
 )
 
 // DefaultDeviceLimit is the device-list page size when the caller gives none.
@@ -34,6 +36,15 @@ var (
 	ErrInvalidAttributes    = errors.New("Invalid attributes")
 	ErrAttributeKeyNotFound = errors.New("Attribute key not found")
 )
+
+// ErrGroupNotFound marks a missing group (maps to 404 "Group not found").
+var ErrGroupNotFound = errors.New("Group not found")
+
+// missingGroup wraps a failed group resolution so it satisfies BOTH
+// ErrGroupNotFound (→ 404 "Group not found") and store.ErrNotFound.
+func missingGroup(name string) error {
+	return fmt.Errorf("%w: %w: group %q", ErrGroupNotFound, store.ErrNotFound, name)
+}
 
 // ServerData is the engine port for server-owned writes (docs/ROADMAP.md §8.2
 // file 7.7). *engine.Engine satisfies it; tests substitute a fake.
@@ -269,9 +280,28 @@ func (s *Service) PatchDevice(ctx context.Context, realm, deviceID string, p Dev
 	if err != nil {
 		return nil, err
 	}
-	// Validation order mirrors upstream merge_device_status: alias format,
-	// alias ownership realm-wide, attribute format, then the changeset's
-	// missing-tag/key rejections at apply time.
+	return s.applyPatch(ctx, rid, id, d, p)
+}
+
+// PatchDeviceByAlias applies a device patch addressed by alias (upstream
+// PATCH /devices-by-alias/{alias}). Unknown alias behaves like GetDeviceByAlias.
+func (s *Service) PatchDeviceByAlias(ctx context.Context, realm, alias string, p DevicePatch) (*DeviceStatus, error) {
+	rid, err := s.realmID(ctx, realm)
+	if err != nil {
+		return nil, err
+	}
+	d, err := s.st.GetDeviceByAlias(ctx, rid, alias)
+	if err != nil {
+		return nil, err
+	}
+	return s.applyPatch(ctx, rid, d.ID, d, p)
+}
+
+// applyPatch validates and applies p to the already-fetched device row,
+// preserving upstream merge_device_status's validation order: alias format,
+// alias ownership realm-wide, attribute format, then the changeset's
+// missing-tag/key rejections at apply time.
+func (s *Service) applyPatch(ctx context.Context, rid int16, id deviceid.ID, d *store.Device, p DevicePatch) (*DeviceStatus, error) {
 	for tag, value := range p.Aliases {
 		if tag == "" || (value != nil && *value == "") {
 			return nil, ErrInvalidAlias
@@ -325,6 +355,57 @@ func (s *Service) PatchDevice(ctx context.Context, realm, deviceID string, p Dev
 		return nil, err
 	}
 	return s.deviceStatus(ctx, rid, d2)
+}
+
+// PatchGroupDevice applies a device patch inside a group (upstream
+// PATCH /groups/{group}/devices/{device}). Unknown group → ErrGroupNotFound;
+// non-member device behaves like an unknown device.
+func (s *Service) PatchGroupDevice(ctx context.Context, realm, groupName, deviceID string, p DevicePatch) (*DeviceStatus, error) {
+	rid, id, d, err := s.groupMember(ctx, realm, groupName, deviceID)
+	if err != nil {
+		return nil, err
+	}
+	return s.applyPatch(ctx, rid, id, d, p)
+}
+
+// GetGroupDevice returns one member device's status (upstream
+// GET /groups/{group}/devices/{device}).
+func (s *Service) GetGroupDevice(ctx context.Context, realm, groupName, deviceID string) (*DeviceStatus, error) {
+	rid, _, d, err := s.groupMember(ctx, realm, groupName, deviceID)
+	if err != nil {
+		return nil, err
+	}
+	return s.deviceStatus(ctx, rid, d)
+}
+
+// groupMember resolves (realm, group name, device id) with upstream's
+// ordering: unknown group first (ErrGroupNotFound), then membership — a
+// registered-but-not-member (or unparseable/unknown) device is store.ErrNotFound,
+// indistinguishable from a missing device.
+func (s *Service) groupMember(ctx context.Context, realm, groupName, deviceID string) (int16, deviceid.ID, *store.Device, error) {
+	rid, err := s.realmID(ctx, realm)
+	if err != nil {
+		return 0, deviceid.ID{}, nil, err
+	}
+	if _, err := s.st.GetGroupByName(ctx, rid, groupName); err != nil {
+		return 0, deviceid.ID{}, nil, missingGroup(groupName)
+	}
+	id, err := deviceid.Parse(deviceID)
+	if err != nil {
+		return 0, deviceid.ID{}, nil, fmt.Errorf("%w: device %s", store.ErrNotFound, deviceID)
+	}
+	groups, err := s.st.ListDeviceGroups(ctx, rid, id)
+	if err != nil {
+		return 0, deviceid.ID{}, nil, err
+	}
+	if !slices.Contains(groups, groupName) {
+		return 0, deviceid.ID{}, nil, fmt.Errorf("%w: device %s", store.ErrNotFound, deviceID)
+	}
+	d, err := s.st.GetDevice(ctx, rid, id)
+	if err != nil {
+		return 0, deviceid.ID{}, nil, err
+	}
+	return rid, id, d, nil
 }
 
 // aliasValuesTaken reports whether any alias value the patch touches is owned
@@ -476,6 +557,167 @@ func (s *Service) group(ctx context.Context, realm, name string) (int16, *store.
 		return 0, nil, err
 	}
 	return rid, g, nil
+}
+
+// --- mirror: by-alias / by-group interface access ---------------------------
+
+// resolveOnDevice finishes a mirror resolution with the same introspection +
+// GetInterface steps resolve() ends with.
+func (s *Service) resolveOnDevice(ctx context.Context, rid int16, d *store.Device, ifaceName string) (*resolved, error) {
+	v, ok := d.Introspection[ifaceName]
+	if !ok {
+		return nil, fmt.Errorf("%w: interface %s not in device introspection", store.ErrNotFound, ifaceName)
+	}
+	si, err := s.st.GetInterface(ctx, rid, ifaceName, v.Major)
+	if err != nil {
+		return nil, err
+	}
+	return &resolved{rid: rid, id: d.ID, iface: si}, nil
+}
+
+// resolveByAlias maps (realm, alias, interface name) to a resolved interface.
+func (s *Service) resolveByAlias(ctx context.Context, realm, alias, ifaceName string) (*resolved, error) {
+	rid, err := s.realmID(ctx, realm)
+	if err != nil {
+		return nil, err
+	}
+	d, err := s.st.GetDeviceByAlias(ctx, rid, alias)
+	if err != nil {
+		return nil, err
+	}
+	return s.resolveOnDevice(ctx, rid, d, ifaceName)
+}
+
+// resolveInGroup maps (realm, group, device id, interface name) to a resolved
+// interface. Membership gates before the interface lookup: upstream answers
+// "Device not found" for a non-member even when the interface would also be
+// missing.
+func (s *Service) resolveInGroup(ctx context.Context, realm, groupName, deviceID, ifaceName string) (*resolved, error) {
+	rid, _, d, err := s.groupMember(ctx, realm, groupName, deviceID)
+	if err != nil {
+		return nil, err
+	}
+	return s.resolveOnDevice(ctx, rid, d, ifaceName)
+}
+
+// readResolved dispatches an already-resolved interface read on its type —
+// the shared tail of GetData and its mirror variants.
+func (s *Service) readResolved(ctx context.Context, r *resolved, path string, opts QueryOpts) (any, error) {
+	if r.iface.Type == interfaceschema.Properties {
+		// See GetData: reducing a snapshot is refused, not silently ignored.
+		if opts.DownsamplePoints > 0 {
+			return nil, fmt.Errorf("%w: downsample_to is not supported on properties interfaces", ErrValidation)
+		}
+		return s.propertiesData(ctx, r, path)
+	}
+	return s.datastreamData(ctx, r, path, opts)
+}
+
+// GetDataByAlias reads an interface endpoint on an alias-addressed device
+// (upstream GET /devices-by-alias/{alias}/interfaces/{iface}[/{path}]).
+func (s *Service) GetDataByAlias(ctx context.Context, realm, alias, ifaceName, path string, opts QueryOpts) (any, error) {
+	r, err := s.resolveByAlias(ctx, realm, alias, ifaceName)
+	if err != nil {
+		return nil, err
+	}
+	return s.readResolved(ctx, r, path, opts)
+}
+
+// GetDataInGroup reads an interface endpoint on a group member (upstream
+// GET /groups/{group}/devices/{device}/interfaces/{iface}[/{path}]).
+func (s *Service) GetDataInGroup(ctx context.Context, realm, groupName, deviceID, ifaceName, path string, opts QueryOpts) (any, error) {
+	r, err := s.resolveInGroup(ctx, realm, groupName, deviceID, ifaceName)
+	if err != nil {
+		return nil, err
+	}
+	return s.readResolved(ctx, r, path, opts)
+}
+
+// PublishDataByAlias publishes through an alias address; the resolution gates
+// access and carries the real device ID to the engine write.
+func (s *Service) PublishDataByAlias(ctx context.Context, realm, alias, ifaceName, path string, value json.RawMessage, ts *time.Time) error {
+	r, err := s.resolveByAlias(ctx, realm, alias, ifaceName)
+	if err != nil {
+		return err
+	}
+	return s.PublishData(ctx, realm, r.id.String(), ifaceName, path, value, ts)
+}
+
+// PublishDataInGroup publishes through a group address.
+func (s *Service) PublishDataInGroup(ctx context.Context, realm, groupName, deviceID, ifaceName, path string, value json.RawMessage, ts *time.Time) error {
+	r, err := s.resolveInGroup(ctx, realm, groupName, deviceID, ifaceName)
+	if err != nil {
+		return err
+	}
+	return s.PublishData(ctx, realm, r.id.String(), ifaceName, path, value, ts)
+}
+
+// UnsetPropertyByAlias unsets through an alias address.
+func (s *Service) UnsetPropertyByAlias(ctx context.Context, realm, alias, ifaceName, path string) error {
+	r, err := s.resolveByAlias(ctx, realm, alias, ifaceName)
+	if err != nil {
+		return err
+	}
+	return s.UnsetProperty(ctx, realm, r.id.String(), ifaceName, path)
+}
+
+// UnsetPropertyInGroup unsets through a group address.
+func (s *Service) UnsetPropertyInGroup(ctx context.Context, realm, groupName, deviceID, ifaceName, path string) error {
+	r, err := s.resolveInGroup(ctx, realm, groupName, deviceID, ifaceName)
+	if err != nil {
+		return err
+	}
+	return s.UnsetProperty(ctx, realm, r.id.String(), ifaceName, path)
+}
+
+// listInterfacesNames renders a device's introspection names sorted ascending.
+func listInterfacesNames(d *store.Device) []string {
+	names := make([]string, 0, len(d.Introspection))
+	for name := range d.Introspection {
+		names = append(names, name)
+	}
+	slices.Sort(names)
+	return names
+}
+
+// ListInterfaces returns a device's introspection interface names, sorted
+// ascending (upstream GET .../devices/{d}/interfaces).
+func (s *Service) ListInterfaces(ctx context.Context, realm, deviceID string) ([]string, error) {
+	rid, err := s.realmID(ctx, realm)
+	if err != nil {
+		return nil, err
+	}
+	id, err := deviceid.Parse(deviceID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: device %s", store.ErrNotFound, deviceID)
+	}
+	d, err := s.st.GetDevice(ctx, rid, id)
+	if err != nil {
+		return nil, err
+	}
+	return listInterfacesNames(d), nil
+}
+
+// ListInterfacesByAlias is ListInterfaces addressed by alias.
+func (s *Service) ListInterfacesByAlias(ctx context.Context, realm, alias string) ([]string, error) {
+	rid, err := s.realmID(ctx, realm)
+	if err != nil {
+		return nil, err
+	}
+	d, err := s.st.GetDeviceByAlias(ctx, rid, alias)
+	if err != nil {
+		return nil, err
+	}
+	return listInterfacesNames(d), nil
+}
+
+// ListInterfacesInGroup is ListInterfaces inside a group (membership gate first).
+func (s *Service) ListInterfacesInGroup(ctx context.Context, realm, groupName, deviceID string) ([]string, error) {
+	_, _, d, err := s.groupMember(ctx, realm, groupName, deviceID)
+	if err != nil {
+		return nil, err
+	}
+	return listInterfacesNames(d), nil
 }
 
 // --- helpers ----------------------------------------------------------------

@@ -39,6 +39,7 @@ func (a *API) Mount(mux *http.ServeMux) {
 	mux.Handle("GET "+base+"/devices/{device}", h(a.getDevice))
 	mux.Handle("PATCH "+base+"/devices/{device}", h(a.patchDevice))
 	mux.Handle("GET "+base+"/devices-by-alias/{alias}", h(a.getDeviceByAlias))
+	mux.Handle("GET "+base+"/devices/{device}/interfaces", h(a.listDeviceInterfaces))
 
 	mux.Handle("GET "+base+"/devices/{device}/interfaces/{interface}", h(a.getData))
 	mux.Handle("GET "+base+"/devices/{device}/interfaces/{interface}/{path...}", h(a.getData))
@@ -46,11 +47,30 @@ func (a *API) Mount(mux *http.ServeMux) {
 	mux.Handle("POST "+base+"/devices/{device}/interfaces/{interface}/{path...}", h(a.putData))
 	mux.Handle("DELETE "+base+"/devices/{device}/interfaces/{interface}/{path...}", h(a.deleteData))
 
+	// Mirror surfaces (upstream registers these alongside the device-scoped
+	// ones; Go 1.22 precedence resolves the overlap with the group routes
+	// above/below without re-registering them).
+	mux.Handle("PATCH "+base+"/devices-by-alias/{alias}", h(a.patchDeviceByAlias))
+	mux.Handle("GET "+base+"/devices-by-alias/{alias}/interfaces", h(a.listInterfacesByAlias))
+	mux.Handle("GET "+base+"/devices-by-alias/{alias}/interfaces/{interface}", h(a.getDataByAlias))
+	mux.Handle("GET "+base+"/devices-by-alias/{alias}/interfaces/{interface}/{path...}", h(a.getDataByAlias))
+	mux.Handle("PUT "+base+"/devices-by-alias/{alias}/interfaces/{interface}/{path...}", h(a.putDataByAlias))
+	mux.Handle("POST "+base+"/devices-by-alias/{alias}/interfaces/{interface}/{path...}", h(a.putDataByAlias))
+	mux.Handle("DELETE "+base+"/devices-by-alias/{alias}/interfaces/{interface}/{path...}", h(a.deleteDataByAlias))
+
 	mux.Handle("GET "+base+"/groups", h(a.listGroups))
 	mux.Handle("POST "+base+"/groups", h(a.createGroup))
 	mux.Handle("GET "+base+"/groups/{group}/devices", h(a.listGroupDevices))
 	mux.Handle("POST "+base+"/groups/{group}/devices", h(a.addGroupDevice))
+	mux.Handle("GET "+base+"/groups/{group}/devices/{device}", h(a.getGroupDevice))
+	mux.Handle("PATCH "+base+"/groups/{group}/devices/{device}", h(a.patchGroupDevice))
 	mux.Handle("DELETE "+base+"/groups/{group}/devices/{device}", h(a.removeGroupDevice))
+	mux.Handle("GET "+base+"/groups/{group}/devices/{device}/interfaces", h(a.listInterfacesInGroup))
+	mux.Handle("GET "+base+"/groups/{group}/devices/{device}/interfaces/{interface}", h(a.getDataInGroup))
+	mux.Handle("GET "+base+"/groups/{group}/devices/{device}/interfaces/{interface}/{path...}", h(a.getDataInGroup))
+	mux.Handle("PUT "+base+"/groups/{group}/devices/{device}/interfaces/{interface}/{path...}", h(a.putDataInGroup))
+	mux.Handle("POST "+base+"/groups/{group}/devices/{device}/interfaces/{interface}/{path...}", h(a.putDataInGroup))
+	mux.Handle("DELETE "+base+"/groups/{group}/devices/{device}/interfaces/{interface}/{path...}", h(a.deleteDataInGroup))
 }
 
 // --- devices ----------------------------------------------------------------
@@ -130,6 +150,43 @@ func (a *API) getDeviceByAlias(w http.ResponseWriter, r *http.Request) {
 	_ = astarteapi.WriteData(w, http.StatusOK, st)
 }
 
+// writeInterfaces renders an interface-name list; names must be non-nil so an
+// empty introspection renders as [] rather than null.
+func (a *API) writeInterfaces(w http.ResponseWriter, names []string) {
+	if names == nil {
+		names = []string{}
+	}
+	_ = astarteapi.WriteData(w, http.StatusOK, names)
+}
+
+func (a *API) listDeviceInterfaces(w http.ResponseWriter, r *http.Request) {
+	names, err := a.svc.ListInterfaces(r.Context(), r.PathValue("realm"), r.PathValue("device"))
+	if err != nil {
+		a.writeError(w, err)
+		return
+	}
+	a.writeInterfaces(w, names)
+}
+
+func (a *API) listInterfacesByAlias(w http.ResponseWriter, r *http.Request) {
+	names, err := a.svc.ListInterfacesByAlias(r.Context(), r.PathValue("realm"), r.PathValue("alias"))
+	if err != nil {
+		a.writeError(w, err)
+		return
+	}
+	a.writeInterfaces(w, names)
+}
+
+func (a *API) listInterfacesInGroup(w http.ResponseWriter, r *http.Request) {
+	names, err := a.svc.ListInterfacesInGroup(r.Context(), r.PathValue("realm"),
+		r.PathValue("group"), r.PathValue("device"))
+	if err != nil {
+		a.writeError(w, err)
+		return
+	}
+	a.writeInterfaces(w, names)
+}
+
 // devicePatchBody is the PATCH /devices/{id} wire shape.
 type devicePatchBody struct {
 	Aliases              map[string]*string `json:"aliases"`
@@ -159,21 +216,64 @@ func (a *API) patchDevice(w http.ResponseWriter, r *http.Request) {
 	_ = astarteapi.WriteData(w, http.StatusOK, st)
 }
 
+func (a *API) patchDeviceByAlias(w http.ResponseWriter, r *http.Request) {
+	// Same content-type discipline as patchDevice, but this controller's
+	// fallback maps the mismatch to 400 "Bad request" upstream (probed live),
+	// unlike the device path's unmapped 500.
+	if r.Header.Get("Content-Type") != "application/merge-patch+json" {
+		_ = astarteapi.WriteError(w, http.StatusBadRequest, "Bad request")
+		return
+	}
+	var body devicePatchBody
+	if err := astarteapi.DecodeData(r.Body, maxBodyBytes, &body); err != nil {
+		_ = astarteapi.WriteBadRequest(w)
+		return
+	}
+	st, err := a.svc.PatchDeviceByAlias(r.Context(), r.PathValue("realm"), r.PathValue("alias"), DevicePatch(body))
+	if err != nil {
+		a.writeError(w, err)
+		return
+	}
+	_ = astarteapi.WriteData(w, http.StatusOK, st)
+}
+
 // --- interface data ---------------------------------------------------------
 
-func (a *API) getData(w http.ResponseWriter, r *http.Request) {
+// serveData runs the shared tail of every interface-data GET: query parsing,
+// the service read (via the caller's resolution), and the envelope write.
+func (a *API) serveData(w http.ResponseWriter, r *http.Request, read func(QueryOpts) (any, error)) {
 	opts, err := parseQueryOpts(r)
 	if err != nil {
 		_ = astarteapi.WriteError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	data, err := a.svc.GetData(r.Context(), r.PathValue("realm"), r.PathValue("device"),
-		r.PathValue("interface"), pathParam(r), opts)
+	data, err := read(opts)
 	if err != nil {
 		a.writeError(w, err)
 		return
 	}
 	_ = astarteapi.WriteData(w, http.StatusOK, data)
+}
+
+func (a *API) getData(w http.ResponseWriter, r *http.Request) {
+	a.serveData(w, r, func(opts QueryOpts) (any, error) {
+		return a.svc.GetData(r.Context(), r.PathValue("realm"), r.PathValue("device"),
+			r.PathValue("interface"), pathParam(r), opts)
+	})
+}
+
+func (a *API) getDataByAlias(w http.ResponseWriter, r *http.Request) {
+	a.serveData(w, r, func(opts QueryOpts) (any, error) {
+		return a.svc.GetDataByAlias(r.Context(), r.PathValue("realm"), r.PathValue("alias"),
+			r.PathValue("interface"), pathParam(r), opts)
+	})
+}
+
+func (a *API) getDataInGroup(w http.ResponseWriter, r *http.Request) {
+	a.serveData(w, r, func(opts QueryOpts) (any, error) {
+		return a.svc.GetDataInGroup(r.Context(), r.PathValue("realm"), r.PathValue("group"), r.PathValue("device"),
+			r.PathValue("interface"), pathParam(r), opts)
+	})
 }
 
 func (a *API) putData(w http.ResponseWriter, r *http.Request) {
@@ -193,6 +293,56 @@ func (a *API) putData(w http.ResponseWriter, r *http.Request) {
 
 func (a *API) deleteData(w http.ResponseWriter, r *http.Request) {
 	err := a.svc.UnsetProperty(r.Context(), r.PathValue("realm"), r.PathValue("device"),
+		r.PathValue("interface"), pathParam(r))
+	if err != nil {
+		a.writeError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (a *API) putDataByAlias(w http.ResponseWriter, r *http.Request) {
+	var value json.RawMessage
+	if err := astarteapi.DecodeData(r.Body, maxBodyBytes, &value); err != nil {
+		_ = astarteapi.WriteBadRequest(w)
+		return
+	}
+	err := a.svc.PublishDataByAlias(r.Context(), r.PathValue("realm"), r.PathValue("alias"),
+		r.PathValue("interface"), pathParam(r), value, nil)
+	if err != nil {
+		a.writeError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+}
+
+func (a *API) putDataInGroup(w http.ResponseWriter, r *http.Request) {
+	var value json.RawMessage
+	if err := astarteapi.DecodeData(r.Body, maxBodyBytes, &value); err != nil {
+		_ = astarteapi.WriteBadRequest(w)
+		return
+	}
+	err := a.svc.PublishDataInGroup(r.Context(), r.PathValue("realm"), r.PathValue("group"), r.PathValue("device"),
+		r.PathValue("interface"), pathParam(r), value, nil)
+	if err != nil {
+		a.writeError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+}
+
+func (a *API) deleteDataByAlias(w http.ResponseWriter, r *http.Request) {
+	err := a.svc.UnsetPropertyByAlias(r.Context(), r.PathValue("realm"), r.PathValue("alias"),
+		r.PathValue("interface"), pathParam(r))
+	if err != nil {
+		a.writeError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (a *API) deleteDataInGroup(w http.ResponseWriter, r *http.Request) {
+	err := a.svc.UnsetPropertyInGroup(r.Context(), r.PathValue("realm"), r.PathValue("group"), r.PathValue("device"),
 		r.PathValue("interface"), pathParam(r))
 	if err != nil {
 		a.writeError(w, err)
@@ -271,6 +421,38 @@ func (a *API) removeGroupDevice(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// getGroupDevice serves GET /groups/{group}/devices/{device}: the normal
+// device status projection behind the membership gate.
+func (a *API) getGroupDevice(w http.ResponseWriter, r *http.Request) {
+	st, err := a.svc.GetGroupDevice(r.Context(), r.PathValue("realm"), r.PathValue("group"), r.PathValue("device"))
+	if err != nil {
+		a.writeError(w, err)
+		return
+	}
+	_ = astarteapi.WriteData(w, http.StatusOK, st)
+}
+
+func (a *API) patchGroupDevice(w http.ResponseWriter, r *http.Request) {
+	// Same header comparison as patchDevice; upstream's group-scoped fallback
+	// has no clause for the mismatch either, so it also Phoenix-500s.
+	if r.Header.Get("Content-Type") != "application/merge-patch+json" {
+		_ = astarteapi.WriteInternalServerError(w)
+		return
+	}
+	var body devicePatchBody
+	if err := astarteapi.DecodeData(r.Body, maxBodyBytes, &body); err != nil {
+		_ = astarteapi.WriteBadRequest(w)
+		return
+	}
+	st, err := a.svc.PatchGroupDevice(r.Context(), r.PathValue("realm"), r.PathValue("group"),
+		r.PathValue("device"), DevicePatch(body))
+	if err != nil {
+		a.writeError(w, err)
+		return
+	}
+	_ = astarteapi.WriteData(w, http.StatusOK, st)
+}
+
 // --- shared plumbing --------------------------------------------------------
 
 // pathParam reconstructs the Astarte interface path ("/a/b") from the
@@ -337,6 +519,8 @@ func (a *API) writeError(w http.ResponseWriter, err error) {
 		_ = astarteapi.WriteError(w, http.StatusUnprocessableEntity, validationDetail(err))
 	case errors.Is(err, store.ErrAlreadyExists):
 		_ = astarteapi.WriteError(w, http.StatusConflict, "Already exists")
+	case errors.Is(err, ErrGroupNotFound):
+		_ = astarteapi.WriteError(w, http.StatusNotFound, "Group not found")
 	case errors.Is(err, store.ErrNotFound):
 		_ = astarteapi.WriteDeviceNotFound(w)
 	default:
