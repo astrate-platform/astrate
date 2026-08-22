@@ -27,6 +27,11 @@ import (
 // and fmt.Errorf("%w: ...", ErrValidation, ...) to attach the detail.
 var ErrValidation = errors.New("realm: validation failed")
 
+// ErrMaximumDatabaseRetentionExceeded rejects an interface install/update
+// whose mapping TTL exceeds the realm's datastream_maximum_storage_retention
+// ceiling (upstream error_name maximum_database_retention_exceeded, #72).
+var ErrMaximumDatabaseRetentionExceeded = errors.New("realm: maximum_database_retention_exceeded")
+
 // Invalidator is the in-process cache-invalidation callback the engine
 // satisfies (*engine.Engine's RefreshInterfaces / RefreshTriggers). After a
 // realm mutation the service refreshes the engine's compiled snapshot so the
@@ -126,18 +131,22 @@ func (s *Service) realmID(ctx context.Context, realm string) (int16, error) {
 // (docs/ROADMAP.md §8.1). A duplicate (name, major) yields
 // store.ErrAlreadyExists; a schema violation yields ErrValidation.
 func (s *Service) InstallInterface(ctx context.Context, realm string, def []byte) (*store.StoredInterface, error) {
-	rid, err := s.realmID(ctx, realm)
+	r, err := s.st.GetRealmByName(ctx, realm)
 	if err != nil {
 		return nil, err
 	}
-	if _, err := interfaceschema.ParseInterface(def); err != nil {
+	iface, err := interfaceschema.ParseInterface(def)
+	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrValidation, err)
 	}
-	si, err := s.st.InstallInterface(ctx, rid, def)
+	if err := s.checkRetentionCeiling(r, iface); err != nil {
+		return nil, err
+	}
+	si, err := s.st.InstallInterface(ctx, r.ID, def)
 	if err != nil {
 		return nil, err
 	}
-	s.interfacesChanged(ctx, rid, realm)
+	s.interfacesChanged(ctx, r.ID, realm)
 	return si, nil
 }
 
@@ -146,7 +155,7 @@ func (s *Service) InstallInterface(ctx context.Context, realm string, def []byte
 // mapping attributes, same type/ownership/aggregation, strictly higher
 // minor). The interface major must already exist.
 func (s *Service) UpdateInterface(ctx context.Context, realm string, def []byte) (*store.StoredInterface, error) {
-	rid, err := s.realmID(ctx, realm)
+	r, err := s.st.GetRealmByName(ctx, realm)
 	if err != nil {
 		return nil, err
 	}
@@ -154,7 +163,10 @@ func (s *Service) UpdateInterface(ctx context.Context, realm string, def []byte)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrValidation, err)
 	}
-	stored, err := s.st.GetInterface(ctx, rid, next.Name, next.Major)
+	if err := s.checkRetentionCeiling(r, next); err != nil {
+		return nil, err
+	}
+	stored, err := s.st.GetInterface(ctx, r.ID, next.Name, next.Major)
 	if err != nil {
 		return nil, err
 	}
@@ -165,12 +177,29 @@ func (s *Service) UpdateInterface(ctx context.Context, realm string, def []byte)
 	if err := interfaceschema.CheckMinorUpgrade(prev, next); err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrValidation, err)
 	}
-	si, err := s.st.UpdateInterface(ctx, rid, def)
+	si, err := s.st.UpdateInterface(ctx, r.ID, def)
 	if err != nil {
 		return nil, err
 	}
-	s.interfacesChanged(ctx, rid, realm)
+	s.interfacesChanged(ctx, r.ID, realm)
 	return si, nil
+}
+
+// checkRetentionCeiling rejects iface when any mapping's database TTL exceeds
+// the realm's datastream_maximum_storage_retention ceiling (#72). Realms
+// without a ceiling pass untouched.
+func (s *Service) checkRetentionCeiling(r *store.Realm, iface *interfaceschema.Interface) error {
+	if r.DatastreamMaximumStorageRetention == nil {
+		return nil
+	}
+	for i := range iface.Mappings {
+		m := &iface.Mappings[i]
+		if m.DatabaseRetentionPolicy == interfaceschema.UseTTL &&
+			m.DatabaseRetentionTTL > *r.DatastreamMaximumStorageRetention {
+			return ErrMaximumDatabaseRetentionExceeded
+		}
+	}
+	return nil
 }
 
 // DeleteInterface removes an interface major. The store enforces the upstream
@@ -441,14 +470,18 @@ func (s *Service) GetDeviceRegistrationLimit(ctx context.Context, realm string) 
 
 // GetDatastreamMaximumStorageRetention returns the realm's datastream maximum
 // storage retention in seconds, upstream GET
-// /config/datastream_maximum_storage_retention (served since 1.2.0). Astrate
-// has no retention ceiling yet (issue #72), and upstream's default for a
-// realm that never set one is 0 — so 0 is always the accurate answer today.
+// /config/datastream_maximum_storage_retention (served since 1.2.0). An unset
+// ceiling renders as 0 — the #60 wire contract (upstream answers null here,
+// a recorded deviation), pinned by tests.
 func (s *Service) GetDatastreamMaximumStorageRetention(ctx context.Context, realm string) (int64, error) {
-	if _, err := s.st.GetRealmByName(ctx, realm); err != nil {
+	r, err := s.st.GetRealmByName(ctx, realm)
+	if err != nil {
 		return 0, err
 	}
-	return 0, nil
+	if r.DatastreamMaximumStorageRetention == nil {
+		return 0, nil
+	}
+	return *r.DatastreamMaximumStorageRetention, nil
 }
 
 // --- config/auth ------------------------------------------------------------

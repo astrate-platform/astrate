@@ -301,6 +301,9 @@ func majorParam(w http.ResponseWriter, r *http.Request) (int, bool) {
 // writeError maps service/store errors onto upstream-shaped responses.
 func (a *API) writeError(w http.ResponseWriter, err error) {
 	switch {
+	case errors.Is(err, ErrMaximumDatabaseRetentionExceeded):
+		_ = astarteapi.WriteFieldErrors(w, http.StatusUnprocessableEntity,
+			map[string][]string{"error_name": {"maximum_database_retention_exceeded"}})
 	case errors.Is(err, ErrValidation):
 		_ = astarteapi.WriteError(w, http.StatusUnprocessableEntity, validationDetail(err))
 	case errors.Is(err, store.ErrAlreadyExists):

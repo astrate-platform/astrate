@@ -152,6 +152,24 @@ func run(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 		return err
 	}
 
+	// Realm datastream retention ceilings (#72): sweep hourly — and once
+	// right now, before the first tick — capping even no_ttl interfaces
+	// (upstream clamps at write time; Astrate stores no per-row TTL).
+	go func() {
+		t := time.NewTicker(time.Hour)
+		defer t.Stop()
+		for {
+			if err := st.EnforceRealmRetentionCeilings(ctx); err != nil {
+				log.Warn("retention ceiling sweep failed", "error", err)
+			}
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+			}
+		}
+	}()
+
 	if cfg.Realm.Name != "" {
 		if err := autoProvisionRealm(ctx, st, hkSvc, cfg, log); err != nil {
 			shutdown(nil, b, flowSvc, e, log)

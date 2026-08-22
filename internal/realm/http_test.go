@@ -10,6 +10,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"encoding/pem"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -255,6 +256,68 @@ func TestRealmManagement(t *testing.T) {
 			t.Errorf("config/auth key not rotated")
 		}
 	})
+}
+
+// TestRealmManagementRetentionCeiling pins the #72 enforcement surface:
+// installs and minor updates whose mapping TTL exceeds the realm's
+// datastream_maximum_storage_retention answer upstream's named 422 envelope
+// and leave nothing behind, a sub-ceiling install passes, and the config GET
+// reports the stored ceiling (0 when unset — the #60 wire contract).
+func TestRealmManagementRetentionCeiling(t *testing.T) {
+	r := newRig(t)
+
+	const retIface = "com.ex.M7a.Retention"
+	retDef := func(minor, ttl int) string {
+		return fmt.Sprintf(`{"interface_name":"%s","version_major":0,"version_minor":%d,"type":"datastream","ownership":"device",`+
+			`"mappings":[{"endpoint":"/value","type":"double","database_retention_policy":"use_ttl","database_retention_ttl":%d}]}`,
+			retIface, minor, ttl)
+	}
+	const overEnvelope = `{"errors":{"error_name":["maximum_database_retention_exceeded"]}}`
+
+	var retention int64
+	decodeData(t, r.req(t, http.MethodGet, "/config/datastream_maximum_storage_retention", "", r.rmaToken), &retention)
+	if retention != 0 {
+		t.Errorf("retention before patch = %d, want 0", retention)
+	}
+
+	// Set the ceiling through the store: this suite has only RM; housekeeping
+	// owns realm PATCH.
+	if err := r.st.UpdateRealm(context.Background(), r.realm,
+		store.RealmPatch{PatchRetention: true, SetRetention: 3600}); err != nil {
+		t.Fatalf("UpdateRealm(retention=3600): %v", err)
+	}
+	decodeData(t, r.req(t, http.MethodGet, "/config/datastream_maximum_storage_retention", "", r.rmaToken), &retention)
+	if retention != 3600 {
+		t.Errorf("retention after patch = %d, want 3600", retention)
+	}
+
+	// Install above the ceiling → upstream's named 422, nothing installed.
+	rec := r.req(t, http.MethodPost, "/interfaces", retDef(1, 7200), r.rmaToken)
+	if rec.Code != http.StatusUnprocessableEntity || rec.Body.String() != overEnvelope {
+		t.Errorf("install ttl 7200 under a 3600 ceiling: got %d %s, want 422 %s",
+			rec.Code, rec.Body, overEnvelope)
+	}
+	if rec := r.req(t, http.MethodGet, "/interfaces/"+retIface+"/0", "", r.rmaToken); rec.Code != http.StatusNotFound {
+		t.Errorf("get rejected install: got %d, want 404", rec.Code)
+	}
+
+	// Same shape within the ceiling installs fine.
+	if rec := r.req(t, http.MethodPost, "/interfaces", retDef(1, 1800), r.rmaToken); rec.Code != http.StatusCreated {
+		t.Fatalf("install ttl 1800: got %d, want 201 (%s)", rec.Code, rec.Body)
+	}
+
+	// A minor update raising the TTL past the ceiling is refused too, and
+	// leaves the installed interface untouched at v0.1.
+	rec = r.req(t, http.MethodPut, "/interfaces/"+retIface+"/0", retDef(2, 7200), r.rmaToken)
+	if rec.Code != http.StatusUnprocessableEntity || rec.Body.String() != overEnvelope {
+		t.Errorf("minor update to ttl 7200: got %d %s, want 422 %s",
+			rec.Code, rec.Body, overEnvelope)
+	}
+	var majors []int
+	decodeData(t, r.req(t, http.MethodGet, "/interfaces/"+retIface, "", r.rmaToken), &majors)
+	if len(majors) != 1 || majors[0] != 0 {
+		t.Errorf("majors after refused update = %v, want [0]", majors)
+	}
 }
 
 // --- helpers ----------------------------------------------------------------
