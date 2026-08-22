@@ -39,6 +39,8 @@ func (a *API) Mount(mux *http.ServeMux) {
 	mux.Handle("POST /flow/v1/{realm}/flows", h(a.startFlow))
 	mux.Handle("GET /flow/v1/{realm}/flows/{name}", h(a.getFlow))
 	mux.Handle("DELETE /flow/v1/{realm}/flows/{name}", h(a.stopFlow))
+	mux.Handle("POST /flow/v1/{realm}/flows/{name}/reload", h(a.reloadFlow))
+	mux.Handle("PUT /flow/v1/{realm}/flows/{name}/config", h(a.updateFlowConfig))
 
 	mux.Handle("GET /flow/v1/{realm}/blocks", h(a.listBlocks))
 	mux.Handle("GET /flow/v1/{realm}/blocks/{type}", h(a.getBlock))
@@ -164,6 +166,33 @@ func (a *API) stopFlow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// reloadFlow re-resolves the pipeline + substitutes stored config into a new
+// live graph (issue #44).
+func (a *API) reloadFlow(w http.ResponseWriter, r *http.Request) {
+	view, err := a.svc.ReloadFlow(r.Context(), r.PathValue("realm"), r.PathValue("name"))
+	if err != nil {
+		a.writeError(w, err)
+		return
+	}
+	_ = astarteapi.WriteData(w, http.StatusOK, view)
+}
+
+// updateFlowConfig replaces a flow's config snapshot; a live flow is rebuilt
+// with it (issue #46). Body is the config JSON object.
+func (a *API) updateFlowConfig(w http.ResponseWriter, r *http.Request) {
+	var config json.RawMessage
+	if err := astarteapi.DecodeData(r.Body, maxBodyBytes, &config); err != nil {
+		_ = astarteapi.WriteBadRequest(w)
+		return
+	}
+	view, err := a.svc.UpdateFlowConfig(r.Context(), r.PathValue("realm"), r.PathValue("name"), config)
+	if err != nil {
+		a.writeError(w, err)
+		return
+	}
+	_ = astarteapi.WriteData(w, http.StatusOK, view)
 }
 
 func (a *API) listBlocks(w http.ResponseWriter, r *http.Request) {

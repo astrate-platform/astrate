@@ -4,10 +4,24 @@ package store
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"reflect"
 	"testing"
 	"time"
 )
+
+// jsonEqual compares two JSON blobs semantically (jsonb normalizes spacing).
+func jsonEqual(a, b []byte) bool {
+	var va, vb any
+	if err := json.Unmarshal(a, &va); err != nil {
+		return false
+	}
+	if err := json.Unmarshal(b, &vb); err != nil {
+		return false
+	}
+	return reflect.DeepEqual(va, vb)
+}
 
 func testFlows(t *testing.T, s *Store) {
 	ctx := context.Background()
@@ -25,7 +39,7 @@ func testFlows(t *testing.T, s *Store) {
 	if !f.AutoRestart || f.Status != "stopped" {
 		t.Errorf("defaults: auto_restart=%v status=%q", f.AutoRestart, f.Status)
 	}
-	if string(f.Config) != string(cfg) {
+	if !jsonEqual(f.Config, cfg) {
 		t.Errorf("config = %s, want %s", f.Config, cfg)
 	}
 
@@ -127,5 +141,21 @@ func testFlows(t *testing.T, s *Store) {
 	}
 	if err := s.UpdateFlowRuntime(ctx, realm.ID, "ghost", "stopped", nil, nil, nil); !errors.Is(err, ErrNotFound) {
 		t.Errorf("update unknown = %v, want ErrNotFound", err)
+	}
+
+	// UpdateFlowConfig replaces the snapshot and touches nothing else.
+	newCfg := []byte(`{"webhook_url":"https://example.com/v2"}`)
+	upd, err := s.UpdateFlowConfig(ctx, realm.ID, "prod-webhooks", newCfg)
+	if err != nil {
+		t.Fatalf("UpdateFlowConfig: %v", err)
+	}
+	if !jsonEqual(upd.Config, newCfg) {
+		t.Errorf("updated config = %s, want %s", upd.Config, newCfg)
+	}
+	if upd.Status != "running" {
+		t.Errorf("UpdateFlowConfig changed status to %q, want running (untouched)", upd.Status)
+	}
+	if _, err := s.UpdateFlowConfig(ctx, realm.ID, "ghost", newCfg); !errors.Is(err, ErrNotFound) {
+		t.Errorf("UpdateFlowConfig unknown = %v, want ErrNotFound", err)
 	}
 }

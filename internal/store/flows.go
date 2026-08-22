@@ -165,6 +165,28 @@ func (s *Store) UpdateFlowRuntime(ctx context.Context, realmID int16, name, stat
 	return nil
 }
 
+// UpdateFlowConfig replaces the config snapshot of a durable flow. The
+// caller is responsible for validating it substitutes cleanly against the
+// flow's pipeline; runtime status columns are left untouched.
+func (s *Store) UpdateFlowConfig(ctx context.Context, realmID int16, name string, config []byte) (*Flow, error) {
+	if len(config) == 0 {
+		config = []byte("{}")
+	}
+	row := s.pool.QueryRow(ctx,
+		`UPDATE flows SET config = $3, updated_at = now()
+		 WHERE realm_id = $1 AND name = $2
+		 RETURNING `+flowColumns,
+		realmID, name, config)
+	f, err := scanFlow(row)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, fmt.Errorf("%w: flow %q", ErrNotFound, name)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("store: updating flow config %q: %w", name, err)
+	}
+	return f, nil
+}
+
 // DeleteFlow removes a durable flow row.
 func (s *Store) DeleteFlow(ctx context.Context, realmID int16, name string) error {
 	tag, err := s.pool.Exec(ctx,
