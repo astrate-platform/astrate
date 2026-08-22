@@ -137,6 +137,13 @@ func CompilePolicy(def []byte) (*Policy, error) {
 		handlers = append(handlers, ch)
 	}
 
+	// Upstream rejects policies whose handlers overlap on any status code,
+	// regardless of strategy (probed live v1.2.0, #65): every failed delivery
+	// must have exactly one governing handler.
+	if err := checkHandlersDisjoint(handlers); err != nil {
+		return nil, fmt.Errorf("triggers: %w", err)
+	}
+
 	if hasRetry {
 		if doc.RetryTimes == nil || *doc.RetryTimes < 1 || *doc.RetryTimes > 100 {
 			return nil, fmt.Errorf("triggers: retry_times must be 1-100 when any handler retries")
@@ -146,6 +153,9 @@ func CompilePolicy(def []byte) (*Policy, error) {
 	}
 	if doc.MaximumCapacity < 1 {
 		return nil, fmt.Errorf("triggers: maximum_capacity must be a positive integer")
+	}
+	if doc.PrefetchCount != nil && (*doc.PrefetchCount < 1 || *doc.PrefetchCount > 300) {
+		return nil, fmt.Errorf("triggers: prefetch_count must be between 1 and 300")
 	}
 	if doc.EventTTL != nil && *doc.EventTTL < 0 {
 		return nil, fmt.Errorf("triggers: event_ttl must be non-negative")
@@ -160,7 +170,7 @@ func CompilePolicy(def []byte) (*Policy, error) {
 		eventTTL = time.Duration(*doc.EventTTL) * time.Second
 	}
 	prefetchCount := 1
-	if doc.PrefetchCount != nil && *doc.PrefetchCount > 0 {
+	if doc.PrefetchCount != nil {
 		prefetchCount = *doc.PrefetchCount
 	}
 
@@ -207,6 +217,41 @@ func compileHandlerOn(raw json.RawMessage) (compiledHandler, error) {
 		}
 	}
 	return compiledHandler{onKind: onExplicit, codes: codes}, nil
+}
+
+// checkHandlersDisjoint rejects a handler set where any two handlers claim at
+// least one common status code in 400..599 (upstream's pairwise-disjointness
+// rule; strategy-independent). A 200-bit mask over 400..599 keeps this O(n).
+func checkHandlersDisjoint(handlers []compiledHandler) error {
+	var claimed [200]bool // index = code - 400
+	for i := range handlers {
+		h := &handlers[i]
+		var own []int
+		switch h.onKind {
+		case onKeyword:
+			lo, hi := 400, 599
+			switch h.keyword {
+			case "client_error":
+				hi = 499
+			case "server_error":
+				lo = 500
+			}
+			for c := lo; c <= hi; c++ {
+				own = append(own, c)
+			}
+		case onExplicit:
+			own = h.codes
+		}
+		for _, c := range own {
+			if idx := c - 400; claimed[idx] {
+				return fmt.Errorf("error handlers must all handle distinct errors")
+			}
+		}
+		for _, c := range own {
+			claimed[c-400] = true
+		}
+	}
+	return nil
 }
 
 // Decision is what a policy prescribes, plus why — the reason is logged by

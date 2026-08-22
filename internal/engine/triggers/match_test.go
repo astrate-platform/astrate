@@ -392,12 +392,14 @@ func TestCompileActions(t *testing.T) {
 		t.Errorf("legacy http_post_url action: %+v", legacy.Action)
 	}
 
+	// Non-amqp custom action (#64: amqp_exchange actions are rejected at
+	// compile time); it must still land on the Forwarder seam.
 	custom := compile(t, `{
-		"action": {"amqp_exchange": "astarte_events_test", "amqp_routing_key": "k"},
+		"action": {"nats_subject": "astarte_events_test"},
 		"simple_triggers": [{"type": "device_trigger", "on": "device_connected"}]
 	}`)
 	if custom.Action.Custom == nil {
-		t.Error("AMQP-style action did not land on the Forwarder seam")
+		t.Error("custom action did not land on the Forwarder seam")
 	}
 
 	templated := compile(t, `{

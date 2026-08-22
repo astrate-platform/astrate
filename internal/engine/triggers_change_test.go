@@ -70,11 +70,12 @@ func (fw *fakeForwarder) waitForCount(t *testing.T, name string, n int) {
 }
 
 // changeTriggerDef builds a single-condition trigger with a custom action so
-// deliveries land on the fakeForwarder instead of a webhook.
+// deliveries land on the fakeForwarder instead of a webhook. Non-amqp shape:
+// amqp_exchange actions are rejected at compile time since #64.
 func changeTriggerDef(name, on, iface string, major int, matchPath string) string {
 	return `{
 		"name": "` + name + `",
-		"action": {"amqp_exchange": "astarte_events", "amqp_routing_key": "k"},
+		"action": {"nats_subject": "astarte_events"},
 		"simple_triggers": [{
 			"type": "data_trigger", "on": "` + on + `",
 			"interface_name": "` + iface + `", "interface_major": ` + strconv.Itoa(major) + `,

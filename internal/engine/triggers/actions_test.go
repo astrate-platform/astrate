@@ -118,13 +118,40 @@ func TestParseAction(t *testing.T) {
 		}
 	})
 
-	t.Run("non-HTTP action kept verbatim for the forwarder", func(t *testing.T) {
-		raw := `{"amqp_exchange":"events","amqp_routing_key":"r"}`
+	t.Run("non-amqp custom action kept verbatim for the forwarder", func(t *testing.T) {
+		raw := `{"nats_subject":"events"}`
 		a, _, err := parseAction([]byte(raw))
 		if err != nil {
 			t.Fatal(err)
 		}
 		if a.Method != "" || a.URL != "" || string(a.Custom) != raw {
+			t.Errorf("got %+v", a)
+		}
+	})
+
+	// #64: upstream AMQP trigger actions are rejected at compile time instead
+	// of silently becoming a Custom action that is skipped or forwarded into
+	// an unconsumed subject. A legacy stored amqp trigger now fails loudly at
+	// engine reload — the intended trade (clear error beats silent
+	// misbehavior).
+	t.Run("amqp action rejected", func(t *testing.T) {
+		raw := `{"amqp_exchange":"astarte_events_realm_x","amqp_routing_key":"rk",` +
+			`"amqp_queue":"q","amqp_declare_queue":true,"amqp_auto_delete_queue":false}`
+		_, _, err := parseAction([]byte(raw))
+		if err == nil {
+			t.Fatal("want error for amqp_exchange action")
+		}
+		if !contains(err.Error(), "not supported") {
+			t.Errorf("error %q does not mention %q", err.Error(), "not supported")
+		}
+	})
+
+	t.Run("same object without amqp_exchange parses as HTTP", func(t *testing.T) {
+		a, _, err := parseAction([]byte(`{"http_url":"https://x/h","http_method":"post"}`))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if a.Method != http.MethodPost || a.URL != "https://x/h" || a.Custom != nil {
 			t.Errorf("got %+v", a)
 		}
 	})

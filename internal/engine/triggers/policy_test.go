@@ -111,6 +111,52 @@ func TestCompilePolicy(t *testing.T) {
 			def:     `{"name":"k","error_handlers":[{"on":[200],"strategy":"discard"}],"maximum_capacity":1}`,
 			wantErr: "status codes must be in 400..599",
 		},
+		// --- pairwise-disjoint error handlers (#65, probed upstream v1.2.0) ---
+		{
+			name:    "overlapping explicit lists rejected",
+			def:     `{"name":"k","error_handlers":[{"on":[400,401],"strategy":"discard"},{"on":[401,402],"strategy":"discard"}],"maximum_capacity":1}`,
+			wantErr: "must all handle distinct errors",
+		},
+		{
+			name:    "any_error twice rejected",
+			def:     `{"name":"k","error_handlers":[{"on":"any_error","strategy":"discard"},{"on":"any_error","strategy":"discard"}],"maximum_capacity":1}`,
+			wantErr: "must all handle distinct errors",
+		},
+		{
+			name:    "any_error plus explicit code rejected",
+			def:     `{"name":"k","error_handlers":[{"on":"any_error","strategy":"discard"},{"on":[450],"strategy":"retry"}],"maximum_capacity":1,"retry_times":1}`,
+			wantErr: "must all handle distinct errors",
+		},
+		{
+			name:    "server_error plus any_error rejected",
+			def:     `{"name":"k","error_handlers":[{"on":"server_error","strategy":"retry"},{"on":"any_error","strategy":"discard"}],"maximum_capacity":1,"retry_times":1}`,
+			wantErr: "must all handle distinct errors",
+		},
+		{
+			name:    "client_error plus explicit 404 rejected cleanly",
+			def:     `{"name":"k","error_handlers":[{"on":"client_error","strategy":"retry"},{"on":[404],"strategy":"discard"}],"maximum_capacity":1,"retry_times":1}`,
+			wantErr: "must all handle distinct errors",
+		},
+		{
+			name:    "same code discarded twice rejected regardless of strategy",
+			def:     `{"name":"k","error_handlers":[{"on":[500],"strategy":"discard"},{"on":[500],"strategy":"discard"}],"maximum_capacity":1}`,
+			wantErr: "must all handle distinct errors",
+		},
+		{
+			name:    "chained three-way overlap caught by pairwise checks",
+			def:     `{"name":"k","error_handlers":[{"on":[400,401],"strategy":"discard"},{"on":[401,402],"strategy":"discard"},{"on":[402,403],"strategy":"discard"}],"maximum_capacity":1}`,
+			wantErr: "must all handle distinct errors",
+		},
+		{
+			name:    "disjoint explicit codes accepted",
+			def:     `{"name":"k","error_handlers":[{"on":[400],"strategy":"discard"},{"on":[401],"strategy":"retry"}],"maximum_capacity":1,"retry_times":1}`,
+			wantErr: "",
+		},
+		{
+			name:    "server_error plus client-range code accepted",
+			def:     `{"name":"k","error_handlers":[{"on":"server_error","strategy":"retry"},{"on":[401],"strategy":"discard"}],"maximum_capacity":1,"retry_times":1}`,
+			wantErr: "",
+		},
 		{
 			name:              "prefetch_count round-trips",
 			def:               `{"name":"k","error_handlers":[{"on":"any_error","strategy":"discard"}],"maximum_capacity":1,"prefetch_count":5}`,
@@ -122,6 +168,38 @@ func TestCompilePolicy(t *testing.T) {
 			def:               `{"name":"k","error_handlers":[{"on":"any_error","strategy":"discard"}],"maximum_capacity":1}`,
 			wantErr:           "",
 			wantPrefetchCount: 1,
+		},
+		{
+			name:              "prefetch_count 1 accepted (lower bound)",
+			def:               `{"name":"k","error_handlers":[{"on":"any_error","strategy":"discard"}],"maximum_capacity":1,"prefetch_count":1}`,
+			wantErr:           "",
+			wantPrefetchCount: 1,
+		},
+		{
+			name:              "prefetch_count 300 accepted (upper bound)",
+			def:               `{"name":"k","error_handlers":[{"on":"any_error","strategy":"discard"}],"maximum_capacity":1,"prefetch_count":300}`,
+			wantErr:           "",
+			wantPrefetchCount: 300,
+		},
+		{
+			name:    "prefetch_count 0 rejected",
+			def:     `{"name":"k","error_handlers":[{"on":"any_error","strategy":"discard"}],"maximum_capacity":1,"prefetch_count":0}`,
+			wantErr: "prefetch_count must be between 1 and 300",
+		},
+		{
+			name:    "prefetch_count 301 rejected",
+			def:     `{"name":"k","error_handlers":[{"on":"any_error","strategy":"discard"}],"maximum_capacity":1,"prefetch_count":301}`,
+			wantErr: "prefetch_count must be between 1 and 300",
+		},
+		{
+			name:    "retry_times 1 accepted (lower bound)",
+			def:     `{"name":"k","error_handlers":[{"on":"any_error","strategy":"retry"}],"maximum_capacity":1,"retry_times":1}`,
+			wantErr: "",
+		},
+		{
+			name:    "retry_times 100 accepted (upper bound)",
+			def:     `{"name":"k","error_handlers":[{"on":"any_error","strategy":"retry"}],"maximum_capacity":1,"retry_times":100}`,
+			wantErr: "",
 		},
 	}
 	for _, tt := range tests {

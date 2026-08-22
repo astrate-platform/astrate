@@ -76,7 +76,7 @@ func testEngineChangeTriggers(t *testing.T, rig *engineRig) {
 	}
 	prDef := `{
 		"name": "t_pr",
-		"action": {"amqp_exchange": "astarte_events", "amqp_routing_key": "k"},
+		"action": {"nats_subject": "astarte_events"},
 		"simple_triggers": [{
 			"type": "data_trigger", "on": "path_removed",
 			"interface_name": "` + propsIface + `", "interface_major": 2,

@@ -553,6 +553,69 @@ func TestRealmManagementTTLBand(t *testing.T) {
 	}
 }
 
+// TestRealmManagementAmqpTriggerAndPolicyGuards pins #64/#65 on the wire:
+// an amqp-exchange trigger action is rejected at creation with 422 (upstream
+// would accept it; Astrate deliberately refuses — validate-and-reject beats
+// silent misbehavior), the plain HTTP twin still creates, and policy
+// overlap/prefetch violations answer 422 with the probed upstream wording
+// while a disjoint policy installs.
+func TestRealmManagementAmqpTriggerAndPolicyGuards(t *testing.T) {
+	r := newRig(t)
+
+	t.Run("amqp action rejected", func(t *testing.T) {
+		def := `{"name":"on_amqp","action":{"amqp_exchange":"astarte_events_` + r.realm + `",` +
+			`"amqp_routing_key":"rk","amqp_queue":"q"},"simple_triggers":[{"type":"data_trigger",` +
+			`"on":"incoming_data","interface_name":"com.ex.M7a.Sensors","interface_major":1,` +
+			`"match_path":"/value","value_match_operator":"*"}]}`
+		rec := r.req(t, http.MethodPost, "/triggers", def, r.rmaToken)
+		if rec.Code != http.StatusUnprocessableEntity {
+			t.Errorf("amqp trigger: got %d (%s), want 422", rec.Code, rec.Body)
+		}
+		if body := rec.Body.String(); !strings.Contains(body, "amqp trigger actions are not supported") {
+			t.Errorf("amqp trigger detail %q does not mention the rejection", body)
+		}
+	})
+
+	t.Run("http trigger twin still creates", func(t *testing.T) {
+		rec := r.req(t, http.MethodPost, "/triggers", triggerJSON, r.rmaToken)
+		if rec.Code != http.StatusCreated {
+			t.Errorf("create trigger: got %d (%s), want 201", rec.Code, rec.Body)
+		}
+	})
+
+	t.Run("overlapping handlers rejected", func(t *testing.T) {
+		def := `{"name":"overlap","error_handlers":[{"on":[400,401],"strategy":"discard"},` +
+			`{"on":[401,402],"strategy":"discard"}],"maximum_capacity":1}`
+		rec := r.req(t, http.MethodPost, "/policies", def, r.rmaToken)
+		if rec.Code != http.StatusUnprocessableEntity {
+			t.Errorf("overlapping policy: got %d (%s), want 422", rec.Code, rec.Body)
+		}
+		if body := rec.Body.String(); !strings.Contains(body, "must all handle distinct errors") {
+			t.Errorf("overlap detail %q does not mention disjointness", body)
+		}
+	})
+
+	t.Run("prefetch_count out of band rejected", func(t *testing.T) {
+		def := `{"name":"badprefetch","error_handlers":[{"on":"any_error","strategy":"discard"}],` +
+			`"maximum_capacity":1,"prefetch_count":301}`
+		rec := r.req(t, http.MethodPost, "/policies", def, r.rmaToken)
+		if rec.Code != http.StatusUnprocessableEntity {
+			t.Errorf("prefetch_count 301: got %d (%s), want 422", rec.Code, rec.Body)
+		}
+		if body := rec.Body.String(); !strings.Contains(body, "prefetch_count") {
+			t.Errorf("prefetch detail %q does not mention prefetch_count", body)
+		}
+	})
+
+	t.Run("disjoint policy creates", func(t *testing.T) {
+		def := `{"name":"disjoint-ok","error_handlers":[{"on":"server_error","strategy":"retry"},` +
+			`{"on":[401],"strategy":"discard"}],"maximum_capacity":1,"retry_times":1}`
+		if rec := r.req(t, http.MethodPost, "/policies", def, r.rmaToken); rec.Code != http.StatusCreated {
+			t.Errorf("disjoint policy: got %d (%s), want 201", rec.Code, rec.Body)
+		}
+	})
+}
+
 // --- helpers ----------------------------------------------------------------
 
 func discardLogger() *slog.Logger { return slog.New(slog.NewTextHandler(io.Discard, nil)) }

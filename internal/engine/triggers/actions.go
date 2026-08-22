@@ -20,7 +20,8 @@ import (
 // Action is a trigger's parsed delivery action (docs/ROADMAP.md §7.2 file
 // 6.12): an HTTP webhook (upstream "http_url"+"http_method", or the legacy
 // "http_post_url"), or a custom action routed to the Forwarder extension
-// point (upstream AMQP actions land there, docs/DESIGN.md §1.1).
+// point. Upstream AMQP-shaped actions ("amqp_exchange") are rejected at
+// parse time (#64); docs/DESIGN.md §1.1 records the original seam.
 type Action struct {
 	// Method is the upper-cased HTTP method.
 	Method string
@@ -96,8 +97,21 @@ func parseAction(raw json.RawMessage) (*Action, []string, error) {
 			Template: h.Template, TemplateType: h.TemplateType,
 		}, unsupported, nil
 	default:
-		// Not an HTTP action (e.g. upstream AMQP): keep it verbatim for the
-		// Forwarder extension point.
+		// Upstream AMQP action (#64): rejected at compile time rather than
+		// silently turned into a Custom action whose events vanish into a
+		// subject nobody may consume (validate-and-reject beats silent
+		// misbehavior). A legacy stored amqp trigger therefore fails loudly
+		// at engine reload — that is the intended trade. The Forwarder
+		// extension point itself stays open for non-amqp custom actions.
+		var sniff struct {
+			AMQPExchange string `json:"amqp_exchange"`
+		}
+		if err := json.Unmarshal(raw, &sniff); err == nil && sniff.AMQPExchange != "" {
+			return nil, nil, fmt.Errorf("amqp trigger actions are not supported: " +
+				"use an http action (upstream AMQP delivery is deliberately not implemented)")
+		}
+		// Not an HTTP action either (e.g. a NATS-flavoured custom object):
+		// keep it verbatim for the Forwarder extension point.
 		return &Action{Custom: raw}, unsupported, nil
 	}
 }
