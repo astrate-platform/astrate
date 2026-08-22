@@ -69,9 +69,9 @@ queue/gate.
 - Every filed issue must name the file(s) or package the gap lives in, if the investigation
   found one — that's what makes the follow-up task machine-startable instead of another
   investigation.
-- Never port upstream/CLEA code or its language-specific structure — port the capability,
+- Never port upstream code or its language-specific structure — port the capability,
   restated for Astrate's Go codebase.
-- If the reference (astarte_flow repo, docs.clea.ai) is unreachable, say so and stop; do not
-  guess at scope from the milestone's one-paragraph summary alone.
+- If the reference named in the milestone section (upstream repos, docs) is unreachable,
+  say so and stop; do not guess at scope from the milestone's one-paragraph summary alone.
 - This recipe never touches `.mule/milestones.md`. Status changes go through
   `.mule/for-giulio.md`, same as every other frozen-file rule in `.mule/MULE.md`.
