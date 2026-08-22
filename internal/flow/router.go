@@ -69,7 +69,7 @@ type lane struct {
 
 // flowMsg pairs a message with its submission-time QoS and acknowledgement.
 type flowMsg struct {
-	msg    *FlowMessage
+	msg    *Message
 	qos    byte
 	onDrop func()
 }
@@ -110,7 +110,7 @@ func (r *Router) Run(ctx context.Context) {
 
 // Submit routes msg to the lane determined by FNV-1a(msg.Key). Behaviour
 // depends on qos and the configured overflow policies.
-func (r *Router) Submit(msg *FlowMessage, qos byte) {
+func (r *Router) Submit(msg *Message, qos byte) {
 	r.met.submitted.Inc()
 	r.mu.Lock()
 	if r.closed {
@@ -177,7 +177,7 @@ func (r *Router) Drain(ctx context.Context) error {
 
 // runLane drains one lane's channel through the block graph, recovering
 // panics per-message so one block's bug cannot crash the router.
-func (r *Router) runLane(ctx context.Context, l *lane) {
+func (r *Router) runLane(_ context.Context, l *lane) {
 	defer r.laneWG.Done()
 	for fm := range l.ch {
 		r.processOne(fm)
@@ -211,8 +211,8 @@ func laneOf(key string, n int) int {
 		prime64  = 1099511628211
 	)
 	h := uint64(offset64)
-	for _, b := range key {
-		h ^= uint64(b)
+	for i := 0; i < len(key); i++ {
+		h ^= uint64(key[i]) // per-byte FNV-1a, same as the engine shardOf
 		h *= prime64
 	}
 	return int(h % uint64(n)) // #nosec G115 -- value already reduced mod n

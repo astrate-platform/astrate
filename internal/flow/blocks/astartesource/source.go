@@ -52,21 +52,21 @@ func (s *Source) Name() string { return "astarte_source" }
 
 // Process implements flow.Block as a non-blocking drain of currently buffered
 // events. Prefer Emit for the live pump path (it waits for the next event).
-func (s *Source) Process(_ *flow.FlowMessage) ([]*flow.FlowMessage, error) {
-	return s.drain(false, nil)
+func (s *Source) Process(_ *flow.Message) ([]*flow.Message, error) {
+	return s.drain(context.TODO(), false)
 }
 
 // Emit implements flow.Source: it blocks until at least one accepted event is
 // available or ctx is cancelled, then drains any further buffered events.
-func (s *Source) Emit(ctx context.Context) ([]*flow.FlowMessage, error) {
-	return s.drain(true, ctx)
+func (s *Source) Emit(ctx context.Context) ([]*flow.Message, error) {
+	return s.drain(ctx, true)
 }
 
 // drain converts bus events into FlowMessages. When block is true it waits
 // for the first accepted event (or ctx cancellation); otherwise it only
 // takes events already buffered.
-func (s *Source) drain(block bool, ctx context.Context) ([]*flow.FlowMessage, error) {
-	var out []*flow.FlowMessage
+func (s *Source) drain(ctx context.Context, block bool) ([]*flow.Message, error) {
+	var out []*flow.Message
 
 	if block {
 		for len(out) == 0 {
@@ -108,12 +108,12 @@ func (s *Source) Stop() {
 	s.cancel()
 }
 
-// toFlowMessage converts one stream.Event to the upstream FlowMessage shape
+// toFlowMessage converts one stream.Event to the upstream Message shape
 // (astarte_flow/message/v0.1): key "<realm>/<device_id>", data/subtype
 // events map from Event.Value; lifecycle events (no Interface/Path) carry
 // their kind and metadata instead.
-func toFlowMessage(ev *stream.Event) *flow.FlowMessage {
-	msg := &flow.FlowMessage{
+func toFlowMessage(ev *stream.Event) *flow.Message {
+	msg := &flow.Message{
 		Key:       ev.Realm + "/" + ev.DeviceID,
 		Timestamp: ev.Timestamp.UnixMicro(),
 		Metadata: map[string]string{
@@ -129,7 +129,7 @@ func toFlowMessage(ev *stream.Event) *flow.FlowMessage {
 // setValue maps a stream.Event's JSON-friendly Value into the message's
 // typed Data/Type, defaulting to a string rendering for anything that
 // isn't one of the wire-representable scalar kinds.
-func setValue(msg *flow.FlowMessage, v any) {
+func setValue(msg *flow.Message, v any) {
 	switch val := v.(type) {
 	case nil:
 		msg.Type = flow.TypeString

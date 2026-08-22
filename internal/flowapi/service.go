@@ -288,11 +288,11 @@ func (s *Service) startFlowInstance(ctx context.Context, realm string, realmID i
 		return nil, err
 	}
 
-	instanceID := flow.FlowInstanceID(realm, name)
+	instanceID := flow.InstanceID(realm, name)
 	// Creating status while building live graph (optional observation).
 	_ = s.st.UpdateFlowRuntime(ctx, realmID, name, "creating", nil, nil, nil)
 
-	f, err := s.mgr.StartFlow(ctx, flow.FlowConfig{
+	f, err := s.mgr.StartFlow(ctx, flow.Config{
 		PipelineID: instanceID,
 		Blocks:     blks,
 	})
@@ -329,7 +329,7 @@ func (s *Service) DeleteFlow(ctx context.Context, realm, name string) error {
 	if err != nil {
 		return err
 	}
-	instanceID := flow.FlowInstanceID(realm, name)
+	instanceID := flow.InstanceID(realm, name)
 	if err := s.mgr.StopFlow(ctx, instanceID); err != nil && !errors.Is(err, flow.ErrFlowNotFound) {
 		return err
 	}
@@ -394,7 +394,7 @@ func (s *Service) MarkRunningFlowsStopped(ctx context.Context) {
 }
 
 func (s *Service) liveFlow(realm, name string) *flow.Flow {
-	instanceID := flow.FlowInstanceID(realm, name)
+	instanceID := flow.InstanceID(realm, name)
 	for _, f := range s.mgr.ListFlows() {
 		if f.PipelineID() == instanceID {
 			return f

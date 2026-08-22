@@ -48,7 +48,7 @@ type Config struct {
 	ReadyTimeout  time.Duration
 }
 
-// Block is a transform that round-trips each FlowMessage through a container.
+// Block is a transform that round-trips each Message through a container.
 type Block struct {
 	name   string
 	cfg    Config
@@ -56,7 +56,7 @@ type Block struct {
 	bridge *Bridge
 	inst   Instance
 
-	mu     sync.Mutex
+	mu      sync.Mutex
 	stopped bool
 }
 
@@ -228,7 +228,7 @@ func (b *Block) Name() string { return b.name }
 
 // Process implements flow.Block. PoC error policy: return error so the router
 // logs + increments blockErrors and drops the message (no outs).
-func (b *Block) Process(msg *flow.FlowMessage) ([]*flow.FlowMessage, error) {
+func (b *Block) Process(msg *flow.Message) ([]*flow.Message, error) {
 	b.mu.Lock()
 	stopped := b.stopped
 	bridge := b.bridge

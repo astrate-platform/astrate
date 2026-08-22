@@ -17,6 +17,8 @@ const WireSchema = "astarte_flow/message/v0.1"
 // DataType enumerates the wire-level value types Astarte Flow supports.
 type DataType uint8
 
+// DataType values, in wire-encoding order. TypeMap is the only aggregate;
+// its per-field types live in FieldTypes and FieldSubtypes.
 const (
 	TypeInteger DataType = iota
 	TypeReal
@@ -71,10 +73,10 @@ func parseDataType(s string) (DataType, error) {
 	}
 }
 
-// FlowMessage is one unit of data flowing through a block graph. Every message
+// Message is one unit of data flowing through a block graph. Every message
 // carries a Key that identifies its stream; messages with the same key are
 // processed in submission order by the same lane (consistent hashing).
-type FlowMessage struct {
+type Message struct {
 	// Key identifies the stream this message belongs to. It must be non-empty.
 	Key string
 	// Metadata is an optional string→string map carried alongside the payload.
@@ -108,8 +110,8 @@ type wireMessage struct {
 	TimestampUs int64             `json:"timestamp_us"`
 }
 
-// MarshalJSON serialises the FlowMessage to the upstream JSON wire format.
-func (m *FlowMessage) MarshalJSON() ([]byte, error) {
+// MarshalJSON serialises the Message to the upstream JSON wire format.
+func (m *Message) MarshalJSON() ([]byte, error) {
 	w := wireMessage{
 		Schema:      WireSchema,
 		Key:         m.Key,
@@ -135,8 +137,8 @@ func (m *FlowMessage) MarshalJSON() ([]byte, error) {
 	return json.Marshal(w)
 }
 
-// UnmarshalJSON deserialises a FlowMessage from the upstream JSON wire format.
-func (m *FlowMessage) UnmarshalJSON(b []byte) error {
+// UnmarshalJSON deserialises a Message from the upstream JSON wire format.
+func (m *Message) UnmarshalJSON(b []byte) error {
 	var w wireMessage
 	if err := json.Unmarshal(b, &w); err != nil {
 		return fmt.Errorf("flow: unmarshal message: %w", err)
@@ -195,7 +197,7 @@ func (m *FlowMessage) UnmarshalJSON(b []byte) error {
 }
 
 // dataWireScalar returns the wire-format data value for non-map messages.
-func (m *FlowMessage) dataWireScalar() any {
+func (m *Message) dataWireScalar() any {
 	switch m.Type {
 	case TypeBinary:
 		if bs, ok := m.Data.([]byte); ok {
@@ -210,7 +212,7 @@ func (m *FlowMessage) dataWireScalar() any {
 }
 
 // dataWireMap returns the wire-format data value for map messages.
-func (m *FlowMessage) dataWireMap() any {
+func (m *Message) dataWireMap() any {
 	raw, ok := m.Data.(map[string]any)
 	if !ok {
 		return m.Data
@@ -236,7 +238,7 @@ func (m *FlowMessage) dataWireMap() any {
 }
 
 // fieldTypesWire returns the wire-format type field for map messages.
-func (m *FlowMessage) fieldTypesWire() map[string]string {
+func (m *Message) fieldTypesWire() map[string]string {
 	out := make(map[string]string, len(m.FieldTypes))
 	for k, dt := range m.FieldTypes {
 		out[k] = dataTypeString(dt)
@@ -245,7 +247,7 @@ func (m *FlowMessage) fieldTypesWire() map[string]string {
 }
 
 // fieldSubtypesWire returns the wire-format subtype field for map messages.
-func (m *FlowMessage) fieldSubtypesWire() map[string]string {
+func (m *Message) fieldSubtypesWire() map[string]string {
 	if len(m.FieldSubtypes) == 0 {
 		return nil
 	}
@@ -257,7 +259,7 @@ func (m *FlowMessage) fieldSubtypesWire() map[string]string {
 }
 
 // setDataFromWire decodes a scalar wire data value into m.Data.
-func (m *FlowMessage) setDataFromWire(dt DataType, raw any) error {
+func (m *Message) setDataFromWire(dt DataType, raw any) error {
 	switch dt {
 	case TypeInteger:
 		switch v := raw.(type) {
@@ -324,7 +326,7 @@ func (m *FlowMessage) setDataFromWire(dt DataType, raw any) error {
 }
 
 // setDataFromWireMap decodes a map wire data value into m.Data.
-func (m *FlowMessage) setDataFromWireMap(raw any) error {
+func (m *Message) setDataFromWireMap(raw any) error {
 	rm, ok := raw.(map[string]any)
 	if !ok {
 		return fmt.Errorf("flow: map data: expected object, got %T", raw)

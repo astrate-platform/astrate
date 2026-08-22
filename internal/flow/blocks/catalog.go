@@ -23,7 +23,7 @@ const (
 )
 
 // DefaultRegistry returns a registry with the minimum useful built-in set:
-// AstarteSource (bus → FlowMessage), filter/map transforms, container (custom
+// AstarteSource (bus → Message), filter/map transforms, container (custom
 // image via local Docker HTTP bridge), and null/log sinks so operators can
 // compose a complete source→transform→sink pipeline.
 func DefaultRegistry() *flow.Registry {
@@ -60,12 +60,12 @@ func AstarteSource(name string, config map[string]any, deps flow.Deps) (flow.Blo
 // NullSink discards every message. Useful as a placeholder sink in tests and
 // for pipelines that only need side effects from transforms.
 func NullSink(name string, _ map[string]any, _ flow.Deps) (flow.Block, error) {
-	return flow.NewSinkBlock(name, func(*flow.FlowMessage) error { return nil }), nil
+	return flow.NewSinkBlock(name, func(*flow.Message) error { return nil }), nil
 }
 
 // LogSink logs each message at debug level via slog.Default().
 func LogSink(name string, _ map[string]any, _ flow.Deps) (flow.Block, error) {
-	return flow.NewSinkBlock(name, func(msg *flow.FlowMessage) error {
+	return flow.NewSinkBlock(name, func(msg *flow.Message) error {
 		if msg == nil {
 			return nil
 		}
@@ -105,13 +105,13 @@ func namedSourceStopper(name string, inner flow.Block) flow.Block {
 	return &namedSS{inner: inner, name: name}
 }
 
-func (n *namedSS) Process(msg *flow.FlowMessage) ([]*flow.FlowMessage, error) {
+func (n *namedSS) Process(msg *flow.Message) ([]*flow.Message, error) {
 	return n.inner.Process(msg)
 }
 
 func (n *namedSS) Name() string { return n.name }
 
-func (n *namedSS) Emit(ctx context.Context) ([]*flow.FlowMessage, error) {
+func (n *namedSS) Emit(ctx context.Context) ([]*flow.Message, error) {
 	src, ok := n.inner.(flow.Source)
 	if !ok {
 		return nil, fmt.Errorf("flow: block %q is not a Source", n.name)

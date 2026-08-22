@@ -97,15 +97,15 @@ func (b *Bridge) WaitReady(ctx context.Context) error {
 	return fmt.Errorf("container: not ready after wait")
 }
 
-// RoundTrip sends one FlowMessage and parses zero or more outputs.
+// RoundTrip sends one Message and parses zero or more outputs.
 //
 // Contract (PoC):
-//   - Request: POST /v1/message, body = FlowMessage JSON
+//   - Request: POST /v1/message, body = Message JSON
 //   - 204 or empty body → drop (zero outs)
 //   - 200 + object → one message
 //   - 200 + array → N messages
 //   - other status → error
-func (b *Bridge) RoundTrip(ctx context.Context, msg *flow.FlowMessage) ([]*flow.FlowMessage, error) {
+func (b *Bridge) RoundTrip(ctx context.Context, msg *flow.Message) ([]*flow.Message, error) {
 	if msg == nil {
 		return nil, nil
 	}
@@ -128,7 +128,7 @@ func (b *Bridge) RoundTrip(ctx context.Context, msg *flow.FlowMessage) ([]*flow.
 	if err != nil {
 		return nil, fmt.Errorf("container: http post: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	limited := io.LimitReader(resp.Body, b.maxBody()+1)
 	respBody, err := io.ReadAll(limited)
@@ -157,11 +157,11 @@ func (b *Bridge) RoundTrip(ctx context.Context, msg *flow.FlowMessage) ([]*flow.
 
 	// Array of messages?
 	if respBody[0] == '[' {
-		var list []*flow.FlowMessage
+		var list []*flow.Message
 		if err := json.Unmarshal(respBody, &list); err != nil {
 			return nil, fmt.Errorf("container: decode message array: %w", err)
 		}
-		out := make([]*flow.FlowMessage, 0, len(list))
+		out := make([]*flow.Message, 0, len(list))
 		for _, m := range list {
 			if m != nil {
 				out = append(out, m)
@@ -170,9 +170,9 @@ func (b *Bridge) RoundTrip(ctx context.Context, msg *flow.FlowMessage) ([]*flow.
 		return out, nil
 	}
 
-	var one flow.FlowMessage
+	var one flow.Message
 	if err := json.Unmarshal(respBody, &one); err != nil {
 		return nil, fmt.Errorf("container: decode message: %w", err)
 	}
-	return []*flow.FlowMessage{&one}, nil
+	return []*flow.Message{&one}, nil
 }

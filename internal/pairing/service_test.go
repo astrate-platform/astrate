@@ -189,7 +189,7 @@ func TestRegisterEmitsEvent(t *testing.T) {
 		id    string
 	}
 	var calls []registeredCall
-	svc.OnRegistered = func(realmName, deviceID string, at time.Time) {
+	svc.OnRegistered = func(realmName, deviceID string, _ time.Time) {
 		calls = append(calls, registeredCall{realm: realmName, id: deviceID})
 	}
 
@@ -245,6 +245,7 @@ func TestRegister(t *testing.T) {
 	dev := fs.devices[1][id]
 	if dev == nil {
 		t.Fatal("device row missing after registration")
+		return
 	}
 	if bcrypt.CompareHashAndPassword([]byte(dev.CredentialsSecretHash), []byte(secret)) != nil {
 		t.Error("stored hash does not match the returned secret")

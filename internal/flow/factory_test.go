@@ -24,20 +24,20 @@ func TestRegistry_InstantiateLinear(t *testing.T) {
 	}
 	reg := flow.NewRegistry()
 	reg.Register("source", func(name string, _ map[string]any, _ flow.Deps) (flow.Block, error) {
-		return flow.NewSourceBlock(name, func() ([]*flow.FlowMessage, error) {
+		return flow.NewSourceBlock(name, func() ([]*flow.Message, error) {
 			return nil, nil
 		}), nil
 	})
 	reg.Register("transform", func(name string, _ map[string]any, _ flow.Deps) (flow.Block, error) {
-		return flow.NewTransformBlock(name, func(msg *flow.FlowMessage) ([]*flow.FlowMessage, error) {
+		return flow.NewTransformBlock(name, func(msg *flow.Message) ([]*flow.Message, error) {
 			mu.Lock()
 			got = append(got, name+":"+msg.Key)
 			mu.Unlock()
-			return []*flow.FlowMessage{msg}, nil
+			return []*flow.Message{msg}, nil
 		}), nil
 	})
 	reg.Register("sink", func(name string, _ map[string]any, _ flow.Deps) (flow.Block, error) {
-		return flow.NewSinkBlock(name, func(msg *flow.FlowMessage) error {
+		return flow.NewSinkBlock(name, func(msg *flow.Message) error {
 			mu.Lock()
 			got = append(got, name+":"+msg.Key)
 			mu.Unlock()
@@ -72,14 +72,14 @@ func TestRegistry_InstantiateLinear(t *testing.T) {
 	}
 
 	mgr := flow.NewManager()
-	f, err := mgr.StartFlow(context.Background(), flow.FlowConfig{
+	f, err := mgr.StartFlow(context.Background(), flow.Config{
 		PipelineID: p.ID,
 		Blocks:     blocksList,
 	})
 	if err != nil {
 		t.Fatalf("StartFlow: %v", err)
 	}
-	f.Router().Submit(&flow.FlowMessage{Key: "k1", Type: flow.TypeString, Data: "x"}, 1)
+	f.Router().Submit(&flow.Message{Key: "k1", Type: flow.TypeString, Data: "x"}, 1)
 	deadline := time.Now().Add(2 * time.Second)
 	var final []string
 	for time.Now().Before(deadline) {
@@ -143,8 +143,8 @@ type stoppableBlock struct {
 }
 
 func (b *stoppableBlock) Name() string { return b.name }
-func (b *stoppableBlock) Process(msg *flow.FlowMessage) ([]*flow.FlowMessage, error) {
-	return []*flow.FlowMessage{msg}, nil
+func (b *stoppableBlock) Process(msg *flow.Message) ([]*flow.Message, error) {
+	return []*flow.Message{msg}, nil
 }
 func (b *stoppableBlock) Stop() { *b.stopped++ }
 
@@ -239,8 +239,8 @@ func TestDefaultCatalog_AstarteSourceToNullSink(t *testing.T) {
 	}
 
 	mgr := flow.NewManager()
-	f, err := mgr.StartFlow(context.Background(), flow.FlowConfig{
-		PipelineID: flow.FlowPipelineID("r1", "live"),
+	f, err := mgr.StartFlow(context.Background(), flow.Config{
+		PipelineID: flow.PipelineID("r1", "live"),
 		Blocks:     blks,
 	})
 	if err != nil {
@@ -265,10 +265,10 @@ func TestDefaultCatalog_AstarteSourceToNullSink(t *testing.T) {
 }
 
 func TestFlowInstanceID(t *testing.T) {
-	if got := flow.FlowInstanceID("acme", "sensors"); got != "acme/sensors" {
-		t.Errorf("FlowInstanceID = %q", got)
+	if got := flow.InstanceID("acme", "sensors"); got != "acme/sensors" {
+		t.Errorf("InstanceID = %q", got)
 	}
-	if flow.FlowPipelineID("acme", "sensors") != flow.FlowInstanceID("acme", "sensors") {
-		t.Error("FlowPipelineID should alias FlowInstanceID")
+	if flow.PipelineID("acme", "sensors") != flow.InstanceID("acme", "sensors") {
+		t.Error("PipelineID should alias InstanceID")
 	}
 }

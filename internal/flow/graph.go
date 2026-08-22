@@ -44,13 +44,13 @@ func (g *BlockGraph) Sources() []Source {
 // skipped: they are polled by the source pump and their outputs are
 // submitted into the router, which calls Run. Returns the messages produced
 // by the final stage — typically nil for a sink.
-func (g *BlockGraph) Run(msg *FlowMessage) ([]*FlowMessage, error) {
-	cur := []*FlowMessage{msg}
+func (g *BlockGraph) Run(msg *Message) ([]*Message, error) {
+	cur := []*Message{msg}
 	for _, b := range g.blocks {
 		if _, isSource := b.(Source); isSource {
 			continue
 		}
-		var next []*FlowMessage
+		var next []*Message
 		for _, m := range cur {
 			out, err := b.Process(m)
 			if err != nil {

@@ -16,10 +16,10 @@ import (
 // collectBlock is a sink that appends every message to its slice.
 type collectBlock struct {
 	mu   sync.Mutex
-	msgs []*FlowMessage
+	msgs []*Message
 }
 
-func (c *collectBlock) Process(msg *FlowMessage) ([]*FlowMessage, error) {
+func (c *collectBlock) Process(msg *Message) ([]*Message, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	cp := *msg
@@ -35,7 +35,7 @@ func (c *collectBlock) len() int {
 	return len(c.msgs)
 }
 
-func (c *collectBlock) get(i int) *FlowMessage {
+func (c *collectBlock) get(i int) *Message {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.msgs[i]
@@ -48,12 +48,12 @@ type failBlock struct {
 	prefix string
 }
 
-func (f *failBlock) Process(msg *FlowMessage) ([]*FlowMessage, error) {
+func (f *failBlock) Process(msg *Message) ([]*Message, error) {
 	n := f.count.Add(1)
 	if n%int64(f.every) == 0 {
 		return nil, fmt.Errorf("%s: injected error", f.prefix)
 	}
-	return []*FlowMessage{msg}, nil
+	return []*Message{msg}, nil
 }
 
 func (f *failBlock) Name() string { return f.prefix }
@@ -61,8 +61,8 @@ func (f *failBlock) Name() string { return f.prefix }
 // passthroughBlock forwards every message unchanged.
 type passthroughBlock struct{}
 
-func (p *passthroughBlock) Process(msg *FlowMessage) ([]*FlowMessage, error) {
-	return []*FlowMessage{msg}, nil
+func (p *passthroughBlock) Process(msg *Message) ([]*Message, error) {
+	return []*Message{msg}, nil
 }
 
 func (p *passthroughBlock) Name() string { return "passthrough" }
@@ -74,20 +74,20 @@ type panicBlock struct {
 	prefix string
 }
 
-func (p *panicBlock) Process(msg *FlowMessage) ([]*FlowMessage, error) {
+func (p *panicBlock) Process(msg *Message) ([]*Message, error) {
 	n := p.count.Add(1)
 	if n%int64(p.every) == 0 {
 		panic(fmt.Sprintf("%s: injected panic", p.prefix))
 	}
-	return []*FlowMessage{msg}, nil
+	return []*Message{msg}, nil
 }
 
 func (p *panicBlock) Name() string { return p.prefix }
 
 // --- helpers ---------------------------------------------------------------
 
-func makeMsg(key string, seq int) *FlowMessage {
-	return &FlowMessage{
+func makeMsg(key string, seq int) *Message {
+	return &Message{
 		Key:       key,
 		Type:      TypeInteger,
 		Data:      int64(seq),
@@ -381,10 +381,10 @@ func TestLaneOf(t *testing.T) {
 type blockingSink struct {
 	gate chan struct{}
 	mu   sync.Mutex
-	msgs []*FlowMessage
+	msgs []*Message
 }
 
-func (b *blockingSink) Process(msg *FlowMessage) ([]*FlowMessage, error) {
+func (b *blockingSink) Process(msg *Message) ([]*Message, error) {
 	<-b.gate
 	b.mu.Lock()
 	defer b.mu.Unlock()

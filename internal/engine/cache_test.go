@@ -303,6 +303,7 @@ func TestSchemaCacheTriggerPolicyAttachment(t *testing.T) {
 	alpha := c.realm("alpha")
 	if alpha == nil {
 		t.Fatal("realm alpha not resolved")
+		return
 	}
 	if len(alpha.triggers) != 3 {
 		t.Fatalf("expected 3 triggers, got %d", len(alpha.triggers))

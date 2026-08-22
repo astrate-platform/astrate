@@ -20,7 +20,7 @@ func TestSourceIngestsAndConverts(t *testing.T) {
 		Interface: "com.ex.Sensors", Path: "/v", Value: 1.5, Timestamp: ts,
 	})
 
-	var got []*flow.FlowMessage
+	var got []*flow.Message
 	deadline := time.Now().Add(2 * time.Second)
 	for len(got) == 0 && time.Now().Before(deadline) {
 		msgs, err := src.Process(nil)
@@ -109,7 +109,7 @@ func TestSourceEmitBlocksUntilEvent(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
-	done := make(chan []*flow.FlowMessage, 1)
+	done := make(chan []*flow.Message, 1)
 	errc := make(chan error, 1)
 	go func() {
 		msgs, err := src.Emit(ctx)

@@ -28,11 +28,11 @@ func Filter(name string, config map[string]any, _ flow.Deps) (flow.Block, error)
 	if err != nil {
 		return nil, fmt.Errorf("filter: %w", err)
 	}
-	return flow.NewTransformBlock(name, func(msg *flow.FlowMessage) ([]*flow.FlowMessage, error) {
+	return flow.NewTransformBlock(name, func(msg *flow.Message) ([]*flow.Message, error) {
 		if msg == nil || !cfg.match(msg) {
 			return nil, nil
 		}
-		return []*flow.FlowMessage{msg}, nil
+		return []*flow.Message{msg}, nil
 	}), nil
 }
 
@@ -62,7 +62,7 @@ func parseFilterConfig(config map[string]any) (filterConfig, error) {
 	return cfg, nil
 }
 
-func (c filterConfig) match(msg *flow.FlowMessage) bool {
+func (c filterConfig) match(msg *flow.Message) bool {
 	if c.keyPrefix != "" && !strings.HasPrefix(msg.Key, c.keyPrefix) {
 		return false
 	}
@@ -93,7 +93,7 @@ func Map(name string, config map[string]any, _ flow.Deps) (flow.Block, error) {
 	if err != nil {
 		return nil, fmt.Errorf("map: %w", err)
 	}
-	return flow.NewTransformBlock(name, func(msg *flow.FlowMessage) ([]*flow.FlowMessage, error) {
+	return flow.NewTransformBlock(name, func(msg *flow.Message) ([]*flow.Message, error) {
 		if msg == nil {
 			return nil, nil
 		}
@@ -112,7 +112,7 @@ func Map(name string, config map[string]any, _ flow.Deps) (flow.Block, error) {
 		for _, k := range cfg.deleteMetadata {
 			delete(out.Metadata, k)
 		}
-		return []*flow.FlowMessage{out}, nil
+		return []*flow.Message{out}, nil
 	}), nil
 }
 
@@ -134,7 +134,7 @@ func parseMapConfig(config map[string]any) (mapConfig, error) {
 	return cfg, nil
 }
 
-func cloneMessage(msg *flow.FlowMessage) *flow.FlowMessage {
+func cloneMessage(msg *flow.Message) *flow.Message {
 	out := *msg
 	if msg.Metadata != nil {
 		out.Metadata = maps.Clone(msg.Metadata)
@@ -144,7 +144,7 @@ func cloneMessage(msg *flow.FlowMessage) *flow.FlowMessage {
 }
 
 // expandTemplate replaces {key} and {metadata.<name>} in tmpl.
-func expandTemplate(tmpl string, msg *flow.FlowMessage) string {
+func expandTemplate(tmpl string, msg *flow.Message) string {
 	s := strings.ReplaceAll(tmpl, "{key}", msg.Key)
 	// Replace {metadata.X} for each metadata key present; then any remaining
 	// known-shape placeholders for missing keys become empty.

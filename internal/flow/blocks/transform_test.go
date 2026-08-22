@@ -25,7 +25,7 @@ func TestFilter_KeyPrefixAndMetadata(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	pass := &flow.FlowMessage{
+	pass := &flow.Message{
 		Key:      "acme/dev1",
 		Type:     flow.TypeString,
 		Data:     "x",
@@ -37,7 +37,7 @@ func TestFilter_KeyPrefixAndMetadata(t *testing.T) {
 	}
 
 	// Wrong prefix.
-	drop, err := b.Process(&flow.FlowMessage{
+	drop, err := b.Process(&flow.Message{
 		Key: "other/dev", Type: flow.TypeString, Data: "x",
 		Metadata: map[string]string{"kind": "data"},
 	})
@@ -46,7 +46,7 @@ func TestFilter_KeyPrefixAndMetadata(t *testing.T) {
 	}
 
 	// Wrong metadata.
-	drop2, err := b.Process(&flow.FlowMessage{
+	drop2, err := b.Process(&flow.Message{
 		Key: "acme/dev", Type: flow.TypeString, Data: "x",
 		Metadata: map[string]string{"kind": "connection"},
 	})
@@ -60,11 +60,11 @@ func TestFilter_Type(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	out, err := b.Process(&flow.FlowMessage{Key: "k", Type: flow.TypeInteger, Data: int64(1)})
+	out, err := b.Process(&flow.Message{Key: "k", Type: flow.TypeInteger, Data: int64(1)})
 	if err != nil || len(out) != 1 {
 		t.Fatalf("integer: %v %v", out, err)
 	}
-	out, err = b.Process(&flow.FlowMessage{Key: "k", Type: flow.TypeString, Data: "1"})
+	out, err = b.Process(&flow.Message{Key: "k", Type: flow.TypeString, Data: "1"})
 	if err != nil || len(out) != 0 {
 		t.Fatalf("string: %v %v", out, err)
 	}
@@ -94,7 +94,7 @@ func TestMap_KeyTemplateAndMetadata(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	in := &flow.FlowMessage{
+	in := &flow.Message{
 		Key:  "acme/dev1",
 		Type: flow.TypeString,
 		Data: "v",
@@ -142,7 +142,7 @@ func TestMap_MissingMetadataPlaceholder(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	out, err := b.Process(&flow.FlowMessage{Key: "k", Type: flow.TypeString, Data: ""})
+	out, err := b.Process(&flow.Message{Key: "k", Type: flow.TypeString, Data: ""})
 	if err != nil || len(out) != 1 {
 		t.Fatalf("%v %v", out, err)
 	}

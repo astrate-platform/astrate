@@ -9,12 +9,12 @@ import (
 func TestFlowMessage_RoundTrip(t *testing.T) {
 	tests := []struct {
 		name    string
-		msg     FlowMessage
+		msg     Message
 		wantErr bool
 	}{
 		{
 			name: "integer",
-			msg: FlowMessage{
+			msg: Message{
 				Key:       "sensor/temp",
 				Type:      TypeInteger,
 				Data:      int64(42),
@@ -24,7 +24,7 @@ func TestFlowMessage_RoundTrip(t *testing.T) {
 		},
 		{
 			name: "real",
-			msg: FlowMessage{
+			msg: Message{
 				Key:       "sensor/pressure",
 				Type:      TypeReal,
 				Data:      3.14159,
@@ -33,7 +33,7 @@ func TestFlowMessage_RoundTrip(t *testing.T) {
 		},
 		{
 			name: "boolean",
-			msg: FlowMessage{
+			msg: Message{
 				Key:       "sensor/active",
 				Type:      TypeBoolean,
 				Data:      true,
@@ -42,7 +42,7 @@ func TestFlowMessage_RoundTrip(t *testing.T) {
 		},
 		{
 			name: "string",
-			msg: FlowMessage{
+			msg: Message{
 				Key:       "sensor/name",
 				Type:      TypeString,
 				Data:      "hello world",
@@ -51,7 +51,7 @@ func TestFlowMessage_RoundTrip(t *testing.T) {
 		},
 		{
 			name: "binary",
-			msg: FlowMessage{
+			msg: Message{
 				Key:       "sensor/blob",
 				Type:      TypeBinary,
 				Subtype:   "application/octet-stream",
@@ -61,7 +61,7 @@ func TestFlowMessage_RoundTrip(t *testing.T) {
 		},
 		{
 			name: "datetime",
-			msg: FlowMessage{
+			msg: Message{
 				Key:       "sensor/time",
 				Type:      TypeDatetime,
 				Data:      time.Date(2019, 3, 5, 10, 0, 0, 0, time.UTC),
@@ -70,7 +70,7 @@ func TestFlowMessage_RoundTrip(t *testing.T) {
 		},
 		{
 			name: "map with mixed types",
-			msg: FlowMessage{
+			msg: Message{
 				Key:       "maps_stream",
 				Type:      TypeMap,
 				Timestamp: 1551884045074181,
@@ -90,7 +90,7 @@ func TestFlowMessage_RoundTrip(t *testing.T) {
 		},
 		{
 			name: "empty metadata",
-			msg: FlowMessage{
+			msg: Message{
 				Key:       "stream/empty",
 				Type:      TypeString,
 				Data:      "test",
@@ -109,7 +109,7 @@ func TestFlowMessage_RoundTrip(t *testing.T) {
 				return
 			}
 
-			var got FlowMessage
+			var got Message
 			if err := json.Unmarshal(b, &got); err != nil {
 				t.Fatalf("Unmarshal: %v", err)
 			}
@@ -197,7 +197,7 @@ func TestFlowMessage_RoundTrip(t *testing.T) {
 }
 
 func TestFlowMessage_WireFormatSchema(t *testing.T) {
-	msg := FlowMessage{
+	msg := Message{
 		Key:       "test",
 		Type:      TypeString,
 		Data:      "hi",
@@ -224,14 +224,14 @@ func TestFlowMessage_WireFormatSchema(t *testing.T) {
 
 func TestFlowMessage_UnmarshalRejectsUnknownSchema(t *testing.T) {
 	raw := `{"schema":"unknown/v1","key":"k","type":"string","data":"x","timestamp_us":0}`
-	var msg FlowMessage
+	var msg Message
 	if err := json.Unmarshal([]byte(raw), &msg); err == nil {
 		t.Fatal("expected error for unknown schema")
 	}
 }
 
 func TestFlowMessage_MapSubtypesOmittedWhenEmpty(t *testing.T) {
-	msg := FlowMessage{
+	msg := Message{
 		Key:       "m",
 		Type:      TypeMap,
 		Timestamp: 1,
@@ -254,7 +254,7 @@ func TestFlowMessage_MapSubtypesOmittedWhenEmpty(t *testing.T) {
 }
 
 func TestFlowMessage_ScalarSubtypeOmittedWhenEmpty(t *testing.T) {
-	msg := FlowMessage{
+	msg := Message{
 		Key:       "s",
 		Type:      TypeString,
 		Data:      "x",
@@ -274,7 +274,7 @@ func TestFlowMessage_ScalarSubtypeOmittedWhenEmpty(t *testing.T) {
 }
 
 func TestFlowMessage_BinaryBase64Encoding(t *testing.T) {
-	msg := FlowMessage{
+	msg := Message{
 		Key:       "bin",
 		Type:      TypeBinary,
 		Subtype:   "application/octet-stream",
@@ -300,7 +300,7 @@ func TestFlowMessage_BinaryBase64Encoding(t *testing.T) {
 }
 
 func TestFlowMessage_MapBinaryBase64Encoding(t *testing.T) {
-	msg := FlowMessage{
+	msg := Message{
 		Key:       "map_bin",
 		Type:      TypeMap,
 		Timestamp: 100,

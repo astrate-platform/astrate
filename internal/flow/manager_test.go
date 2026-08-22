@@ -15,7 +15,7 @@ func TestManager_StartFlowTransitionToRunning(t *testing.T) {
 	ctx := context.Background()
 
 	sink := &collectBlock{}
-	f, err := mgr.StartFlow(ctx, FlowConfig{
+	f, err := mgr.StartFlow(ctx, Config{
 		PipelineID: "pipe-1",
 		Blocks:     []Block{sink},
 	})
@@ -56,7 +56,7 @@ func TestManager_StopFlowDrainsAndReleases(t *testing.T) {
 	ctx := context.Background()
 
 	sink := &collectBlock{}
-	f, err := mgr.StartFlow(ctx, FlowConfig{
+	f, err := mgr.StartFlow(ctx, Config{
 		PipelineID: "pipe-2",
 		Blocks:     []Block{sink},
 		RouterCfg: RouterConfig{
@@ -106,7 +106,7 @@ func TestManager_StopFlowDrainsAndReleases(t *testing.T) {
 func TestManager_FailedInitLeavesNoMapEntry(t *testing.T) {
 	mgr := NewManager()
 
-	f, err := mgr.StartFlow(context.Background(), FlowConfig{
+	f, err := mgr.StartFlow(context.Background(), Config{
 		PipelineID: "pipe-3",
 		Blocks:     []Block{nil},
 	})
@@ -121,8 +121,8 @@ func TestManager_FailedInitLeavesNoMapEntry(t *testing.T) {
 		t.Fatalf("GetFlowStatus = %v, want ErrFlowNotFound", err)
 	}
 	// Retry should not hit ErrFlowExists.
-	sink := NewSinkBlock("s", func(*FlowMessage) error { return nil })
-	f2, err := mgr.StartFlow(context.Background(), FlowConfig{
+	sink := NewSinkBlock("s", func(*Message) error { return nil })
+	f2, err := mgr.StartFlow(context.Background(), Config{
 		PipelineID: "pipe-3",
 		Blocks:     []Block{sink},
 	})
@@ -142,7 +142,7 @@ func TestManager_ListFlows(t *testing.T) {
 
 	blk := &passthroughBlock{}
 	for _, id := range []string{"a", "b", "c"} {
-		_, err := mgr.StartFlow(ctx, FlowConfig{
+		_, err := mgr.StartFlow(ctx, Config{
 			PipelineID: id,
 			Blocks:     []Block{blk},
 		})
@@ -167,7 +167,7 @@ func TestManager_DuplicatePipelineReturnsError(t *testing.T) {
 	ctx := context.Background()
 
 	blk := &passthroughBlock{}
-	_, err := mgr.StartFlow(ctx, FlowConfig{
+	_, err := mgr.StartFlow(ctx, Config{
 		PipelineID: "dup",
 		Blocks:     []Block{blk},
 	})
@@ -176,7 +176,7 @@ func TestManager_DuplicatePipelineReturnsError(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = mgr.StopFlow(context.Background(), "dup") })
 
-	_, err = mgr.StartFlow(ctx, FlowConfig{
+	_, err = mgr.StartFlow(ctx, Config{
 		PipelineID: "dup",
 		Blocks:     []Block{blk},
 	})
@@ -215,7 +215,7 @@ func TestManager_StopFlowIsGraceful(t *testing.T) {
 	var order []int
 	sink := &orderedCollectBlock{mu: &mu, order: &order}
 
-	f, err := mgr.StartFlow(ctx, FlowConfig{
+	f, err := mgr.StartFlow(ctx, Config{
 		PipelineID: "graceful",
 		Blocks:     []Block{sink},
 		RouterCfg: RouterConfig{
@@ -263,7 +263,7 @@ type orderedCollectBlock struct {
 	order *[]int
 }
 
-func (o *orderedCollectBlock) Process(msg *FlowMessage) ([]*FlowMessage, error) {
+func (o *orderedCollectBlock) Process(msg *Message) ([]*Message, error) {
 	v, _ := msg.Data.(int64)
 	o.mu.Lock()
 	defer o.mu.Unlock()
@@ -283,7 +283,7 @@ func TestManager_ShutdownDrainsAll(t *testing.T) {
 	for _, id := range []string{"x", "y"} {
 		sink := &collectBlock{}
 		sinks[id] = sink
-		_, err := mgr.StartFlow(ctx, FlowConfig{
+		_, err := mgr.StartFlow(ctx, Config{
 			PipelineID: id,
 			Blocks:     []Block{sink},
 		})

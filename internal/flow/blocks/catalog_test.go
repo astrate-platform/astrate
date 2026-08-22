@@ -72,10 +72,10 @@ func TestNullAndLogSink(t *testing.T) {
 	if err != nil || l.Name() != "l" {
 		t.Fatalf("LogSink: %v name=%q", err, nameOr(l))
 	}
-	if _, err := n.Process(&flow.FlowMessage{Key: "k", Type: flow.TypeString, Data: "x"}); err != nil {
+	if _, err := n.Process(&flow.Message{Key: "k", Type: flow.TypeString, Data: "x"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := l.Process(&flow.FlowMessage{Key: "k", Type: flow.TypeString, Data: "x"}); err != nil {
+	if _, err := l.Process(&flow.Message{Key: "k", Type: flow.TypeString, Data: "x"}); err != nil {
 		t.Fatal(err)
 	}
 }

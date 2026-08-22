@@ -152,7 +152,7 @@ func TestBlock_RoundTripEcho(t *testing.T) {
 	}
 	r.mu.Unlock()
 
-	in := &flow.FlowMessage{
+	in := &flow.Message{
 		Key:       "device/path",
 		Type:      flow.TypeString,
 		Data:      "hello",
@@ -180,7 +180,7 @@ func TestBlock_DropAndError(t *testing.T) {
 	}
 	t.Cleanup(func() { b.(flow.Stopper).Stop() })
 
-	outs, err := b.Process(&flow.FlowMessage{
+	outs, err := b.Process(&flow.Message{
 		Key: "k", Type: flow.TypeString, Data: "x",
 		Metadata: map[string]string{"echo_drop": "1"},
 	})
@@ -188,7 +188,7 @@ func TestBlock_DropAndError(t *testing.T) {
 		t.Fatalf("drop: outs=%v err=%v", outs, err)
 	}
 
-	_, err = b.Process(&flow.FlowMessage{
+	_, err = b.Process(&flow.Message{
 		Key: "k", Type: flow.TypeString, Data: "x",
 		Metadata: map[string]string{"echo_fail": "1"},
 	})
@@ -196,7 +196,7 @@ func TestBlock_DropAndError(t *testing.T) {
 		t.Fatalf("fail err = %v", err)
 	}
 
-	outs, err = b.Process(&flow.FlowMessage{
+	outs, err = b.Process(&flow.Message{
 		Key: "k", Type: flow.TypeString, Data: "x",
 		Metadata: map[string]string{"echo_array": "1"},
 	})
@@ -219,7 +219,7 @@ func TestBlock_StopRemovesContainer(t *testing.T) {
 	if inst.stops.Load() != 1 {
 		t.Fatalf("stops = %d, want 1", inst.stops.Load())
 	}
-	_, err = b.Process(&flow.FlowMessage{Key: "k", Type: flow.TypeString, Data: "x"})
+	_, err = b.Process(&flow.Message{Key: "k", Type: flow.TypeString, Data: "x"})
 	if err == nil {
 		t.Fatal("want error after stop")
 	}
@@ -227,7 +227,7 @@ func TestBlock_StopRemovesContainer(t *testing.T) {
 
 func TestBridge_WaitReadyTimeout(t *testing.T) {
 	// Server that never becomes ready on /healthz.
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		http.Error(w, "no", http.StatusServiceUnavailable)
 	}))
 	t.Cleanup(srv.Close)
@@ -322,7 +322,7 @@ func TestCatalogConstructor_UsesInjectedRunner(t *testing.T) {
 		t.Fatalf("Constructor: %v", err)
 	}
 	t.Cleanup(func() { b.(flow.Stopper).Stop() })
-	outs, err := b.Process(&flow.FlowMessage{Key: "k", Type: flow.TypeInteger, Data: int64(7)})
+	outs, err := b.Process(&flow.Message{Key: "k", Type: flow.TypeInteger, Data: int64(7)})
 	if err != nil || len(outs) != 1 {
 		t.Fatalf("Process: outs=%v err=%v", outs, err)
 	}
@@ -333,7 +333,7 @@ func TestCatalogConstructor_UsesInjectedRunner(t *testing.T) {
 
 func TestNew_CleansUpWhenNotReady(t *testing.T) {
 	// Port open but healthz fails forever — WaitReady times out, Stop must run.
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		http.Error(w, "nope", http.StatusServiceUnavailable)
 	}))
 	t.Cleanup(srv.Close)

@@ -6,14 +6,14 @@ import (
 
 func TestFlowStatus_String(t *testing.T) {
 	tests := []struct {
-		status FlowStatus
+		status Status
 		want   string
 	}{
 		{FlowStatusCreating, "creating"},
 		{FlowStatusRunning, "running"},
 		{FlowStatusStopped, "stopped"},
 		{FlowStatusFailed, "failed"},
-		{FlowStatus(99), "unknown(99)"},
+		{Status(99), "unknown(99)"},
 	}
 
 	for _, tt := range tests {
@@ -29,14 +29,14 @@ func TestFlowStatus_Transitions(t *testing.T) {
 	tests := []struct {
 		name       string
 		initialise func(t *testing.T) *Flow
-		wantFinal  FlowStatus
+		wantFinal  Status
 	}{
 		{
 			name: "creating -> running",
 			initialise: func(t *testing.T) *Flow {
 				mgr := NewManager()
 				blk := &passthroughBlock{}
-				f, err := mgr.StartFlow(t.Context(), FlowConfig{
+				f, err := mgr.StartFlow(t.Context(), Config{
 					PipelineID: "trans-1",
 					Blocks:     []Block{blk},
 				})
@@ -53,7 +53,7 @@ func TestFlowStatus_Transitions(t *testing.T) {
 			initialise: func(t *testing.T) *Flow {
 				mgr := NewManager()
 				blk := &passthroughBlock{}
-				f, err := mgr.StartFlow(t.Context(), FlowConfig{
+				f, err := mgr.StartFlow(t.Context(), Config{
 					PipelineID: "trans-2",
 					Blocks:     []Block{blk},
 				})
@@ -83,7 +83,7 @@ func TestFlowStatus_Transitions(t *testing.T) {
 
 	t.Run("construction failure leaves no flow", func(t *testing.T) {
 		mgr := NewManager()
-		f, err := mgr.StartFlow(t.Context(), FlowConfig{
+		f, err := mgr.StartFlow(t.Context(), Config{
 			PipelineID: "trans-3",
 			Blocks:     []Block{nil},
 		})
@@ -99,7 +99,7 @@ func TestFlowStatus_Transitions(t *testing.T) {
 func TestFlow_TimestampsSet(t *testing.T) {
 	mgr := NewManager()
 	blk := &passthroughBlock{}
-	f, err := mgr.StartFlow(t.Context(), FlowConfig{
+	f, err := mgr.StartFlow(t.Context(), Config{
 		PipelineID: "ts-test",
 		Blocks:     []Block{blk},
 	})
@@ -114,15 +114,15 @@ func TestFlow_TimestampsSet(t *testing.T) {
 	if f.StartedAt().IsZero() {
 		t.Error("StartedAt is zero")
 	}
-	if f.StoppedAt().IsZero() {
-		// Not stopped yet; StoppedAt should be zero.
+	if !f.StoppedAt().IsZero() {
+		t.Error("StoppedAt should be zero while still running")
 	}
 }
 
 func TestFlow_StatusAfterStop(t *testing.T) {
 	mgr := NewManager()
 	blk := &passthroughBlock{}
-	f, err := mgr.StartFlow(t.Context(), FlowConfig{
+	f, err := mgr.StartFlow(t.Context(), Config{
 		PipelineID: "stop-test",
 		Blocks:     []Block{blk},
 	})
@@ -148,7 +148,7 @@ func TestFlow_StatusAfterStop(t *testing.T) {
 
 func TestFlow_ConstructionFailureNoMapEntry(t *testing.T) {
 	mgr := NewManager()
-	f, err := mgr.StartFlow(t.Context(), FlowConfig{
+	f, err := mgr.StartFlow(t.Context(), Config{
 		PipelineID: "fail-ts",
 		Blocks:     []Block{nil},
 	})
@@ -166,7 +166,7 @@ func TestFlow_ConstructionFailureNoMapEntry(t *testing.T) {
 func TestFlow_PipelineID(t *testing.T) {
 	mgr := NewManager()
 	blk := &passthroughBlock{}
-	f, err := mgr.StartFlow(t.Context(), FlowConfig{
+	f, err := mgr.StartFlow(t.Context(), Config{
 		PipelineID: "pid-test",
 		Blocks:     []Block{blk},
 	})
@@ -183,7 +183,7 @@ func TestFlow_PipelineID(t *testing.T) {
 func TestFlow_IDNotEmpty(t *testing.T) {
 	mgr := NewManager()
 	blk := &passthroughBlock{}
-	f, err := mgr.StartFlow(t.Context(), FlowConfig{
+	f, err := mgr.StartFlow(t.Context(), Config{
 		PipelineID: "id-test",
 		Blocks:     []Block{blk},
 	})

@@ -19,7 +19,7 @@ func TestSourcePump_AstarteSourceToSink(t *testing.T) {
 	sink := &countingSink{}
 
 	mgr := flow.NewManager()
-	f, err := mgr.StartFlow(context.Background(), flow.FlowConfig{
+	f, err := mgr.StartFlow(context.Background(), flow.Config{
 		PipelineID: "pump-1",
 		Blocks:     []flow.Block{src, sink},
 		RouterCfg: flow.RouterConfig{
@@ -52,6 +52,7 @@ func TestSourcePump_AstarteSourceToSink(t *testing.T) {
 	got := sink.lastMsg()
 	if got == nil {
 		t.Fatal("sink last message is nil")
+		return
 	}
 	if got.Key != "test/dev1" {
 		t.Errorf("Key = %q, want test/dev1", got.Key)
@@ -80,7 +81,7 @@ func TestSourcePump_StopReleasesSubscription(t *testing.T) {
 	}
 
 	mgr := flow.NewManager()
-	_, err := mgr.StartFlow(context.Background(), flow.FlowConfig{
+	_, err := mgr.StartFlow(context.Background(), flow.Config{
 		PipelineID: "pump-stop",
 		Blocks:     []flow.Block{src, &countingSink{}},
 	})
@@ -104,13 +105,13 @@ func TestSourcePump_StopReleasesSubscription(t *testing.T) {
 // TestSourcePump_FuncSourceBlock verifies NewSourceBlock is pumped the same way.
 func TestSourcePump_FuncSourceBlock(t *testing.T) {
 	var emitted atomic.Bool
-	src := flow.NewSourceBlock("tick", func() ([]*flow.FlowMessage, error) {
+	src := flow.NewSourceBlock("tick", func() ([]*flow.Message, error) {
 		if emitted.Swap(true) {
 			// Subsequent polls: nothing more (non-blocking SourceFunc).
 			time.Sleep(50 * time.Millisecond)
 			return nil, nil
 		}
-		return []*flow.FlowMessage{{
+		return []*flow.Message{{
 			Key:       "k",
 			Type:      flow.TypeInteger,
 			Data:      int64(7),
@@ -120,7 +121,7 @@ func TestSourcePump_FuncSourceBlock(t *testing.T) {
 	sink := &countingSink{}
 
 	mgr := flow.NewManager()
-	_, err := mgr.StartFlow(context.Background(), flow.FlowConfig{
+	_, err := mgr.StartFlow(context.Background(), flow.Config{
 		PipelineID: "pump-fn",
 		Blocks:     []flow.Block{src, sink},
 	})
@@ -146,9 +147,9 @@ func TestSourcePump_FuncSourceBlock(t *testing.T) {
 // Process (which would discard the payload for AstarteSource).
 func TestGraph_RunSkipsSource(t *testing.T) {
 	var sourceCalls atomic.Int64
-	src := flow.NewSourceBlock("src", func() ([]*flow.FlowMessage, error) {
+	src := flow.NewSourceBlock("src", func() ([]*flow.Message, error) {
 		sourceCalls.Add(1)
-		return []*flow.FlowMessage{{Key: "from-source", Type: flow.TypeString, Data: "x"}}, nil
+		return []*flow.Message{{Key: "from-source", Type: flow.TypeString, Data: "x"}}, nil
 	})
 	sink := &countingSink{}
 
@@ -156,7 +157,7 @@ func TestGraph_RunSkipsSource(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	msg := &flow.FlowMessage{Key: "submitted", Type: flow.TypeInteger, Data: int64(1)}
+	msg := &flow.Message{Key: "submitted", Type: flow.TypeInteger, Data: int64(1)}
 	if _, err := g.Run(msg); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -174,10 +175,10 @@ func TestGraph_RunSkipsSource(t *testing.T) {
 // countingSink is a flow.Block sink used by pump tests.
 type countingSink struct {
 	n    atomic.Int64
-	last atomic.Pointer[flow.FlowMessage]
+	last atomic.Pointer[flow.Message]
 }
 
-func (c *countingSink) Process(msg *flow.FlowMessage) ([]*flow.FlowMessage, error) {
+func (c *countingSink) Process(msg *flow.Message) ([]*flow.Message, error) {
 	if msg != nil {
 		cp := *msg
 		c.last.Store(&cp)
@@ -190,4 +191,4 @@ func (c *countingSink) Name() string { return "counting-sink" }
 
 func (c *countingSink) load() int64 { return c.n.Load() }
 
-func (c *countingSink) lastMsg() *flow.FlowMessage { return c.last.Load() }
+func (c *countingSink) lastMsg() *flow.Message { return c.last.Load() }

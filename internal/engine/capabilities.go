@@ -4,8 +4,9 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/astrate-platform/astrate/internal/broker"
 	"go.mongodb.org/mongo-driver/v2/bson"
+
+	"github.com/astrate-platform/astrate/internal/broker"
 )
 
 // Known capability keys (upstream MQTT v1 §2 — Device capabilities).

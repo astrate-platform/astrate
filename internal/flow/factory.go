@@ -204,14 +204,14 @@ func ParseDefinition(id, name string, definition []byte) (*Pipeline, error) {
 	return p, nil
 }
 
-// FlowInstanceID builds the Manager map key for a named flow instance
+// InstanceID builds the Manager map key for a named flow instance
 // (realm + "/" + flowName). Different flows may share one pipeline name.
-func FlowInstanceID(realm, flowName string) string {
+func InstanceID(realm, flowName string) string {
 	return realm + "/" + flowName
 }
 
-// FlowPipelineID is a legacy alias for FlowInstanceID. Prefer FlowInstanceID;
+// PipelineID is a legacy alias for InstanceID. Prefer InstanceID;
 // the map key is the flow instance name, not the pipeline name.
-func FlowPipelineID(realm, name string) string {
-	return FlowInstanceID(realm, name)
+func PipelineID(realm, name string) string {
+	return InstanceID(realm, name)
 }

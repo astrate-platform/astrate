@@ -12,7 +12,7 @@ import (
 
 // Spec describes a container to start for a flow block.
 type Spec struct {
-	Image      string
+	Image string
 	// ContainerPort is the HTTP port inside the container (default 8080).
 	ContainerPort int
 	// FlowConfigJSON is passed as ASTRATE_FLOW_CONFIG.
@@ -59,6 +59,7 @@ func (r *CLIRunner) run(ctx context.Context, args ...string) (string, string, er
 	if r != nil && r.Run != nil {
 		return r.Run(ctx, r.bin(), args...)
 	}
+	// #nosec G204 -- bin and args come from the block's own pipeline configuration, not user input
 	cmd := exec.CommandContext(ctx, r.bin(), args...)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout

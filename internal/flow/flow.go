@@ -10,12 +10,12 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 )
 
-// FlowStatus enumerates the lifecycle states of a flow.
-type FlowStatus uint8
+// Status enumerates the lifecycle states of a flow.
+type Status uint8
 
 const (
 	// FlowStatusCreating indicates the flow is being initialised.
-	FlowStatusCreating FlowStatus = iota
+	FlowStatusCreating Status = iota
 	// FlowStatusRunning indicates the flow is accepting and processing messages.
 	FlowStatusRunning
 	// FlowStatusStopped indicates the flow has been gracefully shut down.
@@ -25,7 +25,7 @@ const (
 )
 
 // String returns a human-readable label for s.
-func (s FlowStatus) String() string {
+func (s Status) String() string {
 	switch s {
 	case FlowStatusCreating:
 		return "creating"
@@ -49,10 +49,10 @@ var (
 	ErrFlowNotFound = errors.New("flow: not found")
 )
 
-// FlowConfig holds the parameters needed to instantiate a running flow.
-type FlowConfig struct {
+// Config holds the parameters needed to instantiate a running flow.
+type Config struct {
 	// PipelineID is the Manager map key for this instance (realm/flowName).
-	// Historical field name; value is FlowInstanceID, not the pipeline recipe name.
+	// Historical field name; value is InstanceID, not the pipeline recipe name.
 	PipelineID string
 	// Blocks is the ordered list of blocks forming the processing graph.
 	Blocks []Block
@@ -69,7 +69,7 @@ type FlowConfig struct {
 type Flow struct {
 	id         string
 	pipelineID string
-	status     FlowStatus
+	status     Status
 	router     *Router
 	graph      *BlockGraph
 
@@ -90,7 +90,7 @@ func (f *Flow) ID() string { return f.id }
 func (f *Flow) PipelineID() string { return f.pipelineID }
 
 // Status returns the current lifecycle status.
-func (f *Flow) Status() FlowStatus {
+func (f *Flow) Status() Status {
 	f.mu.RLock()
 	defer f.mu.RUnlock()
 	return f.status
@@ -122,7 +122,7 @@ func (f *Flow) StoppedAt() time.Time {
 }
 
 // setStatus is called under lock by the manager.
-func (f *Flow) setStatus(s FlowStatus) { f.status = s }
+func (f *Flow) setStatus(s Status) { f.status = s }
 
 // Manager manages the lifecycle of running flows. It is safe for concurrent
 // use.
@@ -141,7 +141,7 @@ func NewManager() *Manager {
 // built before the flow is registered so construction failures leave no map
 // entry (durable layer records status=failed separately). On success the
 // status transitions to running.
-func (m *Manager) StartFlow(ctx context.Context, cfg FlowConfig) (*Flow, error) {
+func (m *Manager) StartFlow(ctx context.Context, cfg Config) (*Flow, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -283,7 +283,7 @@ func (m *Manager) StopFlow(ctx context.Context, pipelineID string) error {
 
 // GetFlowStatus returns the current status of the flow identified by
 // pipelineID.
-func (m *Manager) GetFlowStatus(pipelineID string) (FlowStatus, error) {
+func (m *Manager) GetFlowStatus(pipelineID string) (Status, error) {
 	m.mu.RLock()
 	f, ok := m.flows[pipelineID]
 	m.mu.RUnlock()

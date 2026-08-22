@@ -17,7 +17,7 @@ type Block interface {
 	// Process handles one message. A source receives msg == nil and may return
 	// zero or more messages. A transform receives exactly one non-nil message
 	// and may return zero or more. A sink returns nil.
-	Process(msg *FlowMessage) ([]*FlowMessage, error)
+	Process(msg *Message) ([]*Message, error)
 	// Name returns a human-readable label for metrics and logging.
 	Name() string
 }
@@ -30,7 +30,7 @@ type Source interface {
 	Block
 	// Emit returns newly available messages. Implementations may block until
 	// at least one message is ready or ctx is cancelled.
-	Emit(ctx context.Context) ([]*FlowMessage, error)
+	Emit(ctx context.Context) ([]*Message, error)
 }
 
 // Stopper is optionally implemented by Blocks that own resources (bus
@@ -42,15 +42,15 @@ type Stopper interface {
 
 // SourceFunc is a function that produces messages from external events. It
 // receives nil and returns zero or more messages.
-type SourceFunc func() ([]*FlowMessage, error)
+type SourceFunc func() ([]*Message, error)
 
 // TransformFunc consumes one message and returns zero or more transformed
 // messages.
-type TransformFunc func(msg *FlowMessage) ([]*FlowMessage, error)
+type TransformFunc func(msg *Message) ([]*Message, error)
 
 // SinkFunc consumes a message for external output. Return value is ignored
 // by the pipeline.
-type SinkFunc func(msg *FlowMessage) error
+type SinkFunc func(msg *Message) error
 
 // sourceBlock adapts a SourceFunc to the Block and Source interfaces.
 type sourceBlock struct {
@@ -58,11 +58,11 @@ type sourceBlock struct {
 	name string
 }
 
-func (s *sourceBlock) Process(_ *FlowMessage) ([]*FlowMessage, error) {
+func (s *sourceBlock) Process(_ *Message) ([]*Message, error) {
 	return s.fn()
 }
 
-func (s *sourceBlock) Emit(_ context.Context) ([]*FlowMessage, error) {
+func (s *sourceBlock) Emit(_ context.Context) ([]*Message, error) {
 	return s.fn()
 }
 
@@ -79,7 +79,7 @@ type transformBlock struct {
 	name string
 }
 
-func (t *transformBlock) Process(msg *FlowMessage) ([]*FlowMessage, error) {
+func (t *transformBlock) Process(msg *Message) ([]*Message, error) {
 	return t.fn(msg)
 }
 
@@ -96,7 +96,7 @@ type sinkBlock struct {
 	name string
 }
 
-func (s *sinkBlock) Process(msg *FlowMessage) ([]*FlowMessage, error) {
+func (s *sinkBlock) Process(msg *Message) ([]*Message, error) {
 	return nil, s.fn(msg)
 }
 

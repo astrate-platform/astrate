@@ -117,11 +117,6 @@ func (p *Pipeline) Validate() error {
 	hasSource := false
 	hasSink := false
 	for _, b := range p.Blocks {
-		if inDeg[b.Name] == 0 || outDeg[b.Name] == 0 {
-			// Re-check using original degrees (topo sort modified inDeg).
-		}
-	}
-	for _, b := range p.Blocks {
 		if outDeg[b.Name] == 0 {
 			hasSink = true
 		}

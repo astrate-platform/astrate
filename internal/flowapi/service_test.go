@@ -81,9 +81,9 @@ func TestMergeFlowView_LiveOverridesStatus(t *testing.T) {
 
 	// Live running overlays status + runtime_id.
 	mgr := flow.NewManager()
-	sink := flow.NewSinkBlock("s", func(*flow.FlowMessage) error { return nil })
-	live, err := mgr.StartFlow(t.Context(), flow.FlowConfig{
-		PipelineID: flow.FlowInstanceID("acme", "prod"),
+	sink := flow.NewSinkBlock("s", func(*flow.Message) error { return nil })
+	live, err := mgr.StartFlow(t.Context(), flow.Config{
+		PipelineID: flow.InstanceID("acme", "prod"),
 		Blocks:     []flow.Block{sink},
 	})
 	if err != nil {
@@ -111,7 +111,7 @@ func TestSplitInstanceID(t *testing.T) {
 }
 
 func TestFlowInstanceIDAlias(t *testing.T) {
-	if flow.FlowInstanceID("r", "n") != flow.FlowPipelineID("r", "n") {
-		t.Fatal("FlowPipelineID should alias FlowInstanceID")
+	if flow.InstanceID("r", "n") != flow.PipelineID("r", "n") {
+		t.Fatal("PipelineID should alias InstanceID")
 	}
 }

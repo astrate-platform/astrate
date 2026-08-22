@@ -221,6 +221,7 @@ func (env *e2eEnv) decodeIndividual(t *testing.T, iface string, major int, path 
 	ci := rs.iface(iface, major)
 	if ci == nil {
 		t.Fatalf("interface %s:%d not compiled", iface, major)
+		return payload.DecodedPayload{}
 	}
 	m, ok := ci.Trie.Match(path)
 	if !ok {

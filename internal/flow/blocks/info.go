@@ -3,6 +3,7 @@ package blocks
 // Role is the operator-facing position of a block in a pipeline.
 type Role string
 
+// The three Role values a block can occupy in a pipeline.
 const (
 	RoleSource    Role = "source"
 	RoleTransform Role = "transform"
