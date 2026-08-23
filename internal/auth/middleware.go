@@ -120,9 +120,9 @@ func (m *Middleware) authorize(w http.ResponseWriter, r *http.Request, next http
 type authResult int
 
 const (
-	authServed authResult = iota // request authorized and next served
-	authFailed                   // authentication failed (401 written); stop
-	authForbidden                // claim did not grant the request; try next
+	authServed    authResult = iota // request authorized and next served
+	authFailed                      // authentication failed (401 written); stop
+	authForbidden                   // claim did not grant the request; try next
 )
 
 // tryAuthorize is authorize without the terminal 403: it classifies the
