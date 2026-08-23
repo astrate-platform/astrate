@@ -24,6 +24,11 @@ queue/gate.
      filed, so you never duplicate.
    - Grep Astrate's own `internal/`, `docs/DESIGN.md`, `docs/ROADMAP.md` for existing
      coverage of each capability the reference names.
+   - **Standing item, every milestone:** read `docs/UPSTREAM-EXPERIMENTAL.md` and
+     reconcile each row against the targeted upstream level (promoted → keep,
+     deprecated → deprecate in sync); if the milestone completes a full upstream
+     API level, bumping `APICompatVersion` is part of this milestone's definition
+     of done — file the issue for it here rather than leaving it to memory.
 4. For each gap, decide which bucket it falls in:
    - **Machine-checkable, no design choice needed** (a missing package, an unimplemented
      wire message, a schema field): **file the issue now**, directly:

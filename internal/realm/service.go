@@ -581,7 +581,10 @@ func (s *Service) DeletePolicy(ctx context.Context, realm, name string) error {
 // emulates, reported by GET /v1/{realm}/version. The Astarte Dashboard
 // feature-gates UI sections on it (the Trigger Delivery Policies page
 // requires >= 1.1.1), so this is a compatibility declaration, not Astrate's
-// own release version (docs/COMPATIBILITY.md).
+// own release version (docs/COMPATIBILITY.md). Bump rule: only in the same
+// change that completes the full surface of the new level, after reconciling
+// every row in docs/UPSTREAM-EXPERIMENTAL.md tagged with it — never via
+// configuration, never speculatively.
 const APICompatVersion = "1.2.2"
 
 // GetDeviceRegistrationLimit returns the realm's device registration limit
