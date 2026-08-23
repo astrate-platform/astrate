@@ -20,6 +20,7 @@ func TestDefaultRegistry_Types(t *testing.T) {
 		blocks.TypeSplitMap,
 		blocks.TypeRandomSource,
 		blocks.TypeSort,
+		blocks.TypeJSONPathMap,
 		blocks.TypeContainer,
 		blocks.TypeLogSink,
 		blocks.TypeNullSink,

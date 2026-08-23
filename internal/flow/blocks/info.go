@@ -73,6 +73,12 @@ var builtinInfo = map[string]Info{
 		Summary: "Buffer messages and release them in ascending timestamp order behind a window",
 		Config:  "window_ms (default 1000, must be ≥ 0), dedup (bool, default false)",
 	},
+	TypeJSONPathMap: {
+		Type:    TypeJSONPathMap,
+		Role:    RoleTransform,
+		Summary: "Reshape JSON messages through a template with $MESSAGE / $METADATA placeholders",
+		Config:  "template (required; placeholders $MESSAGE, $MESSAGE.<path>, $METADATA.<name>; unresolvable paths fail the message)",
+	},
 	TypeContainer: {
 		Type:    TypeContainer,
 		Role:    RoleTransform,

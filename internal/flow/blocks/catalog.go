@@ -27,6 +27,10 @@ const (
 	TypeSplitMap       = "split_map"
 	TypeRandomSource   = "random_source"
 	TypeSort           = "sort"
+
+	// TypeJSONPathMap reshapes JSON messages through a template (#81,
+	// astarte_flow parity); declared in jsonpathmap.go's neighborhood.
+	TypeJSONPathMap = "json_path_map"
 )
 
 // DefaultRegistry returns a registry with the minimum useful built-in set:
@@ -43,6 +47,7 @@ func DefaultRegistry() *flow.Registry {
 	r.Register(TypeSplitMap, SplitMap)
 	r.Register(TypeRandomSource, RandomSource)
 	r.Register(TypeSort, Sort)
+	r.Register(TypeJSONPathMap, JSONPathMap)
 	r.Register(TypeContainer, container.Constructor)
 	r.Register(TypeNullSink, NullSink)
 	r.Register(TypeLogSink, LogSink)
