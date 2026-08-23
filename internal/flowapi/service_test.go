@@ -14,11 +14,11 @@ import (
 func TestCheckBlockTypes(t *testing.T) {
 	s := &Service{reg: blocks.DefaultRegistry()}
 	ok := []byte(`{"blocks":[{"name":"src","block_type":"astarte_source"},{"name":"sink","block_type":"null_sink"}],"connections":[{"from":"src","to":"sink"}]}`)
-	if err := s.checkBlockTypes(ok); err != nil {
+	if err := s.checkBlockTypes(context.Background(), 0, ok); err != nil {
 		t.Fatalf("ok definition: %v", err)
 	}
 	bad := []byte(`{"blocks":[{"name":"src","block_type":"nope"},{"name":"sink","block_type":"null_sink"}]}`)
-	if err := s.checkBlockTypes(bad); err == nil {
+	if err := s.checkBlockTypes(context.Background(), 0, bad); err == nil {
 		t.Fatal("expected unknown block_type error")
 	}
 }

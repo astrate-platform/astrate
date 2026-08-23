@@ -1,13 +1,10 @@
 package flowapi
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"time"
-
-	"github.com/santhosh-tekuri/jsonschema/v6"
 
 	"github.com/astrate-platform/astrate/internal/flow"
 	"github.com/astrate-platform/astrate/internal/store"
@@ -143,23 +140,15 @@ func (s *Service) validateUserBlockBody(ctx context.Context, realm, blockType st
 	return nil
 }
 
-// validateConfigSchema compiles a non-empty config_schema with the verified
-// jsonschema/v6 pattern: decode, register under any unused name, compile
-// (which rejects non-object schemas via the metaschema).
+// validateConfigSchema validates a non-empty config_schema via the shared
+// compiler in service.go (decode, register, compile — which rejects
+// non-object schemas via the metaschema).
 func (s *Service) validateConfigSchema(schema json.RawMessage) error {
 	if len(schema) == 0 {
 		return nil
 	}
-	doc, err := jsonschema.UnmarshalJSON(bytes.NewReader(schema))
-	if err != nil {
-		return fmt.Errorf("%w: config_schema is not valid JSON: %v", ErrValidation, err)
-	}
-	c := jsonschema.NewCompiler()
-	if err := c.AddResource("config_schema.json", doc); err != nil {
-		return fmt.Errorf("%w: config_schema is not a valid JSON Schema: %v", ErrValidation, err)
-	}
-	if _, err := c.Compile("config_schema.json"); err != nil {
-		return fmt.Errorf("%w: config_schema is not a valid JSON Schema: %v", ErrValidation, err)
+	if _, err := compileJSONSchema(schema); err != nil {
+		return fmt.Errorf("%w: %v", ErrValidation, err)
 	}
 	return nil
 }

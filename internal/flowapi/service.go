@@ -5,6 +5,7 @@
 package flowapi
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -12,6 +13,8 @@ import (
 	"log/slog"
 	"sync"
 	"time"
+
+	"github.com/santhosh-tekuri/jsonschema/v6"
 
 	"github.com/astrate-platform/astrate/internal/engine/stream"
 	"github.com/astrate-platform/astrate/internal/flow"
@@ -135,12 +138,13 @@ func (s *Service) CreatePipeline(ctx context.Context, realm, name string, defini
 	if _, err := flow.ParseDefinition(name, name, definition); err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrValidation, err)
 	}
-	// Ensure every block_type is registered before persisting.
-	if err := s.checkBlockTypes(definition); err != nil {
-		return nil, err
-	}
 	id, err := s.realmID(ctx, realm)
 	if err != nil {
+		return nil, err
+	}
+	// Ensure every block_type is a built-in or a stored composite before
+	// persisting.
+	if err := s.checkBlockTypes(ctx, id, definition); err != nil {
 		return nil, err
 	}
 	p, err := s.st.CreatePipeline(ctx, id, name, definition)
@@ -157,11 +161,11 @@ func (s *Service) UpdatePipeline(ctx context.Context, realm, name string, defini
 	if _, err := flow.ParseDefinition(name, name, definition); err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrValidation, err)
 	}
-	if err := s.checkBlockTypes(definition); err != nil {
-		return nil, err
-	}
 	id, err := s.realmID(ctx, realm)
 	if err != nil {
+		return nil, err
+	}
+	if err := s.checkBlockTypes(ctx, id, definition); err != nil {
 		return nil, err
 	}
 	p, err := s.st.UpdatePipeline(ctx, id, name, definition)
@@ -199,7 +203,42 @@ func (s *Service) DeletePipeline(ctx context.Context, realm, name string) error 
 	return s.st.DeletePipeline(ctx, id, name)
 }
 
-func (s *Service) checkBlockTypes(definition []byte) error {
+// storedUserBlocks loads the realm's stored composite blocks mapped to the
+// engine shape (#85). A nil store yields an empty list so nil-store unit
+// services keep working.
+func (s *Service) storedUserBlocks(ctx context.Context, realmID int16) ([]*flow.UserBlock, error) {
+	if s.st == nil {
+		return nil, nil
+	}
+	rows, err := s.st.ListUserBlocks(ctx, realmID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]*flow.UserBlock, 0, len(rows))
+	for i := range rows {
+		out = append(out, &flow.UserBlock{
+			Name:         rows[i].Name,
+			BlockType:    rows[i].BlockType,
+			Source:       rows[i].Source,
+			ConfigSchema: json.RawMessage(rows[i].ConfigSchema),
+		})
+	}
+	return out, nil
+}
+
+func findStoredBlock(stored []*flow.UserBlock, name string) *flow.UserBlock {
+	for _, ub := range stored {
+		if ub.Name == name {
+			return ub
+		}
+	}
+	return nil
+}
+
+// checkBlockTypes accepts registered built-ins plus the realm's stored
+// composite blocks. Built-ins short-circuit before any store access; stored
+// blocks load lazily on the first non-built-in type, at most once per call.
+func (s *Service) checkBlockTypes(ctx context.Context, realmID int16, definition []byte) error {
 	var shape struct {
 		Blocks []struct {
 			Name      string `json:"name"`
@@ -209,16 +248,44 @@ func (s *Service) checkBlockTypes(definition []byte) error {
 	if err := json.Unmarshal(definition, &shape); err != nil {
 		return fmt.Errorf("%w: %v", ErrValidation, err)
 	}
+	var stored []*flow.UserBlock
+	loaded := false
 	for _, b := range shape.Blocks {
 		if b.BlockType == "" {
 			return fmt.Errorf("%w: block %q has empty block_type", ErrValidation, b.Name)
 		}
-		if !s.reg.Has(b.BlockType) {
-			return fmt.Errorf("%w: unknown block_type %q on block %q (known: %v)",
-				ErrValidation, b.BlockType, b.Name, s.reg.Types())
+		if s.reg.Has(b.BlockType) {
+			continue
 		}
+		if !loaded {
+			loaded = true
+			var err error
+			stored, err = s.storedUserBlocks(ctx, realmID)
+			if err != nil {
+				return err
+			}
+		}
+		if findStoredBlock(stored, b.BlockType) != nil {
+			continue
+		}
+		return unknownBlockTypeErr(b.BlockType, b.Name, s.reg.Types(), stored)
 	}
 	return nil
+}
+
+// unknownBlockTypeErr builds the rejection for a type that is neither a
+// built-in nor a stored composite: today's message, extended with the
+// realm's stored composite names when any exist.
+func unknownBlockTypeErr(blockType, blockName string, builtins []string, stored []*flow.UserBlock) error {
+	msg := fmt.Sprintf("unknown block_type %q on block %q (known: %v)", blockType, blockName, builtins)
+	if len(stored) > 0 {
+		names := make([]string, len(stored))
+		for i := range stored {
+			names[i] = stored[i].Name
+		}
+		msg += fmt.Sprintf(" (stored composites: %v)", names)
+	}
+	return fmt.Errorf("%w: %s", ErrValidation, msg)
 }
 
 // CreateAndStartFlow inserts a durable flow row and starts it (single start path).
@@ -298,7 +365,10 @@ func (s *Service) resolveAndBuild(ctx context.Context, realmID int16, realm, nam
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrValidation, err)
 	}
-	if err := s.checkBlockTypes(def); err != nil {
+	if err := s.checkBlockTypes(ctx, realmID, def); err != nil {
+		return nil, err
+	}
+	if def, err = s.expandStoredComposites(ctx, realmID, def); err != nil {
 		return nil, err
 	}
 	p, err := flow.ParseDefinition(pipelineName, pipelineName, def)
@@ -614,7 +684,10 @@ func (s *Service) resolveAndBuildDryRun(ctx context.Context, realmID int16, _, _
 	if err != nil {
 		return fmt.Errorf("%w: %v", ErrValidation, err)
 	}
-	if err := s.checkBlockTypes(def); err != nil {
+	if err := s.checkBlockTypes(ctx, realmID, def); err != nil {
+		return err
+	}
+	if def, err = s.expandStoredComposites(ctx, realmID, def); err != nil {
 		return err
 	}
 	_, err = flow.ParseDefinition(pipelineName, pipelineName, def)
@@ -622,6 +695,139 @@ func (s *Service) resolveAndBuildDryRun(ctx context.Context, realmID int16, _, _
 		return fmt.Errorf("%w: %v", ErrValidation, err)
 	}
 	return nil
+}
+
+// expandStoredComposites expands the realm's stored composites in def (#85):
+// config validation against their schemas first, then inline expansion. A
+// definition using only built-in types — or a realm with zero stored blocks —
+// flows through untouched without touching the store, keeping built-in-only
+// behaviour byte-identical.
+func (s *Service) expandStoredComposites(ctx context.Context, realmID int16, def []byte) ([]byte, error) {
+	nodes, err := decodePipelineNodes(def)
+	if err != nil {
+		return nil, err
+	}
+	referencesComposite := false
+	for _, n := range nodes {
+		if !s.reg.Has(n.BlockType) {
+			referencesComposite = true
+			break
+		}
+	}
+	if !referencesComposite {
+		return def, nil
+	}
+	stored, err := s.storedUserBlocks(ctx, realmID)
+	if err != nil {
+		return nil, err
+	}
+	if len(stored) == 0 {
+		return def, nil
+	}
+	if err := validateCompositeConfigs(nodes, stored); err != nil {
+		return nil, err
+	}
+	expanded, err := flow.ExpandComposites(def, s.resolverFromStored(stored))
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrValidation, err)
+	}
+	return expanded, nil
+}
+
+// resolverFromStored adapts a loaded slice to flow.ExpandComposites:
+// built-ins pass through untouched, stored composites match by name, and
+// anything else is a dangling reference.
+func (s *Service) resolverFromStored(stored []*flow.UserBlock) func(string) (*flow.UserBlock, error) {
+	return func(name string) (*flow.UserBlock, error) {
+		if s.reg.Has(name) {
+			return nil, nil
+		}
+		if ub := findStoredBlock(stored, name); ub != nil {
+			return ub, nil
+		}
+		return nil, fmt.Errorf("unknown composite %q", name)
+	}
+}
+
+// configNode is one raw definition node as needed for composite config
+// validation, decoded from the pre-expansion body.
+type configNode struct {
+	Name      string         `json:"name"`
+	BlockType string         `json:"block_type"`
+	Config    map[string]any `json:"config"`
+}
+
+// decodePipelineNodes extracts a definition's raw nodes so composite config
+// validation can run against it before expansion.
+func decodePipelineNodes(def []byte) ([]configNode, error) {
+	var shape struct {
+		Blocks []configNode `json:"blocks"`
+	}
+	if err := json.Unmarshal(def, &shape); err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrValidation, err)
+	}
+	return shape.Blocks, nil
+}
+
+// validateCompositeConfigs checks each node's config against the matched
+// stored composite's compiled schema. Nodes whose type is not a stored
+// composite, or whose composite has no schema, pass untouched. Every failure
+// wraps ErrValidation naming the node, the block and the schema error.
+func validateCompositeConfigs(nodes []configNode, stored []*flow.UserBlock) error {
+	schemas, err := compiledCompositeSchemas(stored)
+	if err != nil {
+		return err
+	}
+	for _, n := range nodes {
+		sch, ok := schemas[n.BlockType]
+		if !ok {
+			continue
+		}
+		cfg := n.Config
+		if cfg == nil {
+			cfg = map[string]any{}
+		}
+		if err := sch.Validate(cfg); err != nil {
+			return fmt.Errorf("%w: block %q (composite %q): config does not match its schema: %v",
+				ErrValidation, n.Name, n.BlockType, err)
+		}
+	}
+	return nil
+}
+
+// compiledCompositeSchemas compiles every stored block's non-empty
+// config_schema once, keyed by block name.
+func compiledCompositeSchemas(stored []*flow.UserBlock) (map[string]*jsonschema.Schema, error) {
+	out := make(map[string]*jsonschema.Schema, len(stored))
+	for _, ub := range stored {
+		if len(ub.ConfigSchema) == 0 || ub.Name == "" {
+			continue
+		}
+		sch, err := compileJSONSchema(ub.ConfigSchema)
+		if err != nil {
+			return nil, fmt.Errorf("%w: composite %q: %v", ErrValidation, ub.Name, err)
+		}
+		out[ub.Name] = sch
+	}
+	return out, nil
+}
+
+// compileJSONSchema compiles one JSON Schema document with the verified
+// jsonschema/v6 pattern shared with user-block create/update.
+func compileJSONSchema(schema json.RawMessage) (*jsonschema.Schema, error) {
+	doc, err := jsonschema.UnmarshalJSON(bytes.NewReader(schema))
+	if err != nil {
+		return nil, fmt.Errorf("config_schema is not valid JSON: %v", err)
+	}
+	c := jsonschema.NewCompiler()
+	if err := c.AddResource("config_schema.json", doc); err != nil {
+		return nil, fmt.Errorf("config_schema is not a valid JSON Schema: %v", err)
+	}
+	sch, err := c.Compile("config_schema.json")
+	if err != nil {
+		return nil, fmt.Errorf("config_schema is not a valid JSON Schema: %v", err)
+	}
+	return sch, nil
 }
 
 // GetFlow returns one durable flow by name, merged with live status.
