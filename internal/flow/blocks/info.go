@@ -1,5 +1,7 @@
 package blocks
 
+import "encoding/json"
+
 // Role is the operator-facing position of a block in a pipeline.
 type Role string
 
@@ -20,6 +22,10 @@ type Info struct {
 	Summary string `json:"summary"`
 	// Config notes key config fields (not a full JSON Schema).
 	Config string `json:"config,omitempty"`
+	// ConfigSchema is a Draft-07-style JSON Schema (object form) describing the
+	// block's config keys, served through the blocks-discovery API so clients can
+	// render forms without hardcoding block knowledge.
+	ConfigSchema json.RawMessage `json:"config_schema,omitempty"`
 }
 
 // builtinInfo is the discovery catalog for DefaultRegistry types.
@@ -115,6 +121,11 @@ var builtinInfo = map[string]Info{
 // Unknown types return false (registry may still have a custom constructor).
 func LookupInfo(blockType string) (Info, bool) {
 	info, ok := builtinInfo[blockType]
+	if ok {
+		if s := builtinSchemas[blockType]; s != "" {
+			info.ConfigSchema = json.RawMessage(s)
+		}
+	}
 	return info, ok
 }
 
