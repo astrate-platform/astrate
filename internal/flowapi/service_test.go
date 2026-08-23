@@ -123,7 +123,7 @@ func TestFlowInstanceIDAlias(t *testing.T) {
 // constructor sees it without any per-pipeline configuration.
 func TestFlowDepsCarriesIngest(t *testing.T) {
 	var seen flow.IngestFunc
-	s := &Service{ingest: func(ctx context.Context, realm, deviceID, ifaceName, path string, payload json.RawMessage, ts *time.Time) error {
+	s := &Service{ingest: func(_ context.Context, _, _, _, _ string, _ json.RawMessage, _ *time.Time) error {
 		return nil
 	}}
 	seen = s.flowDeps(1, "r", "f").Ingest

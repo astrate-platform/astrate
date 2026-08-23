@@ -44,7 +44,10 @@ func (a *API) Mount(mux *http.ServeMux) {
 	mux.Handle("PUT /flow/v1/{realm}/flows/{name}/config", h(a.updateFlowConfig))
 
 	mux.Handle("GET /flow/v1/{realm}/blocks", h(a.listBlocks))
+	mux.Handle("POST /flow/v1/{realm}/blocks", h(a.createUserBlock))
 	mux.Handle("GET /flow/v1/{realm}/blocks/{type}", h(a.getBlock))
+	mux.Handle("PUT /flow/v1/{realm}/blocks/{name}", h(a.updateUserBlock))
+	mux.Handle("DELETE /flow/v1/{realm}/blocks/{name}", h(a.deleteUserBlock))
 }
 
 type createPipelineBody struct {
@@ -200,8 +203,71 @@ func (a *API) listBlocks(w http.ResponseWriter, r *http.Request) {
 	_ = astarteapi.WriteData(w, http.StatusOK, a.svc.ListBlocks(r.PathValue("realm")))
 }
 
+// createUserBlockBody is POST /blocks: a named composite definition.
+type createUserBlockBody struct {
+	Name         string          `json:"name"`
+	BlockType    string          `json:"block_type"`
+	Source       json.RawMessage `json:"source"`
+	ConfigSchema json.RawMessage `json:"config_schema"`
+}
+
+// updateUserBlockBody is PUT /blocks/{name}: the create body without name.
+type updateUserBlockBody struct {
+	BlockType    string          `json:"block_type"`
+	Source       json.RawMessage `json:"source"`
+	ConfigSchema json.RawMessage `json:"config_schema"`
+}
+
+func (a *API) createUserBlock(w http.ResponseWriter, r *http.Request) {
+	var body createUserBlockBody
+	if err := astarteapi.DecodeData(r.Body, maxBodyBytes, &body); err != nil {
+		_ = astarteapi.WriteBadRequest(w)
+		return
+	}
+	view, err := a.svc.CreateUserBlock(r.Context(), r.PathValue("realm"), body.Name, body.BlockType, body.Source, body.ConfigSchema)
+	if err != nil {
+		a.writeError(w, err)
+		return
+	}
+	_ = astarteapi.WriteData(w, http.StatusCreated, view)
+}
+
+func (a *API) updateUserBlock(w http.ResponseWriter, r *http.Request) {
+	var body updateUserBlockBody
+	if err := astarteapi.DecodeData(r.Body, maxBodyBytes, &body); err != nil {
+		_ = astarteapi.WriteBadRequest(w)
+		return
+	}
+	view, err := a.svc.UpdateUserBlock(r.Context(), r.PathValue("realm"), r.PathValue("name"), body.BlockType, body.Source, body.ConfigSchema)
+	if err != nil {
+		a.writeError(w, err)
+		return
+	}
+	_ = astarteapi.WriteData(w, http.StatusOK, view)
+}
+
+func (a *API) deleteUserBlock(w http.ResponseWriter, r *http.Request) {
+	if err := a.svc.DeleteUserBlock(r.Context(), r.PathValue("realm"), r.PathValue("name")); err != nil {
+		a.writeError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// getBlock serves built-in catalog docs for registered types; any other name
+// is looked up among the realm's stored user blocks (#85).
 func (a *API) getBlock(w http.ResponseWriter, r *http.Request) {
-	view, err := a.svc.GetBlock(r.PathValue("realm"), r.PathValue("type"))
+	name := r.PathValue("type")
+	if !a.svc.HasBuiltInBlock(name) {
+		view, err := a.svc.GetUserBlock(r.Context(), r.PathValue("realm"), name)
+		if err != nil {
+			a.writeError(w, err)
+			return
+		}
+		_ = astarteapi.WriteData(w, http.StatusOK, view)
+		return
+	}
+	view, err := a.svc.GetBlock(r.PathValue("realm"), name)
 	if err != nil {
 		a.writeError(w, err)
 		return
