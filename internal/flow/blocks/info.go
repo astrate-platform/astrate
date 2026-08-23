@@ -79,6 +79,18 @@ var builtinInfo = map[string]Info{
 		Summary: "Reshape JSON messages through a template with $MESSAGE / $METADATA placeholders",
 		Config:  "template (required; placeholders $MESSAGE, $MESSAGE.<path>, $METADATA.<name>; unresolvable paths fail the message)",
 	},
+	TypeHTTPSource: {
+		Type:    TypeHTTPSource,
+		Role:    RoleSource,
+		Summary: "Poll GET URLs round-robin and emit each response body as a binary message",
+		Config:  "urls (required string array, at least one), interval_ms (default 1000), timeout_ms (default 5000)",
+	},
+	TypeHTTPSink: {
+		Type:    TypeHTTPSink,
+		Role:    RoleSink,
+		Summary: "POST each message payload to a URL (binary as-is, strings as text/plain, others JSON)",
+		Config:  `url (required), method (default "POST"), timeout_ms (default 5000), headers (object string→string)`,
+	},
 	TypeContainer: {
 		Type:    TypeContainer,
 		Role:    RoleTransform,

@@ -21,6 +21,8 @@ func TestDefaultRegistry_Types(t *testing.T) {
 		blocks.TypeRandomSource,
 		blocks.TypeSort,
 		blocks.TypeJSONPathMap,
+		blocks.TypeHTTPSource,
+		blocks.TypeHTTPSink,
 		blocks.TypeContainer,
 		blocks.TypeLogSink,
 		blocks.TypeNullSink,

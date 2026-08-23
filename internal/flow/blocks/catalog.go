@@ -31,6 +31,9 @@ const (
 	// TypeJSONPathMap reshapes JSON messages through a template (#81,
 	// astarte_flow parity); declared in jsonpathmap.go's neighborhood.
 	TypeJSONPathMap = "json_path_map"
+
+	// TypeHTTPSource / TypeHTTPSink poll/POST over HTTP (#82, astarte_flow
+	// parity); declared in httpblocks.go.
 )
 
 // DefaultRegistry returns a registry with the minimum useful built-in set:
@@ -48,6 +51,8 @@ func DefaultRegistry() *flow.Registry {
 	r.Register(TypeRandomSource, RandomSource)
 	r.Register(TypeSort, Sort)
 	r.Register(TypeJSONPathMap, JSONPathMap)
+	r.Register(TypeHTTPSource, HTTPSource)
+	r.Register(TypeHTTPSink, HTTPSink)
 	r.Register(TypeContainer, container.Constructor)
 	r.Register(TypeNullSink, NullSink)
 	r.Register(TypeLogSink, LogSink)
