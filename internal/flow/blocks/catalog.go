@@ -34,6 +34,9 @@ const (
 
 	// TypeHTTPSource / TypeHTTPSink poll/POST over HTTP (#82, astarte_flow
 	// parity); declared in httpblocks.go.
+
+	// TypeMQTTSource / TypeMQTTSink subscribe/publish over MQTT (#83,
+	// astarte_flow parity); declared in mqtt.go.
 )
 
 // DefaultRegistry returns a registry with the minimum useful built-in set:
@@ -53,6 +56,8 @@ func DefaultRegistry() *flow.Registry {
 	r.Register(TypeJSONPathMap, JSONPathMap)
 	r.Register(TypeHTTPSource, HTTPSource)
 	r.Register(TypeHTTPSink, HTTPSink)
+	r.Register(TypeMQTTSource, MQTTSource)
+	r.Register(TypeMQTTSink, MQTTSink)
 	r.Register(TypeContainer, container.Constructor)
 	r.Register(TypeNullSink, NullSink)
 	r.Register(TypeLogSink, LogSink)

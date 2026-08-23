@@ -97,6 +97,18 @@ var builtinInfo = map[string]Info{
 		Summary: "POST each message payload to a URL (binary as-is, strings as text/plain, others JSON)",
 		Config:  `url (required), method (default "POST"), timeout_ms (default 5000), headers (object string→string)`,
 	},
+	TypeMQTTSource: {
+		Type:    TypeMQTTSource,
+		Role:    RoleSource,
+		Summary: "Subscribe to MQTT topics and emit each delivery as a binary message",
+		Config:  `url (required broker URL, e.g. tcp://127.0.0.1:1883), topics (required string array, at least one), qos (0|1|2, default 0), client_id, username, password`,
+	},
+	TypeMQTTSink: {
+		Type:    TypeMQTTSink,
+		Role:    RoleSink,
+		Summary: "Publish each message payload to an MQTT topic (binary/strings raw, others JSON)",
+		Config:  `url (required), topic (required), qos (0|1|2, default 0), retained (bool, default false), client_id, username, password`,
+	},
 	TypeContainer: {
 		Type:    TypeContainer,
 		Role:    RoleTransform,

@@ -23,6 +23,8 @@ func TestDefaultRegistry_Types(t *testing.T) {
 		blocks.TypeJSONPathMap,
 		blocks.TypeHTTPSource,
 		blocks.TypeHTTPSink,
+		blocks.TypeMQTTSource,
+		blocks.TypeMQTTSink,
 		blocks.TypeContainer,
 		blocks.TypeLogSink,
 		blocks.TypeNullSink,
