@@ -10,6 +10,7 @@ import (
 	"github.com/astrate-platform/astrate/internal/flow"
 	"github.com/astrate-platform/astrate/internal/flow/blocks/astartesource"
 	"github.com/astrate-platform/astrate/internal/flow/blocks/container"
+	"github.com/astrate-platform/astrate/internal/flow/blocks/virtualdevicepool"
 )
 
 // Well-known block_type strings stored in pipeline definitions.
@@ -37,6 +38,10 @@ const (
 
 	// TypeMQTTSource / TypeMQTTSink subscribe/publish over MQTT (#83,
 	// astarte_flow parity); declared in mqtt.go.
+
+	// TypeVirtualDevicePool publishes messages as registered virtual devices
+	// (#84, astarte_flow parity); declared in the virtualdevicepool package.
+	TypeVirtualDevicePool = virtualdevicepool.Type
 )
 
 // DefaultRegistry returns a registry with the minimum useful built-in set:
@@ -59,6 +64,7 @@ func DefaultRegistry() *flow.Registry {
 	r.Register(TypeMQTTSource, MQTTSource)
 	r.Register(TypeMQTTSink, MQTTSink)
 	r.Register(TypeContainer, container.Constructor)
+	r.Register(TypeVirtualDevicePool, virtualdevicepool.Constructor)
 	r.Register(TypeNullSink, NullSink)
 	r.Register(TypeLogSink, LogSink)
 	return r

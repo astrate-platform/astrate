@@ -115,6 +115,12 @@ var builtinInfo = map[string]Info{
 		Summary: "Run a Docker image as a transform (HTTP POST /v1/message); local Docker only (PoC)",
 		Config:  "image (required), config (object→ASTRATE_FLOW_CONFIG), port (default 8080), timeout_ms (default 5000), ready_timeout_ms (default 15000)",
 	},
+	TypeVirtualDevicePool: {
+		Type:    TypeVirtualDevicePool,
+		Role:    RoleSink,
+		Summary: "Publish each message as a registered virtual device; key is <device_id>/<interface></path>",
+		Config:  "devices (required string array of registered device_ids)",
+	},
 	TypeNullSink: {
 		Type:    TypeNullSink,
 		Role:    RoleSink,

@@ -1,10 +1,12 @@
 package flow
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"sort"
+	"time"
 
 	"github.com/astrate-platform/astrate/internal/engine/stream"
 )
@@ -29,6 +31,11 @@ type Deps struct {
 	// can fail the flow and schedule a restart. Must be safe to call from any
 	// goroutine; blocks must not call it after their Stopper.Stop() ran.
 	NotifyFatal func(block string, cause error)
+	// Ingest, when set, lets a block land data as if a registered device had
+	// produced it (virtual_device_pool, issue #84): full validation plus a
+	// datastream/property row, no MQTT delivery. Required by
+	// virtual_device_pool; every other block ignores it.
+	Ingest func(ctx context.Context, realm, deviceID, ifaceName, path string, payload json.RawMessage, ts *time.Time) error
 }
 
 // Constructor builds one Block from a pipeline node. name is the pipeline
