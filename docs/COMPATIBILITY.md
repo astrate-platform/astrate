@@ -244,6 +244,25 @@ All additive or strictly-safer; none affect unmodified device SDKs.
     version. The Dashboard feature-gates its Policies UI on this value
     (>= 1.1.1).
 
+11. **AppEngine data query: `sort=ascending`** — additive extension. Upstream
+    1.2.2 serves time series newest-first and has no `sort` parameter; Astrate
+    additionally accepts `sort=ascending` (any other value keeps the default
+    descending order). Standard clients never send it and are unaffected.
+
+12. **Group-listing pagination token** — same wire shape
+    (`?limit&from_token`, next-page cursor in `links.next`), but the opaque
+    token encodes a row offset instead of upstream's `insertion_uuid` keyset.
+    Tokens are server-generated and never valid across servers, so no
+    client-visible difference; adopting the keyset needs an insertion-uuid
+    column (migration decision, deferred).
+
+13. **AMQP trigger actions are rejected at creation** — upstream 1.2.2 accepts
+    trigger actions with `amqp_exchange`/`amqp_routing_key` and forwards
+    events to RabbitMQ; Astrate has no AMQP bus, so such actions fail trigger
+    installation with a clear per-field error instead of silently dropping
+    events later. Legacy stored AMQP triggers fail loudly at reload rather
+    than forwarding nothing.
+
 ## Infrastructure differences (by design)
 
 Not protocol deviations — these are the point of the project (`docs/DESIGN.md`):

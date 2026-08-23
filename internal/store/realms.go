@@ -37,10 +37,9 @@ type NewRealm struct {
 
 const realmColumns = `id, name, jwt_public_keys, ca_certificate, ca_private_key, device_registration_limit, datastream_maximum_storage_retention, created_at`
 
-// ensureRealmRetentionColumn adds the realm-level datastream retention ceiling
-// as an idempotent startup step. This is a stopgap while migrations/* is frozen:
-// a future 000011 migration should adopt the column (ADD COLUMN IF NOT EXISTS
-// makes either order safe).
+// ensureRealmRetentionColumn re-adds the realm-level datastream retention
+// ceiling if it is missing. Migration 000011 is the primary path; this remains
+// as an idempotent safety net for databases restored from partial backups.
 func (s *Store) ensureRealmRetentionColumn(ctx context.Context) error {
 	if _, err := s.pool.Exec(ctx,
 		`ALTER TABLE realms ADD COLUMN IF NOT EXISTS datastream_maximum_storage_retention bigint`); err != nil {

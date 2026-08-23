@@ -76,8 +76,8 @@ func testMigrations(t *testing.T, s *Store) {
 	if err := s.pool.QueryRow(ctx, `SELECT version, dirty FROM schema_migrations`).Scan(&version, &dirty); err != nil {
 		t.Fatalf("reading schema_migrations: %v", err)
 	}
-	if version != 10 || dirty {
-		t.Fatalf("schema_migrations: got version=%d dirty=%v, want version=10 dirty=false", version, dirty)
+	if version != 11 || dirty {
+		t.Fatalf("schema_migrations: got version=%d dirty=%v, want version=11 dirty=false", version, dirty)
 	}
 
 	hypertables := []string{"individual_datastreams", "object_datastreams"}
@@ -190,8 +190,8 @@ func testMigrationCycle(t *testing.T, s *Store) {
 	if err != nil {
 		t.Fatalf("reading version: %v", err)
 	}
-	if version != 10 || dirty {
-		t.Fatalf("after cycle: got version=%d dirty=%v, want version=10 dirty=false", version, dirty)
+	if version != 11 || dirty {
+		t.Fatalf("after cycle: got version=%d dirty=%v, want version=11 dirty=false", version, dirty)
 	}
 }
 
