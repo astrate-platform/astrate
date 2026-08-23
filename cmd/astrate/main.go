@@ -12,6 +12,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -44,6 +45,7 @@ import (
 	"github.com/astrate-platform/astrate/internal/realm"
 	"github.com/astrate-platform/astrate/internal/store"
 	"github.com/astrate-platform/astrate/internal/swagger"
+	"github.com/astrate-platform/astrate/pkg/deviceid"
 )
 
 // version is the reported build version (override with
@@ -129,8 +131,17 @@ func run(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 
 	// Flow runtime shares the engine's live bus so AstarteSource blocks see
 	// the same device events as the stream socket (v2.0 process wiring).
+	// Virtual-device pools (#84) write through the engine's device-owned
+	// ingest path: storage rows without MQTT.
 	flowMgr := flow.NewManager()
-	flowSvc := flowapi.NewService(st, flowMgr, blocks.DefaultRegistry(), e.Bus(), log)
+	flowSvc := flowapi.NewService(st, flowMgr, blocks.DefaultRegistry(), e.Bus(),
+		func(ctx context.Context, realm, deviceID, ifaceName, path string, payload json.RawMessage, ts *time.Time) error {
+			id, err := deviceid.Parse(deviceID)
+			if err != nil {
+				return fmt.Errorf("virtual device id %q: %w", deviceID, err)
+			}
+			return e.PublishDeviceValue(ctx, realm, id, ifaceName, path, payload, ts)
+		}, log)
 
 	b, err := newBroker(ctx, cfg, st, e, log)
 	if err != nil {

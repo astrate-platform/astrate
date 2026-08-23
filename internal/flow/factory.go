@@ -35,8 +35,12 @@ type Deps struct {
 	// produced it (virtual_device_pool, issue #84): full validation plus a
 	// datastream/property row, no MQTT delivery. Required by
 	// virtual_device_pool; every other block ignores it.
-	Ingest func(ctx context.Context, realm, deviceID, ifaceName, path string, payload json.RawMessage, ts *time.Time) error
+	Ingest IngestFunc
 }
+
+// IngestFunc lands data as if a registered device had produced it: full
+// validation plus storage, no MQTT delivery (virtual_device_pool, #84).
+type IngestFunc func(ctx context.Context, realm, deviceID, ifaceName, path string, payload json.RawMessage, ts *time.Time) error
 
 // Constructor builds one Block from a pipeline node. name is the pipeline
 // node name and should be returned by Block.Name() for metrics and logging.

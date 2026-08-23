@@ -1,6 +1,8 @@
 package flowapi
 
 import (
+	"context"
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -113,5 +115,23 @@ func TestSplitInstanceID(t *testing.T) {
 func TestFlowInstanceIDAlias(t *testing.T) {
 	if flow.InstanceID("r", "n") != flow.PipelineID("r", "n") {
 		t.Fatal("PipelineID should alias InstanceID")
+	}
+}
+
+// TestFlowDepsCarriesIngest pins the #84 plumbing: every built instance's
+// block Deps carry the service-level IngestFunc, so a virtual_device_pool
+// constructor sees it without any per-pipeline configuration.
+func TestFlowDepsCarriesIngest(t *testing.T) {
+	var seen flow.IngestFunc
+	s := &Service{ingest: func(ctx context.Context, realm, deviceID, ifaceName, path string, payload json.RawMessage, ts *time.Time) error {
+		return nil
+	}}
+	seen = s.flowDeps(1, "r", "f").Ingest
+	if seen == nil {
+		t.Fatal("flowDeps.Ingest = nil, want the service ingest")
+	}
+	empty := (&Service{}).flowDeps(1, "r", "f")
+	if empty.Ingest != nil || empty.Bus != nil {
+		t.Fatal("zero Service must still build zero-valued Deps")
 	}
 }
