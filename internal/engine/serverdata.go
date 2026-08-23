@@ -24,6 +24,9 @@ var (
 	// ErrNotServerOwned: the interface is device-owned (docs/DESIGN.md §2.6
 	// step 3: AppEngine publishes only on ownership: server).
 	ErrNotServerOwned = errors.New("engine: interface is not server-owned")
+	// ErrNotDeviceOwned: the interface is server-owned (the mirrored gate of
+	// PublishDeviceValue, issue #84: device-owned ingest refuses them).
+	ErrNotDeviceOwned = errors.New("engine: interface is not device-owned")
 	// ErrPathNotFound: the path resolves no endpoint mapping.
 	ErrPathNotFound = errors.New("engine: path matches no endpoint")
 	// ErrNotAProperty: a property operation on a datastream interface.
@@ -45,20 +48,70 @@ var (
 // and the wire format chosen by the device's payload_format_hint
 // (docs/DESIGN.md §3.4, §3.5.4).
 func (e *Engine) PublishServerValue(ctx context.Context, realm string, id deviceid.ID, ifaceName, path string, value json.RawMessage, ts *time.Time) error {
-	rs := e.schemas.realmOrReload(ctx, realm)
-	if rs == nil {
-		return fmt.Errorf("%w: %s", ErrRealmUnknown, realm)
-	}
-	view, err := e.deviceView(ctx, rs, id)
+	out, err := e.publishAsOwner(ctx, realm, id, ifaceName, path, value, ts, interfaceschema.OwnershipServer)
 	if err != nil {
 		return err
 	}
+	wire, err := payload.Encode(out.dp.Value, out.wireTS, formatForHint(out.hint))
+	if err != nil {
+		return fmt.Errorf("engine: encoding server value: %w", err)
+	}
+	topic := deviceTopic(realm, id, ifaceName+path)
+	if err := e.broker.Publish(topic, wire, out.qos, out.retain, out.expiry); err != nil {
+		return fmt.Errorf("engine: publishing %s: %w", topic, err)
+	}
+	return nil
+}
+
+// PublishDeviceValue validates and persists one device-owned value without
+// delivering it (issue #84): virtual-device ingest lands storage rows
+// exactly like a real device's data would, but produces no MQTT traffic —
+// the device speaks to the engine directly, so there is no upstream hop to
+// relay onto the broker. Validation and persistence mirror
+// PublishServerValue with the ownership gate flipped to device.
+func (e *Engine) PublishDeviceValue(ctx context.Context, realm string, id deviceid.ID, ifaceName, path string, value json.RawMessage, ts *time.Time) error {
+	_, err := e.publishAsOwner(ctx, realm, id, ifaceName, path, value, ts, interfaceschema.OwnershipDevice)
+	return err
+}
+
+// ownerDelivery carries one persisted value plus everything wire delivery
+// needs to know about it.
+type ownerDelivery struct {
+	dp     payload.DecodedPayload
+	hint   string
+	wireTS *time.Time
+	qos    byte
+	retain bool
+	expiry time.Duration
+}
+
+// publishAsOwner is the shared validate-and-persist core of the publish
+// paths (docs/ROADMAP.md §7.2 file 6.9): realm, device, and interface
+// resolution with the ownership gate parameterised, §2.6 payload
+// validation, and the persist switch. ownership selects which side may
+// write and which sentinel an ownership mismatch carries; delivery stays
+// with the caller.
+func (e *Engine) publishAsOwner(ctx context.Context, realm string, id deviceid.ID,
+	ifaceName, path string, value json.RawMessage, ts *time.Time,
+	ownership interfaceschema.Ownership) (*ownerDelivery, error) {
+	notOwned := ErrNotDeviceOwned
+	if ownership == interfaceschema.OwnershipServer {
+		notOwned = ErrNotServerOwned
+	}
+	rs := e.schemas.realmOrReload(ctx, realm)
+	if rs == nil {
+		return nil, fmt.Errorf("%w: %s", ErrRealmUnknown, realm)
+	}
+	view, err := e.deviceView(ctx, rs, id)
+	if err != nil {
+		return nil, err
+	}
 	ci := resolveServerInterface(rs, view, ifaceName)
 	if ci == nil {
-		return fmt.Errorf("%w: %s", ErrInterfaceNotFound, ifaceName)
+		return nil, fmt.Errorf("%w: %s", ErrInterfaceNotFound, ifaceName)
 	}
-	if ci.Ownership != interfaceschema.OwnershipServer {
-		return fmt.Errorf("%w: %s", ErrNotServerOwned, ifaceName)
+	if ci.Ownership != ownership {
+		return nil, fmt.Errorf("%w: %s", notOwned, ifaceName)
 	}
 
 	effTS := time.Now().UTC()
@@ -67,7 +120,7 @@ func (e *Engine) PublishServerValue(ctx context.Context, realm string, id device
 	}
 	envelope, err := serverEnvelope(value, effTS)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	var (
@@ -77,7 +130,7 @@ func (e *Engine) PublishServerValue(ctx context.Context, realm string, id device
 	dec := payload.Decoder{MaxSize: len(envelope)}
 	if ci.Aggregation == interfaceschema.AggregationObject {
 		if !objectPathOK(ci, path) {
-			return fmt.Errorf("%w: %q is not an aggregation prefix of %s", ErrPathNotFound, path, ifaceName)
+			return nil, fmt.Errorf("%w: %q is not an aggregation prefix of %s", ErrPathNotFound, path, ifaceName)
 		}
 		dp, err = dec.Object(envelope, ci.ObjectLeaves)
 		mapping = anyObjectLeaf(ci)
@@ -85,15 +138,15 @@ func (e *Engine) PublishServerValue(ctx context.Context, realm string, id device
 		var ok bool
 		mapping, ok = ci.Trie.Match(path)
 		if !ok {
-			return fmt.Errorf("%w: %q matches no endpoint of %s", ErrPathNotFound, path, ifaceName)
+			return nil, fmt.Errorf("%w: %q matches no endpoint of %s", ErrPathNotFound, path, ifaceName)
 		}
 		dp, err = dec.Individual(envelope, mapping)
 	}
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if dp.IsUnset() {
-		return fmt.Errorf("%w: null value (use the property DELETE path for unset)", ErrUnsetNotAllowed)
+		return nil, fmt.Errorf("%w: null value (use the property DELETE path for unset)", ErrUnsetNotAllowed)
 	}
 
 	op := PersistOp{
@@ -108,57 +161,45 @@ func (e *Engine) PublishServerValue(ctx context.Context, realm string, id device
 		TS:          effTS,
 		ReceptionTS: effTS,
 	}
-	var wireTS *time.Time
-	qos := byte(2)
-	retain := false
-	var expiry time.Duration
+	out := &ownerDelivery{dp: dp, hint: view.hint, qos: 2}
 	switch {
 	case ci.Type == interfaceschema.Properties:
 		op.Kind = OpPropertySet
-		retain = true // server-owned properties stay retained (§3.4)
+		out.retain = true // properties stay retained (§3.4)
 		row, err := propertyRow(&op)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		if err := e.st.UpsertProperty(ctx, *row); err != nil {
-			return err
+			return nil, err
 		}
 	case ci.Aggregation == interfaceschema.AggregationObject:
 		op.Kind = OpObject
-		wireTS = &effTS
-		qos = mapping.Reliability
-		expiry = mapping.Expiry
+		out.wireTS = &effTS
+		out.qos = mapping.Reliability
+		out.expiry = mapping.Expiry
 		row, err := objectRow(&op)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		if err := e.st.AppendDatastreams(ctx, store.DatastreamBatch{Objects: []store.ObjectRow{*row}}); err != nil {
-			return err
+			return nil, err
 		}
 	default:
 		op.Kind = OpIndividual
-		wireTS = &effTS
-		qos = mapping.Reliability
-		expiry = mapping.Expiry
+		out.wireTS = &effTS
+		out.qos = mapping.Reliability
+		out.expiry = mapping.Expiry
 		row, err := individualRow(&op)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		if err := e.st.AppendDatastreams(ctx, store.DatastreamBatch{Individual: []store.IndividualRow{*row}}); err != nil {
-			return err
+			return nil, err
 		}
 	}
 	e.met.persistOps.WithLabelValues(op.Kind.String()).Inc()
-
-	wire, err := payload.Encode(dp.Value, wireTS, formatForHint(view.hint))
-	if err != nil {
-		return fmt.Errorf("engine: encoding server value: %w", err)
-	}
-	topic := deviceTopic(realm, id, ifaceName+path)
-	if err := e.broker.Publish(topic, wire, qos, retain, expiry); err != nil {
-		return fmt.Errorf("engine: publishing %s: %w", topic, err)
-	}
-	return nil
+	return out, nil
 }
 
 // UnsetServerProperty deletes a server-owned property (AppEngine DELETE,
