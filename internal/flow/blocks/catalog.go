@@ -20,6 +20,13 @@ const (
 	// TypeContainer is the Docker-backed custom processing block (Design B / #43).
 	TypeContainer = container.Type
 	// TypeFilter and TypeMap are declared in transform.go.
+
+	// Pure transforms and the random source (#80, astarte_flow parity).
+	TypeToJSON         = "to_json"
+	TypeUpdateMetadata = "update_metadata"
+	TypeSplitMap       = "split_map"
+	TypeRandomSource   = "random_source"
+	TypeSort           = "sort"
 )
 
 // DefaultRegistry returns a registry with the minimum useful built-in set:
@@ -31,6 +38,11 @@ func DefaultRegistry() *flow.Registry {
 	r.Register(TypeAstarteSource, AstarteSource)
 	r.Register(TypeFilter, Filter)
 	r.Register(TypeMap, Map)
+	r.Register(TypeToJSON, ToJSON)
+	r.Register(TypeUpdateMetadata, UpdateMetadata)
+	r.Register(TypeSplitMap, SplitMap)
+	r.Register(TypeRandomSource, RandomSource)
+	r.Register(TypeSort, Sort)
 	r.Register(TypeContainer, container.Constructor)
 	r.Register(TypeNullSink, NullSink)
 	r.Register(TypeLogSink, LogSink)

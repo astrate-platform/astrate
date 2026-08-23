@@ -43,6 +43,36 @@ var builtinInfo = map[string]Info{
 		Summary: "Rewrite key and/or metadata; payload unchanged",
 		Config:  "key (template with {key} and {metadata.<name>}), set_metadata (object), delete_metadata (string array)",
 	},
+	TypeToJSON: {
+		Type:    TypeToJSON,
+		Role:    RoleTransform,
+		Summary: "Encode the payload as JSON bytes (binary, application/json)",
+		Config:  "(none)",
+	},
+	TypeUpdateMetadata: {
+		Type:    TypeUpdateMetadata,
+		Role:    RoleTransform,
+		Summary: "Merge set_metadata into Metadata, then delete delete_metadata keys",
+		Config:  "set_metadata (object string→string), delete_metadata (string array); at least one required",
+	},
+	TypeSplitMap: {
+		Type:    TypeSplitMap,
+		Role:    RoleTransform,
+		Summary: "Explode a map payload into one message per field",
+		Config:  `key_template (default "{key}/{field}"; placeholders {key}, {field})`,
+	},
+	TypeRandomSource: {
+		Type:    TypeRandomSource,
+		Role:    RoleSource,
+		Summary: "Emit a random integer, real, or boolean value every interval",
+		Config:  `type (required: integer|real|boolean), interval_ms (default 1000), min, max, key (default "random")`,
+	},
+	TypeSort: {
+		Type:    TypeSort,
+		Role:    RoleTransform,
+		Summary: "Buffer messages and release them in ascending timestamp order behind a window",
+		Config:  "window_ms (default 1000, must be ≥ 0), dedup (bool, default false)",
+	},
 	TypeContainer: {
 		Type:    TypeContainer,
 		Role:    RoleTransform,
