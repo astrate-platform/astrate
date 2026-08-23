@@ -106,6 +106,25 @@ func TestClaimsAreScoped(t *testing.T) {
 	}
 }
 
+func TestFlowClaimIsScoped(t *testing.T) {
+	// a_f grants the Flow surface (issue #88) and nothing else.
+	tok := tokenWithClaims(t, `{"a_f": [".*::.*"]}`)
+	if !tok.Authorizes(ClaimFlow, "POST", "pipelines") {
+		t.Error("a_f catch-all should authorize the flow surface")
+	}
+	for _, other := range []Claim{ClaimAppEngine, ClaimRealmManagement, ClaimHousekeeping, ClaimPairing, ClaimChannels} {
+		if tok.Authorizes(other, "GET", "anything") {
+			t.Errorf("a_f-only token must not authorize %s", other)
+		}
+	}
+
+	// A token without a_f grants nothing on the flow surface.
+	tok = tokenWithClaims(t, `{"a_rma": ["^GET$::^pipelines$"]}`)
+	if tok.Authorizes(ClaimFlow, "GET", "pipelines") {
+		t.Error("token without a_f must not authorize the flow surface")
+	}
+}
+
 func TestStringListLenientDecoding(t *testing.T) {
 	// A bare string is tolerated as a single-element list.
 	tok := tokenWithClaims(t, `{"a_rma": "^GET$::^interfaces$"}`)

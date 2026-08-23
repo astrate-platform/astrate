@@ -22,6 +22,9 @@ const (
 	// ClaimChannels authorizes Astarte Channels; Astrate honours it on the
 	// live stream socket (a_ch).
 	ClaimChannels Claim = "a_ch"
+	// ClaimFlow authorizes the Flow API (a_f). Upstream flow guards every
+	// route with this claim via GuardianAuthorizePath against {realm}/{path}.
+	ClaimFlow Claim = "a_f"
 	// ClaimHousekeeping authorizes the Housekeeping API (a_ha).
 	ClaimHousekeeping Claim = "a_ha"
 	// ClaimPairing authorizes the Pairing agent API (a_pa).
@@ -66,6 +69,7 @@ type astarteClaims struct {
 
 	AppEngine       stringList `json:"a_aea,omitempty"`
 	Channels        stringList `json:"a_ch,omitempty"`
+	Flow            stringList `json:"a_f,omitempty"`
 	Housekeeping    stringList `json:"a_ha,omitempty"`
 	Pairing         stringList `json:"a_pa,omitempty"`
 	RealmManagement stringList `json:"a_rma,omitempty"`
@@ -129,6 +133,7 @@ func newToken(c *astarteClaims) *Token {
 	for claim, raw := range map[Claim]stringList{
 		ClaimAppEngine:       c.AppEngine,
 		ClaimChannels:        c.Channels,
+		ClaimFlow:            c.Flow,
 		ClaimHousekeeping:    c.Housekeeping,
 		ClaimPairing:         c.Pairing,
 		ClaimRealmManagement: c.RealmManagement,

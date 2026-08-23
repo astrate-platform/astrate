@@ -46,10 +46,19 @@ func NewMiddleware(keys KeySource) *Middleware {
 // bearer token, and matches the claim's authorization strings against the
 // method and the path relative to the realm base.
 func (m *Middleware) RequireRealm(claim Claim) func(http.Handler) http.Handler {
+	return m.RequireRealmAny(claim)
+}
+
+// RequireRealmAny guards a realm-scoped route accepting ANY of the given
+// claims (OR-ed): the first claim whose authorization strings match the
+// method/path grants access. Used by surfaces that honour both their upstream
+// claim and an Astrate compatibility claim — e.g. Flow accepts a_f (upstream)
+// and a_rma (Astrate's original operator claim).
+func (m *Middleware) RequireRealmAny(claims ...Claim) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			realm := r.PathValue("realm")
-			if realm == "" {
+			if realm == "" || len(claims) == 0 {
 				_ = astarteapi.WriteUnauthorized(w)
 				return
 			}
@@ -66,7 +75,19 @@ func (m *Middleware) RequireRealm(claim Claim) func(http.Handler) http.Handler {
 				return
 			}
 
-			m.authorize(w, r, next, claim, row.JWTPublicKeysPEM, realm)
+			for _, claim := range claims {
+				switch m.tryAuthorize(w, r, next, claim, row.JWTPublicKeysPEM, realm) {
+				case authServed:
+					return
+				case authFailed:
+					// Authentication itself failed (401 already written):
+					// no other claim can succeed.
+					return
+				}
+				// authForbidden: this claim did not grant the request; try
+				// the next one.
+			}
+			_ = astarteapi.WriteForbidden(w)
 		})
 	}
 }
@@ -82,36 +103,56 @@ func (m *Middleware) RequireStatic(claim Claim, keysPEM []string) func(http.Hand
 	}
 }
 
-// authorize runs the shared bearer-extract → verify → claim-match pipeline.
-// base is the path segment after which the authorization path starts (the
-// realm name, or "v1" for instance-level routes).
+// authorize runs the shared bearer-extract → verify → claim-match pipeline,
+// writing the error response itself. base is the path segment after which the
+// authorization path starts (the realm name, or "v1" for instance-level
+// routes).
 func (m *Middleware) authorize(w http.ResponseWriter, r *http.Request, next http.Handler, claim Claim, keysPEM []string, base string) {
+	switch m.tryAuthorize(w, r, next, claim, keysPEM, base) {
+	case authServed, authFailed:
+		// Served, or authentication failed with the 401 already written.
+	default:
+		_ = astarteapi.WriteForbidden(w)
+	}
+}
+
+// authResult classifies one claim attempt by tryAuthorize.
+type authResult int
+
+const (
+	authServed authResult = iota // request authorized and next served
+	authFailed                   // authentication failed (401 written); stop
+	authForbidden                // claim did not grant the request; try next
+)
+
+// tryAuthorize is authorize without the terminal 403: it classifies the
+// attempt. Callers write their own forbidden response on authForbidden.
+func (m *Middleware) tryAuthorize(w http.ResponseWriter, r *http.Request, next http.Handler, claim Claim, keysPEM []string, base string) authResult {
 	tokenString, ok := bearerToken(r)
 	if !ok {
 		_ = astarteapi.WriteUnauthorized(w)
-		return
+		return authFailed
 	}
 
 	tok, err := m.cache.Verify(tokenString, keysPEM)
 	if err != nil {
 		_ = astarteapi.WriteUnauthorized(w)
-		return
+		return authFailed
 	}
 
 	authPath, ok := RelativePath(r.URL.Path, base)
 	if !ok {
 		// Upstream parity: a path the authorizer cannot anchor is an
 		// authorization failure (403), not an authentication one.
-		_ = astarteapi.WriteForbidden(w)
-		return
+		return authForbidden
 	}
 	if !tok.Authorizes(claim, r.Method, authPath) {
-		_ = astarteapi.WriteForbidden(w)
-		return
+		return authForbidden
 	}
 
 	ctx := context.WithValue(r.Context(), tokenContextKey{}, tok)
 	next.ServeHTTP(w, r.WithContext(ctx))
+	return authServed
 }
 
 // RelativePath computes the authorization path with upstream parity (Astarte's

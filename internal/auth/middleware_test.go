@@ -206,3 +206,66 @@ func TestRelativePath(t *testing.T) {
 		}
 	}
 }
+
+// TestRequireRealmAnyFlowClaims pins the Flow API's any-of guard (issue #88):
+// a token carrying the upstream a_f claim OR Astrate's original a_rma claim
+// gets in; a token with neither is 403, an unverifiable one 401.
+func TestRequireRealmAnyFlowClaims(t *testing.T) {
+	tk := keys(t)
+	pubPEM := publicPEM(t, &tk.rsaKey.PublicKey)
+	ks := fakeKeySource{
+		"test": &store.Realm{ID: 1, Name: "test", JWTPublicKeysPEM: []string{pubPEM}},
+	}
+	m := NewMiddleware(ks)
+
+	served := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	mux := http.NewServeMux()
+	mux.Handle("GET /flow/v1/{realm}/pipelines",
+		m.RequireRealmAny(ClaimFlow, ClaimRealmManagement)(served))
+
+	flowTok := signToken(t, jwt.SigningMethodRS256, tk.rsaKey, jwt.MapClaims{
+		"a_f": []string{".*::.*"},
+		"exp": time.Now().Add(time.Hour).Unix(),
+	})
+	rmaTok := signToken(t, jwt.SigningMethodRS256, tk.rsaKey, jwt.MapClaims{
+		"a_rma": []string{"^GET$::^pipelines$"},
+	})
+	otherTok := signToken(t, jwt.SigningMethodRS256, tk.rsaKey, jwt.MapClaims{
+		"a_aea": []string{".*::.*"},
+		"exp":   time.Now().Add(time.Hour).Unix(),
+	})
+
+	t.Run("FlowClaimAccepted", func(t *testing.T) {
+		if w := do(mux, "GET", "/flow/v1/test/pipelines", flowTok); w.Code != http.StatusOK {
+			t.Fatalf("a_f token: got %d, want 200", w.Code)
+		}
+	})
+	t.Run("RealmManagementClaimStillAccepted", func(t *testing.T) {
+		if w := do(mux, "GET", "/flow/v1/test/pipelines", rmaTok); w.Code != http.StatusOK {
+			t.Fatalf("a_rma token: got %d, want 200", w.Code)
+		}
+	})
+	t.Run("NarrowGrantPathMismatch403", func(t *testing.T) {
+		// a_rma grants only ^pipelines$; a different path must stay 403 even
+		// though the claim is otherwise accepted on this route.
+		narrow := signToken(t, jwt.SigningMethodRS256, tk.rsaKey, jwt.MapClaims{
+			"a_rma": []string{"^GET$::^flows$"},
+			"exp":   time.Now().Add(time.Hour).Unix(),
+		})
+		if w := do(mux, "GET", "/flow/v1/test/pipelines", narrow); w.Code != http.StatusForbidden {
+			t.Fatalf("narrow a_rma token on other path: got %d, want 403", w.Code)
+		}
+	})
+	t.Run("NeitherClaim403", func(t *testing.T) {
+		if w := do(mux, "GET", "/flow/v1/test/pipelines", otherTok); w.Code != http.StatusForbidden {
+			t.Fatalf("a_aea-only token: got %d, want 403", w.Code)
+		}
+	})
+	t.Run("GarbageToken401", func(t *testing.T) {
+		if w := do(mux, "GET", "/flow/v1/test/pipelines", "not.a.token"); w.Code != http.StatusUnauthorized {
+			t.Fatalf("garbage token: got %d, want 401", w.Code)
+		}
+	})
+}

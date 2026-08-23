@@ -14,8 +14,9 @@ import (
 // maxBodyBytes caps Flow API request bodies (pipeline DAGs are small JSON).
 const maxBodyBytes int64 = 1 << 20
 
-// API is the /flow/v1 HTTP surface. Routes use a realm JWT with a_rma
-// (operator control, same claim as Realm Management).
+// API is the /flow/v1 HTTP surface. Routes accept a realm JWT carrying the
+// upstream Flow claim a_f OR Astrate's original operator claim a_rma (any-of;
+// issue #88).
 type API struct {
 	svc     *Service
 	require func(http.Handler) http.Handler
@@ -23,7 +24,7 @@ type API struct {
 
 // NewAPI wires the service to its HTTP surface.
 func NewAPI(svc *Service, mw *auth.Middleware) *API {
-	return &API{svc: svc, require: mw.RequireRealm(auth.ClaimRealmManagement)}
+	return &API{svc: svc, require: mw.RequireRealmAny(auth.ClaimFlow, auth.ClaimRealmManagement)}
 }
 
 // Mount registers the routes on mux.
