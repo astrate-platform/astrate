@@ -62,3 +62,14 @@ line once you have dealt with it — this file is a queue, not a log.
   `/root/astrate-mule` already solved the same way (your call, confirmed 2026-07-27: align it
   with the existing unattended-Pi-clone convention rather than fix gpg-agent or bypass signing
   silently inside the script).
+
+## 2026-08-23 — FDO promoted to milestone-4.0 candidate (Giulio's decision, recorded)
+
+#78 is no longer parked: zero-touch onboarding is strategic for commercial
+viability. Scope frozen on the issue: owner-side TO1/TO2 in our Pairing
+service only (last mile, like upstream), reuse fdo-rs for
+manufacturing/rendezvous, acceptance = official `astarte-device-fdo-rust`
+SDK completes onboarding against Astrate, docs as a first-class deliverable.
+When v3.0 is marked DONE, the v4.0 section of `.mule/milestones.md` should be
+drafted with this investigation as its first item (issue #78 has the full
+verified context).
