@@ -10,12 +10,18 @@ import (
 	"time"
 
 	"github.com/astrate-platform/astrate/internal/auth"
+	"github.com/astrate-platform/astrate/internal/engine"
 	"github.com/astrate-platform/astrate/internal/store"
 	"github.com/astrate-platform/astrate/pkg/astarteapi"
 )
 
 // maxBodyBytes caps AppEngine request bodies.
 const maxBodyBytes int64 = 1 << 20
+
+// maxValueBytes is upstream's per-value limit (~64 KiB): a larger REST
+// write is answered 422 "Value size exceeds size limits" (measured
+// 2026-08-24 against 1.2.0, verify-server-writes.json).
+const maxValueBytes = 65536
 
 // API is the /appengine/v1 HTTP surface (docs/ROADMAP.md §8.2 file 7.8),
 // guarded by a realm JWT carrying a_aea.
@@ -289,6 +295,10 @@ func (a *API) putData(w http.ResponseWriter, r *http.Request) {
 		_ = astarteapi.WriteBadRequest(w)
 		return
 	}
+	if len(value) > maxValueBytes {
+		_ = astarteapi.WriteError(w, http.StatusUnprocessableEntity, "Value size exceeds size limits")
+		return
+	}
 	err := a.svc.PublishData(r.Context(), r.PathValue("realm"), r.PathValue("device"),
 		r.PathValue("interface"), pathParam(r), value, nil)
 	if err != nil {
@@ -314,6 +324,10 @@ func (a *API) putDataByAlias(w http.ResponseWriter, r *http.Request) {
 		_ = astarteapi.WriteBadRequest(w)
 		return
 	}
+	if len(value) > maxValueBytes {
+		_ = astarteapi.WriteError(w, http.StatusUnprocessableEntity, "Value size exceeds size limits")
+		return
+	}
 	err := a.svc.PublishDataByAlias(r.Context(), r.PathValue("realm"), r.PathValue("alias"),
 		r.PathValue("interface"), pathParam(r), value, nil)
 	if err != nil {
@@ -327,6 +341,10 @@ func (a *API) putDataInGroup(w http.ResponseWriter, r *http.Request) {
 	var value json.RawMessage
 	if err := astarteapi.DecodeData(r.Body, maxBodyBytes, &value); err != nil {
 		_ = astarteapi.WriteBadRequest(w)
+		return
+	}
+	if len(value) > maxValueBytes {
+		_ = astarteapi.WriteError(w, http.StatusUnprocessableEntity, "Value size exceeds size limits")
 		return
 	}
 	err := a.svc.PublishDataInGroup(r.Context(), r.PathValue("realm"), r.PathValue("group"), r.PathValue("device"),
@@ -649,6 +667,17 @@ func (a *API) writeError(w http.ResponseWriter, err error) {
 		_ = astarteapi.WriteError(w, http.StatusNotFound, "Group not found")
 	case errors.Is(err, ErrPathNotFound):
 		_ = astarteapi.WriteError(w, http.StatusNotFound, "Path not found")
+	// Engine write sentinels must precede store.ErrNotFound: wrapped
+	// ErrInterfaceNotFound errors are distinct from store's, and Go's switch
+	// takes the first match (issue #57, measured taxonomy).
+	case errors.Is(err, engine.ErrNotServerOwned):
+		_ = astarteapi.WriteError(w, http.StatusMethodNotAllowed, "Cannot write to device owned resource")
+	case errors.Is(err, engine.ErrNotAProperty):
+		_ = astarteapi.WriteError(w, http.StatusMethodNotAllowed, "Cannot write to read-only resource")
+	case errors.Is(err, engine.ErrInterfaceNotFound):
+		_ = astarteapi.WriteError(w, http.StatusNotFound, "Interface not found in device introspection")
+	case errors.Is(err, engine.ErrPathNotFound):
+		_ = astarteapi.WriteError(w, http.StatusBadRequest, "Endpoint not found")
 	case errors.Is(err, store.ErrNotFound):
 		_ = astarteapi.WriteDeviceNotFound(w)
 	default:
