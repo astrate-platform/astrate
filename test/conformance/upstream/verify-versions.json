@@ -1,0 +1,68 @@
+{
+  "recorded_at": "2026-08-24T14:30:00Z",
+  "astarte_version": "1.2.0",
+  "realm": "zzprobe08",
+  "recorder_command": "scratch probes (fase 1 verify batch, issues #69/#77); see verify-versions.transcript.txt",
+  "observations": [
+    {
+      "name": "service-root version, housekeeping", "why": "#77: the dashboard polls one version endpoint per service at startup",
+      "method": "GET", "path": "/housekeeping/version", "auth": "none",
+      "status": 200, "body": "{\"data\":\"1.2.0\"}"
+    },
+    {
+      "name": "service-root version, appengine", "why": "#77",
+      "method": "GET", "path": "/appengine/version", "auth": "none",
+      "status": 200, "body": "{\"data\":\"1.2.0\"}"
+    },
+    {
+      "name": "service-root version, realmmanagement", "why": "#77",
+      "method": "GET", "path": "/realmmanagement/version", "auth": "none",
+      "status": 200, "body": "{\"data\":\"1.2.0\"}"
+    },
+    {
+      "name": "service-root version, pairing", "why": "#77",
+      "method": "GET", "path": "/pairing/version", "auth": "none",
+      "status": 200, "body": "{\"data\":\"1.2.0\"}"
+    },
+    {
+      "name": "global version route absent", "why": "#77: bounds the surface — there is no instance-wide /version",
+      "method": "GET", "path": "/version", "auth": "none",
+      "status": 404, "body": "404 page not found"
+    },
+    {
+      "name": "flow service absent from compose", "why": "#77: the dashboard's fourth target is not routed on upstream 1.2 self-hosted",
+      "method": "GET", "path": "/flow/version", "auth": "none",
+      "status": 404, "body": "{\"errors\":{\"detail\":\"Page not found\"}}"
+    },
+    {
+      "name": "appengine realm-scoped version, unauthenticated", "why": "#77: realm-scoped AE/RM versions REQUIRE auth (401), unlike pairing's",
+      "method": "GET", "path": "/appengine/v1/zzprobe08/version", "auth": "none",
+      "status": 401, "body": "{\"errors\":{\"detail\":\"Unauthorized\"}}"
+    },
+    {
+      "name": "appengine realm-scoped version, valid token", "why": "#77 acceptance row: the paired acceptance proving 401 is auth, not absence",
+      "method": "GET", "path": "/appengine/v1/zzprobe08/version", "auth": "Bearer <valid a_aea .*::.* token>",
+      "status": 200, "body": "{\"data\":\"1.2.0\"}"
+    },
+    {
+      "name": "pairing realm-scoped version, unauthenticated", "why": "#77: upstream serves pairing's realm version PUBLIC — the odd one out of the three services",
+      "method": "GET", "path": "/pairing/v1/zzprobe08/version", "auth": "none",
+      "status": 200, "body": "{\"data\":\"1.2.0\"}"
+    },
+    {
+      "name": "unknown realm on RM, no token", "why": "#69 baseline row",
+      "method": "GET", "path": "/realmmanagement/v1/nosuchrealm/interfaces", "auth": "none",
+      "status": 401, "body": "{\"errors\":{\"detail\":\"Unauthorized\"}}"
+    },
+    {
+      "name": "unknown realm on RM, bearer token present", "why": "#69: ANY non-absent token → 403 Forbidden (unknown realm has no key; every verification failure maps to 403). Astrate answers uniform 401 (deliberate deviation-5 extension)",
+      "method": "GET", "path": "/realmmanagement/v1/nosuchrealm/interfaces", "auth": "Bearer <token signed by any key>",
+      "status": 403, "body": "{\"errors\":{\"detail\":\"Forbidden\"}}"
+    },
+    {
+      "name": "unknown realm on AppEngine", "why": "#69: same class as RM, confirming non-uniformity is per-service wording only",
+      "method": "GET", "path": "/appengine/v1/nosuchrealm/devices", "auth": "Bearer <valid bench-realm a_aea token>",
+      "status": 403, "body": "{\"errors\":{\"detail\":\"Forbidden\"}}"
+    }
+  ]
+}

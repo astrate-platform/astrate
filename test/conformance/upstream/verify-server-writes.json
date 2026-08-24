@@ -1,0 +1,73 @@
+{
+  "recorded_at": "2026-08-24T14:45:00Z",
+  "astarte_version": "1.2.0",
+  "realm": "zzprobe08",
+  "recorder_command": "scratch probes (fase 1 verify batch, issue #57); full request/response narrative in verify-server-writes.transcript.txt",
+  "observations": [
+    {
+      "name": "server write to device-owned interface", "why": "#57: the issue's 405 cannot_write_to_device_owned, measured",
+      "method": "POST", "path": "/appengine/v1/zzprobe08/devices/{dev}/interfaces/zz.test.DeviceDS/value", "auth": "Bearer <valid a_aea token>",
+      "status": 405, "body": "{\"errors\":{\"detail\":\"Cannot write to device owned resource\"}}"
+    },
+    {
+      "name": "unknown interface", "why": "#57: not the issue-guessed mapping_not_found; introspection is consulted first",
+      "method": "POST", "path": "/appengine/v1/zzprobe08/devices/{dev}/interfaces/zz.test.NoSuchInterface/value", "auth": "Bearer <valid a_aea token>",
+      "status": 404, "body": "{\"errors\":{\"detail\":\"Interface not found in device introspection\"}}"
+    },
+    {
+      "name": "known interface, unknown endpoint", "why": "#57: the issue's 400 endpoint_not_found, measured",
+      "method": "POST", "path": "/appengine/v1/zzprobe08/devices/{dev}/interfaces/zz.test.ServerProp/nope", "auth": "Bearer <valid a_aea token>",
+      "status": 400, "body": "{\"errors\":{\"detail\":\"Endpoint not found\"}}"
+    },
+    {
+      "name": "wrong scalar type on individual endpoint", "why": "#57: the issue guessed 422 unexpected_value_type; upstream 1.2.0 answers an unmapped 500 — a bug we do NOT reproduce (deliberate deviation)",
+      "method": "POST", "path": "/appengine/v1/zzprobe08/devices/{dev}/interfaces/zz.test.ServerDS/value", "auth": "Bearer <valid a_aea token>",
+      "status": 500, "body": "{\"errors\":{\"detail\":\"Internal server error\"}}"
+    },
+    {
+      "name": "wrong type inside object aggregate", "why": "#57: same upstream bug class on the object path",
+      "method": "POST", "path": "/appengine/v1/zzprobe08/devices/{dev}/interfaces/zz.test.ServerObj/reading", "auth": "Bearer <valid a_aea token>",
+      "status": 500, "body": "{\"errors\":{\"detail\":\"Internal server error\"}}"
+    },
+    {
+      "name": "value over ~64 KiB", "why": "#57: the issue's 422 value_size_exceeded, measured as a plain-detail 422 (70000-byte string)",
+      "method": "POST", "path": "/appengine/v1/zzprobe08/devices/{dev}/interfaces/zz.test.ServerProp/setting", "auth": "Bearer <valid a_aea token>",
+      "status": 422, "body": "{\"errors\":{\"detail\":\"Value size exceeds size limits\"}}"
+    },
+    {
+      "name": "object write at aggregate root", "why": "#57 acceptance row: object writes go to /reading, keys are the leaf segments",
+      "method": "POST", "path": "/appengine/v1/zzprobe08/devices/{dev}/interfaces/zz.test.ServerObj/reading", "auth": "Bearer <valid a_aea token>",
+      "status": 200, "body": "{\"data\":{\"lat\":1,\"lon\":2}}"
+    },
+    {
+      "name": "object write at mapping path", "why": "#57: posting the aggregate to a leaf path also hits the upstream 500 bug",
+      "method": "POST", "path": "/appengine/v1/zzprobe08/devices/{dev}/interfaces/zz.test.ServerObj/reading/lat", "auth": "Bearer <valid a_aea token>",
+      "status": 500, "body": "{\"errors\":{\"detail\":\"Internal server error\"}}"
+    },
+    {
+      "name": "offline server-owned datastream write", "why": "#57: the issue guessed 503 cannot_push_to_device; upstream stores and answers 200 while offline",
+      "method": "POST", "path": "/appengine/v1/zzprobe08/devices/{dev}/interfaces/zz.test.ServerObj/reading", "auth": "Bearer <valid a_aea token>",
+      "status": 200, "body": "{\"data\":{\"lat\":5,\"lon\":6}}"
+    },
+    {
+      "name": "unset property while offline", "why": "#57: DELETE unset succeeds offline",
+      "method": "DELETE", "path": "/appengine/v1/zzprobe08/devices/{dev}/interfaces/zz.test.ServerProp/setting", "auth": "Bearer <valid a_aea token>",
+      "status": 204, "body": ""
+    },
+    {
+      "name": "DELETE on device-owned datastream", "why": "#57: same 405 wording as the ownership violation",
+      "method": "DELETE", "path": "/appengine/v1/zzprobe08/devices/{dev}/interfaces/zz.test.DeviceDS/value", "auth": "Bearer <valid a_aea token>",
+      "status": 405, "body": "{\"errors\":{\"detail\":\"Cannot write to device owned resource\"}}"
+    },
+    {
+      "name": "DELETE on server-owned OBJECT datastream", "why": "#57: this is where read_only_resource actually lives (issue text had it on generic reads)",
+      "method": "DELETE", "path": "/appengine/v1/zzprobe08/devices/{dev}/interfaces/zz.test.ServerObj/reading", "auth": "Bearer <valid a_aea token>",
+      "status": 405, "body": "{\"errors\":{\"detail\":\"Cannot write to read-only resource\"}}"
+    },
+    {
+      "name": "DELETE on server-owned INDIVIDUAL datastream", "why": "#57: unmapped upstream clause → 500. Astrate answers the 405 read-only form instead (deliberate deviation: clean rejection per rmval-03 precedent)",
+      "method": "DELETE", "path": "/appengine/v1/zzprobe08/devices/{dev}/interfaces/zz.test.ServerDS/value", "auth": "Bearer <valid a_aea token>",
+      "status": 500, "body": "{\"errors\":{\"detail\":\"Internal server error\"}}"
+    }
+  ]
+}

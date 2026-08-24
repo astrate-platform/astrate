@@ -30,8 +30,11 @@ const DefaultMaxBodyBytes int64 = 1 << 20 // 1 MiB
 // Canonical upstream error detail strings. These are frozen: SDK and
 // astartectl error paths match on them.
 const (
-	// DetailBadRequest is the canonical 400 detail.
-	DetailBadRequest = "Bad Request"
+	// DetailBadRequest is the canonical 400 detail. Measured upstream 1.2.0
+	// (2026-08-24, verify batch #57): Phoenix renders "Bad request" — the
+	// capital-R form this constant carried before was reconstructed, not
+	// observed, and every probed 400 row answers with the lowercase r.
+	DetailBadRequest = "Bad request"
 	// DetailUnauthorized is the canonical 401 detail.
 	DetailUnauthorized = "Unauthorized"
 	// DetailForbidden is the canonical 403 detail.

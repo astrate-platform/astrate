@@ -1,0 +1,45 @@
+Recorded 2026-08-24 against upstream Astarte 1.2.0, realm bench + throwaway
+realms zzprobe02..zzprobe08, via the Legion Go tunnel. Master handoff Fase 1
+(issues #69, #77). Every entry in verify-versions.json was produced by exactly
+one exchange below; tokens are described, never printed.
+
+=== #77 service-root version endpoints (unauthenticated) ===
+GET /version                                  → 404 (plain "404 page not found")
+GET /housekeeping/version                     → 200 {"data":"1.2.0"}
+GET /appengine/version                        → 200 {"data":"1.2.0"}
+GET /realmmanagement/version                  → 200 {"data":"1.2.0"}
+GET /pairing/version                          → 200 {"data":"1.2.0"}
+GET /flow/version                             → 404 {"errors":{"detail":"Page not found"}}
+  (flow is not deployed in upstream 1.2's compose: no such route)
+
+=== #77 realm-scoped version endpoints ===
+GET /appengine/v1/{realm}/version   no token    → 401 {"errors":{"detail":"Unauthorized"}}
+GET /appengine/v1/{realm}/version   valid a_aea → 200 {"data":"1.2.0"}
+GET /realmmanagement/v1/{realm}/version no token → 401 {"errors":{"detail":"Unauthorized"}}
+GET /realmmanagement/v1/{realm}/version valid a_rma → 200 {"data":"1.2.0"}
+GET /pairing/v1/{realm}/version     no token    → 200 {"data":"1.2.0"}   (PUBLIC)
+GET /appengine/v1/{realm}           valid a_aea → 404 {"errors":{"detail":"Not found"}}
+
+Claim-grammar note discovered en route: upstream 1.2 reads claim keys
+a_rma / a_aea / a_pa / a_ha / a_ch (user.ex per service). A token carrying only
+"a_rm"/"a_ae" verifies but answers 403 on every realm-scoped call.
+
+Key-state note: the bench realm public key had drifted from the Mac copy of
+bench/upstream.json (2026-08-22 re-provision); re-aligned via housekeeping
+PATCH before probing.
+
+=== #69 unknown realm ===
+GET /realmmanagement/v1/nosuchrealm/interfaces  no token        → 401 Unauthorized envelope
+GET /realmmanagement/v1/nosuchrealm/interfaces  any bearer token → 403 {"errors":{"detail":"Forbidden"}}
+GET /appengine/v1/nosuchrealm/devices           any bearer token → 403 {"errors":{"detail":"Forbidden"}}
+GET /pairing/v1/nosuchrealm/health              no token        → 404 {"errors":{"detail":"Page not found"}}
+
+The 403 holds for every token shape that is not absent (housekeeping-signed,
+foreign-realm-signed): an unknown realm has no key to verify against, and
+upstream maps every verification failure after header parsing to 403.
+Astrate answers uniform 401 — an extension of COMPATIBILITY.md deviation 5,
+deliberate anti-enumeration; recorded as deviation, not fixed.
+
+=== incidental observation (issue #71 follow-up) ===
+GET /pairing/v1/{realm}/health → 404 Page not found on upstream 1.2.0;
+the live health route is GET /pairing/health (no v1, no realm) → 200.

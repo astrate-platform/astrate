@@ -1,0 +1,56 @@
+Recorded 2026-08-24 against upstream Astarte 1.2.0, realm zzprobe08 (scratch;
+device registered, connected over mTLS with introspection declaring all four
+interfaces, then disconnected for the offline section). Master handoff Fase 1,
+issue #57. Interfaces installed for the probes:
+
+  zz.test.DeviceDS   datastream  device-owned  individual  /value double
+  zz.test.ServerDS   datastream  server-owned  individual  /value double
+  zz.test.ServerProp properties  server-owned              /setting string allow_unset
+  zz.test.ServerObj  datastream  server-owned  object      /reading/{lat,lon} double
+
+Every request body is the AppEngine {"data": ...} envelope; the value is the
+raw JSON value.
+
+=== #57 taxonomy, device CONNECTED ===
+POST /zz.test.DeviceDS/value          body: 1.5
+  → 405 {"errors":{"detail":"Cannot write to device owned resource"}}
+POST /zz.test.ServerProp/setting      body: "hello"
+  → 200 {"data":"hello"}                       (property set echoes the value)
+POST /zz.test.NoSuchInterface/value   body: 1.5
+  → 404 {"errors":{"detail":"Interface not found in device introspection"}}
+POST /zz.test.ServerProp/nope         body: "x"
+  → 400 {"errors":{"detail":"Endpoint not found"}}
+POST /zz.test.ServerObj/reading       body: {"lat":"abc","lon":2.0}
+  → 500 {"errors":{"detail":"Internal server error"}}   ← UPSTREAM BUG (unmapped clause)
+POST /zz.test.ServerProp/setting      body: <70000 x's>
+  → 422 {"errors":{"detail":"Value size exceeds size limits"}}   (~64 KiB limit)
+POST /zz.test.ServerObj/reading       body: {"lat":1.0,"lon":2.0}
+  → 200 {"data":{"lat":1,"lon":2}}             (object write at the AGGREGATE ROOT)
+POST /zz.test.ServerDS/value          body: "not-a-number"
+  → 500 Internal server error                  ← UPSTREAM BUG (not 422 unexpected_value_type)
+POST /zz.test.ServerDS/value          body: true
+  → 500 Internal server error                  ← same upstream bug
+
+=== #57 taxonomy, device OFFLINE ===
+POST /zz.test.ServerObj/reading       body: {"lat":5.0,"lon":6.0}
+  → 200 {"data":{"lat":5,"lon":6}}
+  The issue's guessed 503 cannot_push_to_device is NOT observable on the REST
+  write path of 1.2.0: an offline device's server-owned datastream write is
+  stored and answered 200.
+DELETE /zz.test.ServerProp/setting    (allow_unset property)
+  → 204 (empty; succeeds while the device is offline)
+DELETE /zz.test.DeviceDS/value        (device-owned datastream)
+  → 405 {"errors":{"detail":"Cannot write to device owned resource"}}
+POST /zz.test.ServerProp/setting      body: "offline"
+  → 200
+
+=== follow-up rows (same realm, device offline) ===
+DELETE /zz.test.ServerDS/value        (SERVER-owned INDIVIDUAL datastream)
+  → 500 Internal server error                  ← UPSTREAM BUG (unmapped clause)
+DELETE /zz.test.ServerObj/reading     (server-owned OBJECT datastream)
+  → 405 {"errors":{"detail":"Cannot write to read-only resource"}}
+    ↑ this is where `read_only_resource` actually lives
+PUT /zz.test.ServerProp/setting       body: "via-put"
+  → 200 {"data":"via-put"}                     (PUT and POST are equivalent)
+POST /zz.test.ServerDS/nope           body: 1.0
+  → 400 {"errors":{"detail":"Endpoint not found"}}
