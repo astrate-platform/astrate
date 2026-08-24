@@ -372,6 +372,19 @@ func mountAPIs(cfg config.Config, st *store.Store, e *engine.Engine, b *broker.B
 		observability.MountServiceCompat(mux, svc)
 	}
 
+	// Upstream-parity per-service version endpoints (issue #77): every
+	// service answers an unauthenticated GET /{service}/version with
+	// {"data": version}; AppEngine's realm-scoped variant requires auth,
+	// Pairing's is public — both measured on upstream 1.2.0
+	// (test/conformance/upstream/verify-versions.json). Realm Management's
+	// realm-scoped route is served by its own API.
+	for _, svc := range []string{"appengine", "realmmanagement", "pairing", "housekeeping"} {
+		observability.MountVersionCompat(mux, svc, version)
+	}
+	mux.Handle("GET /appengine/v1/{realm}/version",
+		mw.RequireRealmAny(auth.ClaimAppEngine)(observability.VersionHandler(version)))
+	mux.Handle("GET /pairing/v1/{realm}/version", observability.VersionHandler(version))
+
 	metrics.RegisterBrokerSessions(func() float64 { return float64(b.SessionCount()) })
 	metrics.RegisterDBPool(func() observability.DBPoolStats {
 		s := st.Stat()

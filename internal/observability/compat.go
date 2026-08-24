@@ -1,6 +1,7 @@
 package observability
 
 import (
+	"encoding/json"
 	"net/http"
 )
 
@@ -13,4 +14,22 @@ func MountServiceCompat(mux *http.ServeMux, service string) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"data":{"status":"ok"}}`))
 	})
+}
+
+// VersionHandler answers GET .../version with the upstream envelope
+// {"data":"<version>"} (measured upstream 1.2.0, verify-versions.json).
+func VersionHandler(version string) http.HandlerFunc {
+	body, err := json.Marshal(map[string]string{"data": version})
+	if err != nil {
+		body = []byte(`{"data":""}`)
+	}
+	return func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(body)
+	}
+}
+
+// MountVersionCompat registers GET /{service}/version for one service.
+func MountVersionCompat(mux *http.ServeMux, service, version string) {
+	mux.HandleFunc("GET /"+service+"/version", VersionHandler(version))
 }
