@@ -29,11 +29,12 @@ line once you have dealt with it — this file is a queue, not a log.
   SDK/wire compatibility, not minimum dependency count — Astrate is allowed to be a
   compatible *superset*. Library picked: `github.com/cbroglie/mustache`. Filed as issue #22
   (`mule`). (Same survey, source 4.)
-- **`value_change`/`value_change_applied`/`path_created`/`path_removed`/`value_stored` trigger
-  types compile but never fire** (`internal/engine/triggers/match.go:30-42`). Decision
-  deferred pending data: issue #20 (`mule`, `readonly`) asks Big Pickle to benchmark the
-  ingest-path cost of a previous-value lookup on the Legion Go before this gets decided one
-  way or the other. (Same survey, source 4.)
+- ~~`value_change`/`value_change_applied`/`path_created`/`path_removed`/`value_stored` trigger
+  types compile but never fire~~ — **resolved: implemented in commit 6bd14a7 (2026-08-22)**,
+  and the cost question answered by #20's bench on the Legion Go (2026-08-24 closeout):
+  ~0.13 ms keyed read per message, −0.7% throughput even paid once per message over REST.
+  Performance is not the constraint for these types (nor, a fortiori, for the group-scoped
+  line below). (Same survey, source 4.)
 - **Group-scoped triggers (`group_name` on device/data triggers) compile but never match**
   (`internal/engine/triggers/match.go:11-12`). Decision deferred, tied to issue #17
   (group-WATCH-path reconciliation, trickle work, not mule): whatever group-membership
