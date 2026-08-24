@@ -264,3 +264,44 @@ Covered above — `ASTARTE_UPSTREAM_SECTION` takes `auth`, `errors`, `extra` or 
 - **The introspection payload is `<interface>:<major>:<minor>`.** Sending `:0:1` instead of `:1:0`
   loads no interface at all, and *every* publish then comes back as `interface_loading_failed` —
   which looks like a coherent result, and is not one.
+
+## Verify batch 2026-08-24 (#69/#77/#57/#79): fixtures and probe traps
+
+`verify-versions.json` (+transcript) and `verify-server-writes.json`
+(+transcript) came from scratch probes, not from the recorders — the shapes
+were one-off. Facts a future probe session needs, each of which cost time
+once:
+
+- **Device IDs are base64url WITHOUT padding, end to end.** Registration
+  tolerates standard-base64 padding (`…g==`), but the broker CN/client ID does
+  not: a padded ID connects and is disconnected ~60 ms later in a silent paho
+  retry loop — no error anywhere, VerneMQ logs nothing. Use
+  `base64.RawURLEncoding` everywhere.
+- **The AppEngine write envelope wraps exactly once**: `{"data": <raw value>}`.
+  Wrapping a second time (e.g. `{"data": {"value": …}}`) yields plausible-looking
+  `422 Unexpected value type` rows that pollute every later measurement.
+- **A registered-but-never-connected device has an empty introspection**, so
+  EVERY AppEngine write answers `404 Interface not found in device introspection`
+  regardless of the interface. The taxonomy probes need a live mTLS session
+  that publishes its introspection first (see `recordchannels/main.go`,
+  `session()`), then settles ~8 s before the REST writes.
+- **Claim keys are per-service and non-obvious**: upstream 1.2 reads
+  `a_rma` (Realm Management), `a_aea` (AppEngine), `a_pa` (Pairing agent),
+  `a_ha` (Housekeeping), `a_ch` (Channels) — NOT `a_rm`/`a_ae`-style guesses.
+  A token with wrong key names verifies fine but answers `403` on every
+  realm-scoped call, which is indistinguishable from key drift.
+- **Housekeeping keys do not work on realm APIs** (and vice versa): realm APIs
+  verify against the realm's own public key only.
+- **Realm public-key drift after a re-provision is the first suspect** when
+  valid tokens start answering 403: `bench provision` mints a fresh key each
+  run but POST cannot update an existing realm. Re-align with a housekeeping
+  PATCH of `jwt_public_key_pem`, then compare SHA-256 heads of both PEMs.
+- **MQTT through a tunnel needs the SNI hostname**: connect to
+  `mqtts://broker.astarte.localhost:<port>`, never `api.…` or an IP — traefik's
+  TCP passthrough routes on SNI and hands the default cert otherwise.
+- **Upstream's own unmapped clauses are real findings, not noise**: three rows
+  in verify-server-writes answer bare `500 Internal server error` where a
+  mapped status obviously exists one branch away (wrong scalar type; malformed
+  object; DELETE on server-owned individual datastream). Record them, then
+  decide bug-for-bug vs clean rejection per row — do not silently "fix" either
+  side.
