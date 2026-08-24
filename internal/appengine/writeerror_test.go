@@ -30,7 +30,7 @@ func TestWriteErrorTaxonomy(t *testing.T) {
 		{"read-path path-not-found collision guard", ErrPathNotFound,
 			http.StatusNotFound, "Path not found"},
 		{"unknown cause stays 500", errors.New("boom"),
-			http.StatusInternalServerError, "Internal Server Error"},
+			http.StatusInternalServerError, "Internal server error"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

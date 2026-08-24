@@ -176,6 +176,17 @@ All additive or strictly-safer; none affect unmodified device SDKs.
      kind, so it is a recorded upstream response rather than a reading of its
      source; the sample is AppEngine, Realm Management and Pairing, and no
      Astarte version other than the one that instance was running.
+   - **Unknown realms** — a request to a realm that does not exist is the
+     same case as an unverifiable token (an unknown realm has no key to
+     verify against), so Astrate answers `401` uniformly. Measured against
+     upstream 1.2.0 on 2026-08-24 (`test/conformance/upstream/verify-versions.json`,
+     issue #69): upstream answers `403 Forbidden` for any non-absent
+     credential on Realm Management and AppEngine unknown-realm paths — the
+     same mapping that produces the bullet above — while a missing token
+     still gets `401`. Astrate's uniform `401` is this same deviation applied
+     one step further: it does not distinguish "no credentials" from
+     "credentials we cannot verify", and an unknown realm is never
+     distinguishable from a wrong key.
 
    Stricter/safer, and deliberately uniform: distinguishing "no such device"
    or "no such realm key" from "wrong secret" hands an unauthenticated caller
@@ -262,6 +273,41 @@ All additive or strictly-safer; none affect unmodified device SDKs.
     installation with a clear per-field error instead of silently dropping
     events later. Legacy stored AMQP triggers fail loudly at reload rather
     than forwarding nothing.
+
+14. **AppEngine server-write taxonomy, measured with two clean-rejection
+    divergences** — the write-path statuses are measured against upstream
+    1.2.0 (`test/conformance/upstream/verify-server-writes.json`, 2026-08-24,
+    issue #57) and matched: a server write to a device-owned interface is
+    `405 Cannot write to device owned resource`; an unknown interface is
+    `404 Interface not found in device introspection` (the device's
+    introspection is consulted first — an installed-but-undeclared interface
+    still answers there); an unknown endpoint is `400 Endpoint not found`;
+    a value over 64 KiB is `422 Value size exceeds size limits`; a DELETE on
+    a datastream is refused, and an unset of an absent property succeeds
+    offline with `204`. Two upstream rows are internal errors Astrate does
+    not reproduce:
+
+    - **A value of the wrong scalar type is `500` upstream** (unmapped
+      clause in its write path; same for a malformed object aggregate).
+      Astrate keeps the `500` status bug-for-bug here — upstream wins on
+      wire — so a client sees the same status it would see from upstream;
+      only the envelope wording differs (deviation 15).
+    - **DELETE on a server-owned *individual* datastream is `500` upstream**
+      while the object-aggregated sibling gets `405 Cannot write to
+      read-only resource` — clearly the same clause one branch above it.
+      Astrate answers the `405 read-only resource` form for both.
+
+    One more measured fact worth keeping: **the REST write path has no
+    offline push failure.** A server-owned datastream write for an offline
+    device is stored and answered `200` — the issue-guessed
+    `503 cannot_push_to_device` is not observable via AppEngine REST on
+    1.2.0, and Astrate's persist-then-publish behaves the same way.
+
+15. **Canonical detail casing follows measurement, not memory** — upstream's
+    Phoenix renders `Bad request` and `Internal server error`; the
+    reconstructed `Bad Request` / `Internal Server Error` constants were
+    corrected to the measured forms on 2026-08-24. Every probed row used the
+    lowercase variants.
 
 ## Infrastructure differences (by design)
 

@@ -52,8 +52,10 @@ const (
 	// DetailPageNotFound is the 404 detail upstream Pairing emits for a path
 	// matching no route at all.
 	DetailPageNotFound = "Page not found"
-	// DetailInternalServerError is the canonical 500 detail.
-	DetailInternalServerError = "Internal Server Error"
+	// DetailInternalServerError is the canonical 500 detail. Measured
+	// upstream 1.2.0 (2026-08-24, verify batch #57): Phoenix renders
+	// "Internal server error" — the capital-S form was reconstructed.
+	DetailInternalServerError = "Internal server error"
 )
 
 // ErrMissingData is wrapped by DecodeData when the request body has no
