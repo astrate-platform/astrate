@@ -30,6 +30,12 @@ type CompiledMapping struct {
 	AllowUnset bool
 	// DBRetentionTTL is the database TTL; 0 means no_ttl.
 	DBRetentionTTL time.Duration
+	// Required states whether object documents must carry this key
+	// (upstream 1.4 experimental, issue #67).
+	Required bool
+	// Encrypted records the declared encryption flag; parsed and stored,
+	// no runtime effect yet (upstream 1.4 experimental, issue #67).
+	Encrypted bool
 }
 
 // EndpointTrie matches concrete inbound paths (for example "/4/value")

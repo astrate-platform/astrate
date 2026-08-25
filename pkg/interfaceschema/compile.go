@@ -78,6 +78,8 @@ func Compile(iface *Interface, ids EndpointIDResolver) (*CompiledInterface, erro
 			ExplicitTimestamp: m.ExplicitTimestamp,
 			AllowUnset:        m.AllowUnset,
 			DBRetentionTTL:    time.Duration(m.DatabaseRetentionTTL) * time.Second,
+			Required:          m.Required,
+			Encrypted:         m.Encrypted,
 		}
 		if ids != nil {
 			id, err := ids.ResolveEndpoint(m.Endpoint)

@@ -118,6 +118,10 @@ func sameMappingAttributes(om, nm *Mapping) error {
 		attr = "allow_unset"
 	case nm.ExplicitTimestamp != om.ExplicitTimestamp:
 		attr = "explicit_timestamp"
+	case nm.Required != om.Required:
+		attr = "required"
+	case nm.Encrypted != om.Encrypted:
+		attr = "encrypted"
 	}
 	if attr != "" {
 		return fmt.Errorf("%w: mapping %q changed %s (existing mappings are immutable)",

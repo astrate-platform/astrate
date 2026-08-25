@@ -90,6 +90,13 @@ type Mapping struct {
 	// ExplicitTimestamp states whether publishes carry their own timestamp
 	// (datastream only).
 	ExplicitTimestamp bool
+	// Required states whether object documents must carry this key;
+	// enforced at runtime only for object aggregation (upstream 1.4
+	// experimental, issue #67).
+	Required bool
+	// Encrypted records the declared encryption flag; parsed and stored,
+	// no runtime effect yet (upstream 1.4 experimental, issue #67).
+	Encrypted bool
 	// Description is the optional human-readable summary.
 	Description string
 	// Doc is the optional long-form documentation.
@@ -137,6 +144,8 @@ type mappingJSON struct {
 	DatabaseRetentionTTL    *int64                   `json:"database_retention_ttl,omitempty"`
 	AllowUnset              *bool                    `json:"allow_unset,omitempty"`
 	ExplicitTimestamp       *bool                    `json:"explicit_timestamp,omitempty"`
+	Required                *bool                    `json:"required,omitempty"`
+	Encrypted               *bool                    `json:"encrypted,omitempty"`
 	Description             string                   `json:"description,omitempty"`
 	Doc                     string                   `json:"doc,omitempty"`
 }
@@ -383,6 +392,10 @@ func buildMapping(raw *mappingJSON, ifaceType InterfaceType, index int, vc *Viol
 			return m, nil, fmt.Errorf(`mapping %q: "database_retention_policy" is not allowed on properties`, m.Endpoint)
 		case raw.DatabaseRetentionTTL != nil:
 			return m, nil, fmt.Errorf(`mapping %q: "database_retention_ttl" is not allowed on properties`, m.Endpoint)
+		case raw.Required != nil:
+			return m, nil, fmt.Errorf(`mapping %q: "required" is not allowed on properties`, m.Endpoint)
+		case raw.Encrypted != nil:
+			return m, nil, fmt.Errorf(`mapping %q: "encrypted" is not allowed on properties`, m.Endpoint)
 		}
 		if raw.AllowUnset != nil {
 			m.AllowUnset = *raw.AllowUnset
@@ -393,6 +406,12 @@ func buildMapping(raw *mappingJSON, ifaceType InterfaceType, index int, vc *Viol
 	// Datastream.
 	if raw.AllowUnset != nil {
 		return m, nil, fmt.Errorf(`mapping %q: "allow_unset" is only allowed on properties`, m.Endpoint)
+	}
+	if raw.Required != nil {
+		m.Required = *raw.Required
+	}
+	if raw.Encrypted != nil {
+		m.Encrypted = *raw.Encrypted
 	}
 	if raw.Reliability != nil {
 		m.Reliability = *raw.Reliability
