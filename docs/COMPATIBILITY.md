@@ -309,6 +309,29 @@ All additive or strictly-safer; none affect unmodified device SDKs.
     corrected to the measured forms on 2026-08-24. Every probed row used the
     lowercase variants.
 
+16. **`virtual_device_pool` publishes without an MQTT session** (measured
+    against upstream Astarte Flow master @ ad0ae81, 2026-08-24). Upstream's
+    dynamic pool registers the first-seen id through Pairing, then spawns a
+    *real* MQTT device: client certificate, broker connection, introspection
+    from config, ordinary datastream publishes; its local DETS holds the
+    credentials secret, and losing `FLOW_PERSISTENCY_DIR` permanently bricks
+    every id whose certificate was already issued (`422 already_registered`
+    forever — there is no recovery path). Astrate keeps the observable
+    contract — key grammar `<device_id>/<interface></path…>` (upstream's
+    leading realm segment is dropped: flows are per-realm), first-seen
+    registration through the pairing door, rows queryable like any
+    device-owned datastream, non-201 registrations logged and dropped with
+    the message — but lands values through the engine ingest path instead of
+    a per-device MQTT session, skips the introspection gate (virtual devices
+    never connect, so there is no introspection to match), and keeps secrets
+    server-side, so the brick-on-store-loss failure mode does not exist here.
+    Re-registration parity is preserved at the semantic level: upstream
+    answers `201` with a fresh secret until first credential issuance and
+    `422` afterwards; Astrate's pairing door accepts re-registration of a
+    not-yet-confirmed device (the minted secret is discarded) and refuses an
+    already-confirmed one (`ErrAlreadyRegistered`, mapped by the block to a
+    log-and-drop).
+
 ## Infrastructure differences (by design)
 
 Not protocol deviations — these are the point of the project (`docs/DESIGN.md`):

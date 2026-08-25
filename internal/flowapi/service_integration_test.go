@@ -44,7 +44,7 @@ func newTestService(t *testing.T) (*Service, *store.Store, string) {
 	mgr := flow.NewManager()
 	reg := blocks.DefaultRegistry()
 	bus := stream.New(nil)
-	svc := NewService(st, mgr, reg, bus, nil, slog.New(slog.DiscardHandler))
+	svc := NewService(st, mgr, reg, bus, nil, nil, slog.New(slog.DiscardHandler))
 
 	sealed := make([]byte, 48)
 	for i := range sealed {
@@ -256,7 +256,7 @@ func TestBlockDeathFailsFlow(t *testing.T) {
 
 	reg := blocks.DefaultRegistry()
 	reg.Register("boom", boomConstructor)
-	svc2 := NewService(st, svc.Manager(), reg, stream.New(nil), nil, slog.New(slog.DiscardHandler))
+	svc2 := NewService(st, svc.Manager(), reg, stream.New(nil), nil, nil, slog.New(slog.DiscardHandler))
 
 	if _, err := svc2.CreatePipeline(ctx, realm, "boom-pipeline", []byte(boomPipeline)); err != nil {
 		t.Fatal(err)
@@ -305,7 +305,7 @@ func TestBlockDeathAutoRestart(t *testing.T) {
 
 	reg := blocks.DefaultRegistry()
 	reg.Register("boom", boomConstructor)
-	svc2 := NewService(st, svc.Manager(), reg, stream.New(nil), nil, slog.New(slog.DiscardHandler))
+	svc2 := NewService(st, svc.Manager(), reg, stream.New(nil), nil, nil, slog.New(slog.DiscardHandler))
 
 	if _, err := svc2.CreatePipeline(ctx, realm, "boom-pipeline", []byte(boomPipeline)); err != nil {
 		t.Fatal(err)

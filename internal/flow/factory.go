@@ -36,7 +36,23 @@ type Deps struct {
 	// datastream/property row, no MQTT delivery. Required by
 	// virtual_device_pool; every other block ignores it.
 	Ingest IngestFunc
+	// Register, when set, lets a block register a first-seen virtual device
+	// through the pairing door (virtual_device_pool auto_register, #84).
+	// Required by virtual_device_pool with auto_register; every other block
+	// ignores it.
+	Register RegisterFunc
 }
+
+// ErrVirtualDeviceRegistered reports that a first-seen virtual device could
+// not be auto-registered because its id is already registered and confirmed:
+// upstream answers 422 already_registered and drops the message, and astrate
+// mirrors that (the message is dropped, never an error).
+var ErrVirtualDeviceRegistered = errors.New("flow: virtual device already registered")
+
+// RegisterFunc registers a first-seen virtual device through the pairing
+// door (#84 auto_register). Implementations return ErrVirtualDeviceRegistered
+// when the id is already taken; any other error is infrastructure.
+type RegisterFunc func(ctx context.Context, realm, deviceID string) error
 
 // IngestFunc lands data as if a registered device had produced it: full
 // validation plus storage, no MQTT delivery (virtual_device_pool, #84).

@@ -27,12 +27,13 @@ var ErrValidation = errors.New("flowapi: validation failed")
 
 // Service implements pipeline CRUD and durable flow lifecycle over store + Manager.
 type Service struct {
-	st     *store.Store
-	mgr    *flow.Manager
-	reg    *flow.Registry
-	bus    *stream.Bus
-	ingest flow.IngestFunc
-	log    *slog.Logger
+	st       *store.Store
+	mgr      *flow.Manager
+	reg      *flow.Registry
+	bus      *stream.Bus
+	ingest   flow.IngestFunc
+	register flow.RegisterFunc
+	log      *slog.Logger
 
 	// restartMu/restarting dedupe auto-restart loops when several blocks of
 	// the same flow die (or fatal races a manual reload).
@@ -43,12 +44,13 @@ type Service struct {
 // NewService wires store, manager, block registry, and the live bus.
 // mgr and reg must be non-nil; bus may be nil only if no pipeline uses
 // bus-backed sources; ingest may be nil only if no pipeline uses
-// virtual_device_pool (#84).
-func NewService(st *store.Store, mgr *flow.Manager, reg *flow.Registry, bus *stream.Bus, ingest flow.IngestFunc, log *slog.Logger) *Service {
+// virtual_device_pool (#84); register may be nil only if no pipeline uses
+// virtual_device_pool with auto_register.
+func NewService(st *store.Store, mgr *flow.Manager, reg *flow.Registry, bus *stream.Bus, ingest flow.IngestFunc, register flow.RegisterFunc, log *slog.Logger) *Service {
 	if log == nil {
 		log = slog.Default()
 	}
-	return &Service{st: st, mgr: mgr, reg: reg, bus: bus, ingest: ingest, log: log}
+	return &Service{st: st, mgr: mgr, reg: reg, bus: bus, ingest: ingest, register: register, log: log}
 }
 
 // Manager exposes the flow manager (process shutdown).
@@ -391,6 +393,7 @@ func (s *Service) flowDeps(realmID int16, realm, name string) flow.Deps {
 		FlowName:    name,
 		NotifyFatal: s.onBlockFatal(realmID, realm, name),
 		Ingest:      s.ingest,
+		Register:    s.register,
 	}
 }
 

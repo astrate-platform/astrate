@@ -129,10 +129,33 @@ func run(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 		return fmt.Errorf("engine: %w", err)
 	}
 
+	b, err := newBroker(ctx, cfg, st, e, log)
+	if err != nil {
+		return fmt.Errorf("broker: %w", err)
+	}
+	e.AttachBroker(engine.AdaptBroker(b))
+
+	// Pairing service is built here (not in mountAPIs) so the flow runtime
+	// can auto-register first-seen virtual devices through it (#84).
+	advertised := cfg.MQTT.AdvertisedURL
+	if advertised == "" {
+		advertised = "mqtts://" + b.TLSAddr()
+	}
+	pairer := pairing.New(st, sealer, pairing.Config{
+		BrokerURL:         advertised,
+		CertTTL:           cfg.Pairing.CertTTL.Std(),
+		EnforceLatestCert: cfg.Pairing.EnforceLatestCert,
+		Version:           version,
+		BcryptCost:        cfg.Pairing.BcryptCost,
+	})
+	pairer.OnRegistered = e.HandleDeviceRegistered
+
 	// Flow runtime shares the engine's live bus so AstarteSource blocks see
 	// the same device events as the stream socket (v2.0 process wiring).
 	// Virtual-device pools (#84) write through the engine's device-owned
-	// ingest path: storage rows without MQTT.
+	// ingest path: storage rows without MQTT. With auto_register they also
+	// register first-seen ids through the pairing door; an id already taken
+	// maps to flow.ErrVirtualDeviceRegistered so the block drops and logs.
 	flowMgr := flow.NewManager()
 	flowSvc := flowapi.NewService(st, flowMgr, blocks.DefaultRegistry(), e.Bus(),
 		func(ctx context.Context, realm, deviceID, ifaceName, path string, payload json.RawMessage, ts *time.Time) error {
@@ -141,13 +164,14 @@ func run(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 				return fmt.Errorf("virtual device id %q: %w", deviceID, err)
 			}
 			return e.PublishDeviceValue(ctx, realm, id, ifaceName, path, payload, ts)
+		},
+		func(ctx context.Context, realm, deviceID string) error {
+			_, err := pairer.Register(ctx, realm, deviceID, "")
+			if errors.Is(err, pairing.ErrAlreadyRegistered) || errors.Is(err, store.ErrDeviceAlreadyConfirmed) {
+				return fmt.Errorf("%w: %s", flow.ErrVirtualDeviceRegistered, deviceID)
+			}
+			return err
 		}, log)
-
-	b, err := newBroker(ctx, cfg, st, e, log)
-	if err != nil {
-		return fmt.Errorf("broker: %w", err)
-	}
-	e.AttachBroker(engine.AdaptBroker(b))
 
 	if err := e.Start(ctx); err != nil {
 		return fmt.Errorf("starting engine: %w", err)
@@ -157,7 +181,7 @@ func run(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 		return fmt.Errorf("starting broker: %w", err)
 	}
 
-	handler, hkSvc, err := mountAPIs(cfg, st, e, b, sealer, metrics, flowSvc, log)
+	handler, hkSvc, err := mountAPIs(cfg, st, e, b, sealer, metrics, flowSvc, pairer, log)
 	if err != nil {
 		shutdown(nil, b, flowSvc, e, log)
 		return err
@@ -323,22 +347,10 @@ func selfSignedDevCert() (tls.Certificate, error) {
 // mountAPIs builds the HTTP handler carrying every REST surface plus the
 // observability endpoints (wrapped in CORS when configured), and returns the
 // housekeeping service for auto-provisioning.
-func mountAPIs(cfg config.Config, st *store.Store, e *engine.Engine, b *broker.Broker, sealer *store.KeySealer, metrics *observability.Metrics, flowSvc *flowapi.Service, log *slog.Logger) (http.Handler, *housekeeping.Service, error) {
+func mountAPIs(cfg config.Config, st *store.Store, e *engine.Engine, b *broker.Broker, sealer *store.KeySealer, metrics *observability.Metrics, flowSvc *flowapi.Service, pairer *pairing.Service, log *slog.Logger) (http.Handler, *housekeeping.Service, error) {
 	mw := auth.NewMiddleware(st)
 	mux := http.NewServeMux()
 
-	advertised := cfg.MQTT.AdvertisedURL
-	if advertised == "" {
-		advertised = "mqtts://" + b.TLSAddr()
-	}
-	pairer := pairing.New(st, sealer, pairing.Config{
-		BrokerURL:         advertised,
-		CertTTL:           cfg.Pairing.CertTTL.Std(),
-		EnforceLatestCert: cfg.Pairing.EnforceLatestCert,
-		Version:           version,
-		BcryptCost:        cfg.Pairing.BcryptCost,
-	})
-	pairer.OnRegistered = e.HandleDeviceRegistered
 	pairing.NewAPI(pairer, mw, pairing.APIConfig{
 		RegisterRate:     cfg.Pairing.RegisterRate,
 		RegisterBurst:    cfg.Pairing.RegisterBurst,
