@@ -59,7 +59,10 @@ var astrateToUpstream = map[string]string{
 	"type_mismatch":                  "unexpected_value_type",
 	"value_too_large":                "value_size_exceeded",
 	"bad_object":                     "unexpected_object_key",
-	"unset_not_allowed":              "unexpected_value_type",
+	// Upstream 1.4 emits missing_required_mapping, outside dashboard
+	// 1.2.2's closed set; translated to the closest 1.2.2 member.
+	"missing_required":  "unexpected_object_key",
+	"unset_not_allowed": "unexpected_value_type",
 }
 
 // UpstreamErrorName maps one of Astrate's reject-reason labels to the upstream

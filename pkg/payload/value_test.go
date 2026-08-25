@@ -195,6 +195,8 @@ func TestRejectReasonLabels(t *testing.T) {
 		ReasonValueTooLarge:   "value_too_large",
 		ReasonBadObject:       "bad_object",
 		ReasonUnsetNotAllowed: "unset_not_allowed",
+
+		ReasonMissingRequired: "missing_required",
 	}
 	all := RejectReasons()
 	if len(all) != len(want) {
