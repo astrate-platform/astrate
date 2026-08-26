@@ -3,6 +3,8 @@ package payload
 import (
 	"errors"
 	"fmt"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/astrate-platform/astrate/pkg/interfaceschema"
@@ -131,6 +133,22 @@ func (d Decoder) Object(p []byte, leaves map[string]*interfaceschema.CompiledMap
 			return DecodedPayload{}, err
 		}
 		ts = t
+	}
+	if obj, ok := val.(map[string]Value); ok {
+		var missing []string
+		for key, leaf := range leaves {
+			if leaf != nil && leaf.Required {
+				if _, present := obj[key]; !present {
+					missing = append(missing, key)
+				}
+			}
+		}
+		if len(missing) > 0 {
+			sort.Strings(missing)
+			return DecodedPayload{}, rejectf(ReasonMissingRequired,
+				"object-aggregation document is missing required key(s) %s",
+				strings.Join(missing, ", "))
+		}
 	}
 	return finishDecode(val, ts, f, objectExplicitTimestamp(leaves))
 }

@@ -146,17 +146,21 @@ const (
 	// ReasonUnsetNotAllowed: empty payload on a mapping without
 	// allow_unset (datastreams never allow it).
 	ReasonUnsetNotAllowed
+	// ReasonMissingRequired: an object-aggregation document omits a key
+	// whose mapping declares required (upstream 1.4 experimental, issue #67).
+	ReasonMissingRequired
 )
 
 // rejectReasonLabels maps RejectReason (offset by 1) to its metrics label.
 var rejectReasonLabels = [...]string{
 	"too_large", "unknown_format", "malformed", "no_value", "bad_timestamp",
 	"type_mismatch", "value_too_large", "bad_object", "unset_not_allowed",
+	"missing_required",
 }
 
 // String returns the stable snake_case label used for metrics and logs.
 func (r RejectReason) String() string {
-	if r >= ReasonTooLarge && r <= ReasonUnsetNotAllowed {
+	if r >= ReasonTooLarge && r <= ReasonMissingRequired {
 		return rejectReasonLabels[r-1]
 	}
 	return fmt.Sprintf("RejectReason(%d)", uint8(r))
