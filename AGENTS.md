@@ -16,3 +16,12 @@ Facts every model working in this repo must know. Read before acting.
   carried into every handoff/phase file you write — quote it precisely,
   including the container-free exception, or a cautious delegate will refuse
   to run its own acceptance tests (seen 2026-08-24).
+
+- **The Legion Go is OFF unless Giulio says otherwise (since 2026-08-26).**
+  Before any work that needs it — containers, integration suites, live
+  upstream — probe ONCE and cheaply: `ssh -o ConnectTimeout=5 legion 'echo ok'`.
+  If it does not answer, stop immediately and tell Giulio he needs to power it
+  on. Do NOT retry, do NOT scan the network, do NOT degrade into workarounds:
+  a session that probes in circles burns tokens and finds nothing, because the
+  machine is simply off. Say what you need it for so he knows it is worth
+  switching on.
