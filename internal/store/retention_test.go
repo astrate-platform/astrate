@@ -26,8 +26,8 @@ func TestEnforceRealmRetentionCeilings(t *testing.T) {
 	t.Cleanup(s.Close)
 
 	capped := mustCreateRealm(t, s)
-	max := int64(3600)
-	if err := s.UpdateRealm(ctx, capped.Name, RealmPatch{PatchRetention: true, SetRetention: max}); err != nil {
+	maxTTL := int64(3600)
+	if err := s.UpdateRealm(ctx, capped.Name, RealmPatch{PatchRetention: true, SetRetention: maxTTL}); err != nil {
 		t.Fatalf("UpdateRealm(capped): %v", err)
 	}
 	free := mustCreateRealm(t, s)

@@ -31,24 +31,24 @@ var ErrValidation = errors.New("appengine: validation failed")
 // (FallbackController + ErrorView): the detail strings are what astartectl and
 // the dashboard match on.
 var (
-	ErrInvalidAlias         = errors.New("Invalid alias")
-	ErrAliasAlreadyInUse    = errors.New("Alias already in use")
-	ErrAliasTagNotFound     = errors.New("Alias tag not found")
-	ErrInvalidAttributes    = errors.New("Invalid attributes")
-	ErrAttributeKeyNotFound = errors.New("Attribute key not found")
+	ErrInvalidAlias         = errors.New("Invalid alias")           //nolint:staticcheck // ST1005: detail strings are upstream astarte_appengine_api 1.2.2 wire text
+	ErrAliasAlreadyInUse    = errors.New("Alias already in use")    //nolint:staticcheck // ST1005: upstream wire text
+	ErrAliasTagNotFound     = errors.New("Alias tag not found")     //nolint:staticcheck // ST1005: upstream wire text
+	ErrInvalidAttributes    = errors.New("Invalid attributes")      //nolint:staticcheck // ST1005: upstream wire text
+	ErrAttributeKeyNotFound = errors.New("Attribute key not found") //nolint:staticcheck // ST1005: upstream wire text
 )
 
 // ErrGroupNotFound marks a missing group (maps to 404 "Group not found").
-var ErrGroupNotFound = errors.New("Group not found")
+var ErrGroupNotFound = errors.New("Group not found") //nolint:staticcheck // ST1005: upstream wire text
 
 // ErrGroupAlreadyExists marks a duplicate group name (maps to 409 "Group
 // already exists"); it also satisfies store.ErrAlreadyExists so generic
 // duplicate handling keeps working.
-var ErrGroupAlreadyExists = fmt.Errorf("Group already exists: %w", store.ErrAlreadyExists)
+var ErrGroupAlreadyExists = fmt.Errorf("Group already exists: %w", store.ErrAlreadyExists) //nolint:staticcheck // ST1005: upstream wire text
 
 // ErrDeviceAlreadyInGroup marks re-adding an existing member (maps to 409
 // "Device already in group"); it too satisfies store.ErrAlreadyExists.
-var ErrDeviceAlreadyInGroup = fmt.Errorf("Device already in group: %w", store.ErrAlreadyExists)
+var ErrDeviceAlreadyInGroup = fmt.Errorf("Device already in group: %w", store.ErrAlreadyExists) //nolint:staticcheck // ST1005: upstream wire text
 
 // FieldErrors carries per-field validation failures rendered as the
 // Phoenix-changeset envelope {"errors":{"<field>":["<message>",...]}} (422).
@@ -601,9 +601,12 @@ func (s *Service) ListGroupDevices(ctx context.Context, realm, name string, deta
 // clock-seq variant = 0b10, node = 0.
 func groupTokenFor(offset int) string {
 	var u deviceid.ID
-	binary.BigEndian.PutUint32(u[0:4], uint32(offset))
-	u[6] = 0x10 // version 1
-	u[8] = 0x80 // RFC 4122 variant
+	// The cursor format is 32-bit by design (UUID v1 time_low): offsets above
+	// math.MaxUint32 cannot occur — limit is capped and offset comes from a
+	// token parsed back through parseGroupToken (uint32).
+	binary.BigEndian.PutUint32(u[0:4], uint32(offset)) //nolint:gosec // G115: see comment
+	u[6] = 0x10                                        // version 1
+	u[8] = 0x80                                        // RFC 4122 variant
 	return u.UUID()
 }
 
