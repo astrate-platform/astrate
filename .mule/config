@@ -48,4 +48,8 @@ MULE_TIMEOUT="1200"
 MULE_DAILY_MAX="16"
 
 MULE_AGENT="build"
-MULE_MODEL=""
+# Pin the model explicitly. Leaving this empty lets opencode resolve the agent's default,
+# and since 2026-08-27 that resolution answers "UnknownError: Unexpected server error" every
+# single time — it killed four nights of the daily survey. `--model opencode/big-pickle`
+# succeeds on the same box, same agent, same second.
+MULE_MODEL="opencode/big-pickle"
