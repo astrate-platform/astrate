@@ -114,7 +114,10 @@ short status line the recipe asks for."
     git -C "$REPO" add -f "$f"
     changed=1
   done
-  if [ "$changed" = 0 ] || [ -z "$(git -C "$REPO" status --porcelain --cached)" ]; then
+  # `git status --cached` is not a thing — it errors out and prints nothing, so this test
+  # used to be true on every run and the survey staged 16 reports between 2026-07-28 and
+  # 2026-08-26 without ever committing one of them. Ask git about the index directly.
+  if [ "$changed" = 0 ] || git -C "$REPO" diff --cached --quiet; then
     note "nothing to commit — the recipe found no material change today"
     return 0
   fi

@@ -1,0 +1,13 @@
+2026-07-29: no material change since 2026-07-28, checked astarte-platform 0da8336 / astrate main 8037ff0
+2026-07-31: no material change since 2026-07-30, checked astarte-platform 5047681 / astrate main 8037ff0
+2026-08-02: no material change since 2026-08-01, checked astarte-platform 5047681 / astrate main 89145e6
+2026-08-03: no material change since 2026-08-01, checked astarte-platform 5047681 / astrate main 89145e6
+2026-08-04: no material change since 2026-08-01, checked astarte-platform 5047681 / astrate main 89145e6
+2026-08-09: no material change since 2026-08-08, checked astarte-platform f65bda5d / astrate main 89145e6
+2026-08-10: no material change since 2026-08-08, checked astarte-platform f65bda5d / astrate main 89145e6
+2026-08-11: no material change since 2026-08-08, checked astarte-platform f65bda5d / astrate main 89145e6
+2026-08-12: no material change since 2026-08-08, checked astarte-platform f65bda5d / astrate main 89145e6
+2026-08-16: no material change since 2026-08-15, checked astarte-platform f2d53e1 / astrate main 89145e6
+2026-08-17: no material change since 2026-08-15, checked astarte-platform f2d53e1 / astrate main 89145e6
+2026-08-19: no material change since 2026-08-18, checked astarte-platform 6e65c8ac / astrate main f92d42a
+2026-08-20: no material change since 2026-08-18, checked astarte-platform 643d0610 / astrate main 8037ff0
