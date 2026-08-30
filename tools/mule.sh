@@ -25,6 +25,7 @@ set -uo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 git -C "$REPO" rev-parse --show-toplevel >/dev/null 2>&1 || { echo "not in a git repo" >&2; exit 1; }
+cd "$REPO"
 MULE="$REPO/.mule"
 CONFIG="$MULE/config"
 TODO="$MULE/todo.md"
@@ -35,7 +36,10 @@ bad()  { printf '\033[31m!!\033[0m %s\n' "$*" >&2; }
 ok()   { printf '\033[32mok\033[0m %s\n' "$*" >&2; }
 die()  { bad "$*"; exit 1; }
 
-command -v opencode >/dev/null || die "opencode is not on PATH"
+# cron hands over a minimal PATH and opencode installs under $HOME. Every scheduled tick
+# between 2026-08-22 and 2026-08-31 died on this line for want of the fallback below.
+[ -x "${HOME:-/root}/.opencode/bin/opencode" ] && PATH="${HOME:-/root}/.opencode/bin:$PATH"
+command -v opencode >/dev/null || die "opencode is not on PATH (also looked in ${HOME:-/root}/.opencode/bin)"
 [ -f "$CONFIG" ] || die "no $CONFIG — this repo is not set up for mule mode"
 # shellcheck disable=SC1090
 . "$CONFIG"

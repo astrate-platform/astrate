@@ -38,7 +38,7 @@ ENV="MULE_PUSH=1 HOME=/root PATH=/root/.opencode/bin:/usr/local/bin:/usr/bin:/bi
 
 lines=()
 while read -r h m; do
-  lines+=("$m $h $DOM $MON * $ENV MULE_DAILY_MAX=$total cd $REPO && /bin/bash $MULE_BIN tick >> $LOG 2>&1")
+  lines+=("$m $h $DOM $MON * $ENV MULE_DAILY_MAX=$total /bin/bash $MULE_BIN tick >> $LOG 2>&1")
 done < <(gen_times 12 48 13 40 "$morning"; gen_times 18 42 22 47 "$evening")
 
 tmp="$(mktemp)"
