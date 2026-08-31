@@ -55,3 +55,4 @@ layer can actually do — read it before deciding whether a kind of task is wort
 | 2026-08-31 | issue-68 | blocked | 533s | gates failed |
 | 2026-08-31 | control-producer-properties-compression | blocked | 332s | gates failed |
 | 2026-08-31 | probe-interface-default-values | blocked | 361s | gates failed |
+| 2026-08-31 | probe-value-type-validation | blocked | 48s | gates failed |
