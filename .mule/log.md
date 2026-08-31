@@ -62,3 +62,4 @@ layer can actually do — read it before deciding whether a kind of task is wort
 | 2026-08-31 | probe-mqtt-capabilities-declaration | blocked | 459s | gates failed |
 | 2026-08-31 | probe-binaryblob-validation | blocked | 185s | gates failed |
 | 2026-08-31 | probe-properties-on-connect-encoding | blocked | 315s | gates failed |
+| 2026-08-31 | docs-sync-pairing-status-enum | blocked | 59s | gates failed |
