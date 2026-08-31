@@ -59,3 +59,4 @@ layer can actually do — read it before deciding whether a kind of task is wort
 | 2026-08-31 | compat-note-v140-rc3 | blocked | 222s | gates failed |
 | 2026-08-31 | probe-emptycache-resend-device-error | blocked | 74s | gates failed |
 | 2026-08-31 | compat-note-v133 | blocked | 199s | gates failed |
+| 2026-08-31 | probe-mqtt-capabilities-declaration | blocked | 459s | gates failed |
