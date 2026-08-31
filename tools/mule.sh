@@ -369,10 +369,13 @@ first_open() {
         ;;
     esac
     printf '%s\n' "$l"; return 0
-  # Two sources, standing lines first: they are free to evaluate, whereas issue_tasks costs
-  # a network round-trip. `[ ]` must stay escaped — unescaped it is a bracket expression
-  # matching one space, and the pattern then matches nothing that exists.
-  done < <(grep -n '^- \[ \] ' "$TODO"; issue_tasks)
+  # Two sources, issues first (Giulio, 2026-08-31). An issue labelled `mule` is work a human
+  # approved; a standing line is either a gate or something the mule proposed to itself, and
+  # those must not run ahead of approved work — twelve self-proposed lines sat in front of two
+  # real issues and would have been worked first. The cost is one network round-trip per tick,
+  # paid before the free local read. `[ ]` must stay escaped — unescaped it is a bracket
+  # expression matching one space, and the pattern then matches nothing that exists.
+  done < <(issue_tasks; grep -n '^- \[ \] ' "$TODO")
   return 1
 }
 
