@@ -64,3 +64,4 @@ layer can actually do — read it before deciding whether a kind of task is wort
 | 2026-08-31 | probe-properties-on-connect-encoding | blocked | 315s | gates failed |
 | 2026-08-31 | docs-sync-pairing-status-enum | blocked | 59s | gates failed |
 | 2026-09-01 | issue-91-pairing-health-serve-root | blocked | 930s | gates failed |
+| 2026-09-01 | issue-68-async-operation-accepted | blocked | 520s | gates failed |
