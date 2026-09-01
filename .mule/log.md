@@ -67,3 +67,4 @@ layer can actually do — read it before deciding whether a kind of task is wort
 | 2026-09-01 | issue-68-async-operation-accepted | blocked | 520s | gates failed |
 | 2026-09-01 | probe-object-validation-selected-interface | blocked | 201s | gates failed |
 | 2026-09-01 | compat-note-v140-rc5 | blocked | 282s | gates failed |
+| 2026-09-01 | realm-policy-list-sorted | blocked | 182s | gates failed |
