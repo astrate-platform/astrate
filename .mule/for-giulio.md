@@ -10,6 +10,23 @@ line once you have dealt with it — this file is a queue, not a log.
 
 ---
 
+- **Milestones recipe has nothing to file: v2.0 is already DONE, and `mule/queue` is 120
+  commits behind `origin/main`, so this branch's `.mule/milestones.md` is stale.** My branch
+  still shows v2.0 "not started" (and v3.0 as CLEA TBD), so the recipe pointed me at v2.0 —
+  but on `main` v2.0 is marked **DONE (2026-07-29)**: every `milestone-2.0` issue is CLOSED
+  (#23–#27, #37, #39, #40, #41, #42, #43), and the factory/catalog/container-block/durable
+  named flows/`/flow/v1` API all live on `main` (`git show origin/main:.mule/milestones.md`).
+  `gh issue list --label milestone-2.0 --state open` is empty and there are no new v2.0 gaps
+  to file, so per the recipe's step 5 I filed **nothing** rather than duplicate closed work.
+  **Real current target is v3.0** ("upstream Astarte feature parity 1.3/1.4", scoped on main
+  2026-08-22): the first recipe job there is to triage `upstream-parity` backlog **#47–#89**
+  (source `.mule/research/upstream-parity-2026-08-22.md`) into a plan. But I should not start
+  that triage from this stale branch. Action needed: **merge/rebuild `mule/queue` on top of
+  `origin/main`**, then the next milestones run targets v3.0 with the correct research doc.
+  (Milestones recipe run, 2026-09-01.)
+
+---
+
 - ~~`device_deletion_started`/`device_deletion_finished` trigger events are not emitted~~ —
   **decided 2026-07-27: emit both, back-to-back, around the synchronous delete.** Filed as
   issue #21 (`mule`). (Cross-project survey, 2026-07-27,
