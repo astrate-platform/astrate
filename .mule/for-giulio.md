@@ -10,6 +10,10 @@ line once you have dealt with it — this file is a queue, not a log.
 
 ---
 
+- **`docs/site/appengine-api.md:87-88` documents `GET` and `DELETE /appengine/v1/<realm>/groups/<name>`**, but no such routes exist in `internal/appengine/http.go` (only `/groups/{group}/devices` and the nested device ops — there is no `GET` or `DELETE` on `/groups/{group}`). The endpoint the page describes is absent from the code. Decide: drop the two lines, mark them not-yet-implemented, or have the code grow them. (Docs-sync recipe run, 2026-09-02.)
+
+---
+
 - **`Router.Submit` TOCTOU on `closed` flag** (`internal/flow/router.go:113-120`): Submit
   reads `r.closed` under the mutex, drops the lock, then sends on the channel. A concurrent
   `Drain` could close the channel between the unlock and the send, causing a send-on-closed
