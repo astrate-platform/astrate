@@ -71,3 +71,4 @@ layer can actually do — read it before deciding whether a kind of task is wort
 | 2026-09-01 | realm-interface-lookup-404 | blocked | 83s | gates failed |
 | 2026-09-02 | flow-setstatus-race | blocked | 743s | gates failed |
 | 2026-09-02 | flow-validate-deadcode | blocked | 223s | gates failed |
+| 2026-09-02 | flow-unmarshal-error-tests | blocked | 206s | gates failed |
