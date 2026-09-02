@@ -10,6 +10,16 @@ line once you have dealt with it — this file is a queue, not a log.
 
 ---
 
+- **`Router.Submit` TOCTOU on `closed` flag** (`internal/flow/router.go:113-120`): Submit
+  reads `r.closed` under the mutex, drops the lock, then sends on the channel. A concurrent
+  `Drain` could close the channel between the unlock and the send, causing a send-on-closed
+  channel panic in the caller (not recovered by `processOne`'s defer). Fix options: (a) hold
+  the lock during channel send (hot-path perf hit), (b) use a select with `r.quit` instead of
+  sending on a closed channel, (c) accept the risk and document that Submit must not be called
+  after Drain. Needs a design call — not proposing a task. (Code review 2026-09-02.)
+
+---
+
 - **#87 `lua_map` — needs embedded Lua runtime, parked.** Design/implementation decision: embedding a Lua VM in Astrate is not machine-checkable by the mule. Consider closing if Lua flow support is not on any active roadmap.
 - **#78 FDO device onboarding — milestone-4.0, investigation phase.** Too large for a single mule task; the investigation work (reading upstream's TO2 handling, inventorying endpoints/schema/keys) is a multi-session project. Parking for now until the v3.0 queue clears and this becomes the next milestone target.
 - **#1 stale — "Provide an Open Source IoT Platform unironically" (wontfix).** Has been open since the repo's founding with no activity. Consider closing.
