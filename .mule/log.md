@@ -77,3 +77,4 @@ layer can actually do — read it before deciding whether a kind of task is wort
 | 2026-09-02 | docs-sync-appengine-socket | blocked | 139s | gates failed |
 | 2026-09-02 | lint-engine-goimports | blocked | 421s | gates failed |
 | 2026-09-02 | lint-flow-findings | blocked | 260s | gates failed |
+| 2026-09-02 | lint-pairing-test-param | blocked | 186s | gates failed |
