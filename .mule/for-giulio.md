@@ -10,6 +10,12 @@ line once you have dealt with it — this file is a queue, not a log.
 
 ---
 
+- **#87 `lua_map` — needs embedded Lua runtime, parked.** Design/implementation decision: embedding a Lua VM in Astrate is not machine-checkable by the mule. Consider closing if Lua flow support is not on any active roadmap.
+- **#78 FDO device onboarding — milestone-4.0, investigation phase.** Too large for a single mule task; the investigation work (reading upstream's TO2 handling, inventorying endpoints/schema/keys) is a multi-session project. Parking for now until the v3.0 queue clears and this becomes the next milestone target.
+- **#1 stale — "Provide an Open Source IoT Platform unironically" (wontfix).** Has been open since the repo's founding with no activity. Consider closing.
+
+---
+
 - **Milestones recipe has nothing to file: v2.0 is already DONE, and `mule/queue` is 120
   commits behind `origin/main`, so this branch's `.mule/milestones.md` is stale.** My branch
   still shows v2.0 "not started" (and v3.0 as CLEA TBD), so the recipe pointed me at v2.0 —
