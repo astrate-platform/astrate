@@ -12,3 +12,4 @@
 2026-08-19: no material change since 2026-08-18, checked astarte-platform 6e65c8ac / astrate main f92d42a
 2026-08-20: no material change since 2026-08-18, checked astarte-platform 643d0610 / astrate main 8037ff0
 2026-09-01: no material change since 2026-08-31, checked astarte-platform de1aaa73 / astrate main 60a8ec62
+2026-09-02: no material change since 2026-09-01, checked astarte-platform de1aaa73 / astrate main 60a8ec62
