@@ -10,6 +10,15 @@ line once you have dealt with it — this file is a queue, not a log.
 
 ---
 
+- **milestone 2.0 looks complete, verify and cut the tag** — all 11 `milestone-2.0` issues
+  CLOSED (#23–#27, #37, #39–#43), no open issues, no new gaps after re-checking upstream
+  astarte_flow block catalog against `internal/flow/` + git log (MQTT/HTTP source/sink,
+  json_path_map, pure-transform set, virtual_device_pool, container block MVP, flow API,
+  durable named flows all landed). `mule/queue` branch is stale — see entry below.
+  (Milestones recipe run, 2026-09-03.)
+
+---
+
 - **v3.0 decide #67** (`upstream-parity`): `required` and `encrypted` mapping fields exist on upstream master but not at 1.2.2/1.3.0 (`required` = missing key at runtime → `missing_required_mapping` on object-aggregated mappings; `encrypted` ties into keyAgreement #51). Decide now: reject (strict 1.2.2), ignore-and-accept, or implement `required` early. Issue is OPEN, no decision on record, not yet escalated here.
 
 ---
