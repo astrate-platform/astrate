@@ -82,3 +82,4 @@ layer can actually do — read it before deciding whether a kind of task is wort
 | 2026-09-03 | serverdata-aftercommit-test | blocked | 114s | gates failed |
 | 2026-09-03 | consumer-properties-plaintext-fallback | blocked | 1182s | gates failed |
 | 2026-09-03 | object-path-ok-comment | blocked | 113s | gates failed |
+| 2026-09-03 | housekeeping-unit-tests | blocked | 182s | gates failed |
