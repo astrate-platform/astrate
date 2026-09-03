@@ -80,3 +80,4 @@ layer can actually do — read it before deciding whether a kind of task is wort
 | 2026-09-02 | lint-pairing-test-param | blocked | 186s | gates failed |
 | 2026-09-02 | lint-flow-stutter | blocked | 98s | gates failed |
 | 2026-09-03 | serverdata-aftercommit-test | blocked | 114s | gates failed |
+| 2026-09-03 | consumer-properties-plaintext-fallback | blocked | 1182s | gates failed |
