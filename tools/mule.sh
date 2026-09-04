@@ -208,16 +208,42 @@ proof_gate() {
   return 0
 }
 
+# A failing gate used to discard its own output, so every failure looked alike: the log row
+# said "gates failed" and nothing said why. Forty-two consecutive tasks were blocked that way
+# over five weeks by ten pre-existing lint errors in the checkout's own base — the gate lints
+# the whole repo, so no task could ever pass, and the tasks queued to fix those very errors
+# failed on the other nine. The output now survives in .mule/failed/gate.log and its first
+# real line becomes the recorded reason, so the log row itself says what broke.
+GATE_LOG=""
+GATE_REASON=""
+
+# gate_reason picks the first line worth reading out of the gate output: compiler and vet
+# errors, test failures and golangci-lint findings all carry a file:line prefix.
+gate_reason() {
+  local what="$1" line
+  line="$(grep -m1 -E '^[^ ].*\.go:[0-9]+' "$GATE_LOG" 2>/dev/null \
+       || grep -m1 -E '^(---|FAIL|# )' "$GATE_LOG" 2>/dev/null || true)"
+  # The reason lands in a markdown table cell, so a stray pipe would break the log.
+  line="$(printf '%s' "$line" | tr -d '\r|' | cut -c1-120)"
+  [ -n "$line" ] && GATE_REASON="$what: $line" || GATE_REASON="$what"
+}
+
 gates() {
   local rc=0
+  mkdir -p "$MULE/failed"
+  GATE_LOG="$MULE/failed/gate.log"
+  : > "$GATE_LOG"
+  GATE_REASON=""
   if [ -n "${MULE_FIX_CMD:-}" ]; then ( cd "$REPO" && eval "$MULE_FIX_CMD" ) >/dev/null 2>&1; fi
   if [ -n "${MULE_TEST_CMD:-}" ]; then
     note "gate: $MULE_TEST_CMD"
-    ( cd "$REPO" && eval "$MULE_TEST_CMD" ) >/dev/null 2>&1 || { bad "tests failed"; rc=1; }
+    ( cd "$REPO" && eval "$MULE_TEST_CMD" ) >>"$GATE_LOG" 2>&1 \
+      || { gate_reason "tests failed"; bad "$GATE_REASON"; rc=1; }
   fi
   if [ "$rc" = 0 ] && [ -n "${MULE_LINT_CMD:-}" ]; then
     note "gate: lint"
-    ( cd "$REPO" && eval "$MULE_LINT_CMD" ) >/dev/null 2>&1 || { bad "lint failed"; rc=1; }
+    ( cd "$REPO" && eval "$MULE_LINT_CMD" ) >>"$GATE_LOG" 2>&1 \
+      || { gate_reason "lint failed"; bad "$GATE_REASON"; rc=1; }
   fi
   if [ "$rc" = 0 ] && [ -z "${MULE_NO_PROOF_GATE:-}" ]; then
     proof_gate || rc=1
@@ -513,7 +539,7 @@ format MULE.md gives.'
     esac
     verdict=blocked; reason="wrote nothing"
   elif ! gates; then
-    verdict=blocked; reason="gates failed"
+    verdict=blocked; reason="${GATE_REASON:-gates failed}"
   else
     verdict=done
   fi
@@ -552,6 +578,8 @@ Left open on purpose. Whether this actually resolves the issue is your call, not
   # Keep the fragment where it can be looked at, then put the tree back.
   mkdir -p "$MULE/failed"
   git -C "$REPO" diff > "$MULE/failed/$slug.diff" 2>/dev/null
+  # Keep this run's gate output next to its fragment; gate.log is overwritten by the next tick.
+  [ -s "${GATE_LOG:-}" ] && cp "$GATE_LOG" "$MULE/failed/$slug.gate.log" 2>/dev/null
   git -C "$REPO" checkout -- . 2>/dev/null; git -C "$REPO" clean -fdq -e .mule 2>/dev/null
   if [ "$lineno" != 0 ]; then
     sed_i "${lineno}s/^- \[ \]/- [!]/" "$TODO"

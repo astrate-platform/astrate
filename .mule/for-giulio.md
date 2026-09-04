@@ -10,6 +10,61 @@ line once you have dealt with it — this file is a queue, not a log.
 
 ---
 
+- **The mule's 42 straight failures were ten lint errors in its own base, not a stale branch.**
+  `mule/queue` stopped taking `main` on 2026-07-27 and drifted 120 commits behind, which is
+  real and is why it is being rebuilt — but it is not what blocked the work. The lint gate runs
+  `golangci-lint run ./...` over the whole repo, and the branch's own `internal/flow/*` code
+  carried 10 findings (1 goimports, 1 gosec, 8 revive). So every task failed the gate no matter
+  how good the change was, including the four tasks queued to fix those very findings: each
+  fixed one and died on the other nine. Base tests and `go vet` pass on that checkout, and
+  `golangci-lint` and `govulncheck` have been installed on the Pi the whole time — the two
+  things that looked broken were not. `main` is lint-clean, so rebuilding from it clears the
+  deadlock. `tools/mule.sh preflight` checks the lint baseline and would have said so on day
+  one; nobody ran it between 2026-08-31 and 2026-09-04. (Diagnosed 2026-09-04.)
+
+
+---
+
+- **Dependency sweep corrected: direct (pinned) deps DO have newer versions** — the 2026-09-02 note said the `go list -m -u` sweep showed "only version-skew on transitive deps", but that run hit the recipe's `head -20` cutoff (all cloud/azure/transitive) and never reached the directly-required modules. Full sweep, 2026-09-04. None of these is a fix this repo *needs*, so no bump is proposed — recorded for the decision. Per module (current → available; breaking change; repo use):
+  - `github.com/coder/websocket` v1.8.14 → v1.8.15 — no breaking (patch); used in `internal/appengine/stream/ws.go`, `channels/ws.go`; worth it only for the "transmit in single frame when compression enabled" fix + read-path alloc reduction.
+  - `go.etcd.io/bbolt` v1.4.3 → v1.5.0 — bbolt's semver promises no API change between patch/minor, so additive-only; used in `internal/broker/sessionstore.go`; v1.5 adds a data-file size limit and panic-recovery hardening, nothing Astrate needs.
+  - `go.mongodb.org/mongo-driver/v2` v2.6.0 → v2.8.2 — the 2.8.0 breaking changes are confined to Queryable Encryption string-query options (`options.Text()`→`String()`); Astrate uses only the raw BSON API (`pkg/payload/bson.go`, `internal/engine/capabilities.go`, `bench/`) and is unaffected.
+  - `github.com/nats-io/nats.go` v1.52.0 → v1.53.1 — no breaking; the headline fixes (JetStream `resetOrderedConsumer` race, KV dot-rejection) are paths Astrate does not use — `internal/engine/forward/nats.go` is core NATS publish only.
+  - `github.com/prometheus/client_golang` v1.23.2 → v1.24.1 — requires Go ≥1.25 (fine, repo is 1.26.1); the breaking `LabelNames`/remote-api renames don't touch repo usage (`prometheus`/`collectors`/`promhttp` in `internal/observability/metrics.go`, flow/engine metrics); would buy `Gather()` panic-recovery and opt-in `CoalesceGather` scrape-pile-up protection.
+  - `github.com/testcontainers/testcontainers-go` v0.43.0 → v0.44.0 (modules/postgres v0.42.0, modules/nats v0.43.0) — breaking in `wait.ForSQL` (callback now takes `network.Port`) and `ImageProvider` (new `PullImageWithPlatform`); Astrate's `internal/testutil/pg.go` looks unaffected but it is test-only anyway.
+  - `golang.org/x/crypto` v0.53.0 → v0.56.0 — x/crypto keeps API compatibility; used only for bcrypt in `internal/auth`.
+  Note (corrected 2026-09-04): `govulncheck` and `golangci-lint` **are** installed on the Pi (`/root/go/bin`, since 2026-07-28 and 2026-09-01) and `.mule/config` finds them there, so both checks were available; the sweep that produced this list simply ran without invoking govulncheck.
+
+---
+
+- **milestone 2.0 looks complete, verify and cut the tag** — all 11 `milestone-2.0` issues
+  CLOSED (#23–#27, #37, #39–#43), no open issues, no new gaps after re-checking upstream
+  astarte_flow block catalog against `internal/flow/` + git log (MQTT/HTTP source/sink,
+  json_path_map, pure-transform set, virtual_device_pool, container block MVP, flow API,
+  durable named flows all landed).   (Milestones recipe run, 2026-09-03.)
+
+---
+
+- **`docs/site/appengine-api.md:87-88` documents `GET` and `DELETE /appengine/v1/<realm>/groups/<name>`**, but no such routes exist in `internal/appengine/http.go` (only `/groups/{group}/devices` and the nested device ops — there is no `GET` or `DELETE` on `/groups/{group}`). The endpoint the page describes is absent from the code. Decide: drop the two lines, mark them not-yet-implemented, or have the code grow them. (Docs-sync recipe run, 2026-09-02.)
+
+---
+
+- **`Router.Submit` TOCTOU on `closed` flag** (`internal/flow/router.go:113-120`): Submit
+  reads `r.closed` under the mutex, drops the lock, then sends on the channel. A concurrent
+  `Drain` could close the channel between the unlock and the send, causing a send-on-closed
+  channel panic in the caller (not recovered by `processOne`'s defer). Fix options: (a) hold
+  the lock during channel send (hot-path perf hit), (b) use a select with `r.quit` instead of
+  sending on a closed channel, (c) accept the risk and document that Submit must not be called
+  after Drain. Needs a design call — not proposing a task. (Code review 2026-09-02.)
+
+---
+
+- **#87 `lua_map` — needs embedded Lua runtime, parked.** Design/implementation decision: embedding a Lua VM in Astrate is not machine-checkable by the mule. Consider closing if Lua flow support is not on any active roadmap.
+- **#78 FDO device onboarding — milestone-4.0, investigation phase.** Too large for a single mule task; the investigation work (reading upstream's TO2 handling, inventorying endpoints/schema/keys) is a multi-session project. Parking for now until the v3.0 queue clears and this becomes the next milestone target.
+- **#1 stale — "Provide an Open Source IoT Platform unironically" (wontfix).** Has been open since the repo's founding with no activity. Consider closing.
+
+---
+
 - ~~**Flow v2.0: named multi-instance flows + pipeline config?**~~ — **decided
   2026-07-29: (b) named multi-instance + config.** Design then implement (#40).
   Doc: `docs/handoff/flow-v2-decisions-2026-07-29.md`.
