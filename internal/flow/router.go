@@ -56,7 +56,12 @@ type Router struct {
 	lanes  []*lane
 	laneWG sync.WaitGroup
 
-	mu     sync.Mutex
+	// mu guards closed and, on the read side, fences Submit against Drain.
+	// Submit holds the read lock for the whole send, so a lane channel can
+	// never be retired underneath an in-flight send; Drain takes the write
+	// lock, which means that once it returns from the critical section no
+	// Submit is still running and none can start.
+	mu     sync.RWMutex
 	closed bool
 	quit   chan struct{}
 }
@@ -110,14 +115,19 @@ func (r *Router) Run(ctx context.Context) {
 
 // Submit routes msg to the lane determined by FNV-1a(msg.Key). Behaviour
 // depends on qos and the configured overflow policies.
+//
+// The read lock is held across the send, not just across the closed check.
+// Dropping it in between left a window where Drain could retire the lanes
+// between the check and the send; with OverflowBlock the sender can sit in
+// that window for as long as the lane is full. Sends are what the lock is
+// for, so it covers them.
 func (r *Router) Submit(msg *Message, qos byte) {
 	r.met.submitted.Inc()
-	r.mu.Lock()
+	r.mu.RLock()
+	defer r.mu.RUnlock()
 	if r.closed {
-		r.mu.Unlock()
 		return
 	}
-	r.mu.Unlock()
 
 	l := r.lanes[laneOf(msg.Key, len(r.lanes))]
 	fm := &flowMsg{msg: msg, qos: qos}
@@ -155,10 +165,13 @@ func (r *Router) Drain(ctx context.Context) error {
 	r.mu.Lock()
 	if !r.closed {
 		r.closed = true
+		// quit is the only thing closed here. Closing the lane channels
+		// instead would race any Submit that had already passed the closed
+		// check — a send on a closed channel panics in the *caller*, which
+		// processOne's recover cannot see. The lanes notice quit and drain
+		// what is buffered; taking the write lock above guarantees no send
+		// is in flight and none can start, so the buffer stops growing.
 		close(r.quit)
-		for _, l := range r.lanes {
-			close(l.ch)
-		}
 	}
 	r.mu.Unlock()
 
@@ -179,8 +192,22 @@ func (r *Router) Drain(ctx context.Context) error {
 // panics per-message so one block's bug cannot crash the router.
 func (r *Router) runLane(_ context.Context, l *lane) {
 	defer r.laneWG.Done()
-	for fm := range l.ch {
-		r.processOne(fm)
+	for {
+		select {
+		case fm := <-l.ch:
+			r.processOne(fm)
+		case <-r.quit:
+			// Drain closes quit only once no Submit is in flight, so what is
+			// buffered now is everything this lane will ever see.
+			for {
+				select {
+				case fm := <-l.ch:
+					r.processOne(fm)
+				default:
+					return
+				}
+			}
+		}
 	}
 }
 

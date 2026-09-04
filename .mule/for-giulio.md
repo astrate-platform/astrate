@@ -35,6 +35,11 @@ line once you have dealt with it — this file is a queue, not a log.
   - `golang.org/x/crypto` v0.53.0 → v0.56.0 — x/crypto keeps API compatibility; used only for bcrypt in `internal/auth`.
   Note (corrected 2026-09-04): `govulncheck` and `golangci-lint` **are** installed on the Pi (`/root/go/bin`, since 2026-07-28 and 2026-09-01) and `.mule/config` finds them there, so both checks were available; the sweep that produced this list simply ran without invoking govulncheck.
 
+  **Decided 2026-09-04: no bumps.** None of the seven fixes anything this repo has, and each
+  one costs a full test run to land. The standing rule instead: re-run this sweep at every
+  milestone boundary (the point where `APICompatVersion` or a milestone tag moves), and bump
+  only what carries a fix Astrate actually needs. `go.mod` stays on the never-touch list.
+
 ---
 
 - **milestone 2.0 looks complete, verify and cut the tag** — all 11 `milestone-2.0` issues
@@ -43,26 +48,35 @@ line once you have dealt with it — this file is a queue, not a log.
   json_path_map, pure-transform set, virtual_device_pool, container block MVP, flow API,
   durable named flows all landed).   (Milestones recipe run, 2026-09-03.)
 
----
-
-- **`docs/site/appengine-api.md:87-88` documents `GET` and `DELETE /appengine/v1/<realm>/groups/<name>`**, but no such routes exist in `internal/appengine/http.go` (only `/groups/{group}/devices` and the nested device ops — there is no `GET` or `DELETE` on `/groups/{group}`). The endpoint the page describes is absent from the code. Decide: drop the two lines, mark them not-yet-implemented, or have the code grow them. (Docs-sync recipe run, 2026-09-02.)
-
----
-
-- **`Router.Submit` TOCTOU on `closed` flag** (`internal/flow/router.go:113-120`): Submit
-  reads `r.closed` under the mutex, drops the lock, then sends on the channel. A concurrent
-  `Drain` could close the channel between the unlock and the send, causing a send-on-closed
-  channel panic in the caller (not recovered by `processOne`'s defer). Fix options: (a) hold
-  the lock during channel send (hot-path perf hit), (b) use a select with `r.quit` instead of
-  sending on a closed channel, (c) accept the risk and document that Submit must not be called
-  after Drain. Needs a design call — not proposing a task. (Code review 2026-09-02.)
+  **Decided 2026-09-04: the tag is `v0.2.0`, cut on the same day.** The `v2.0`/`v3.0` names
+  are milestone names, not release versions — the project is still pre-1.0 and the version
+  number keeps its own line rather than jumping two majors to match a milestone label.
 
 ---
-
-- **#87 `lua_map` — needs embedded Lua runtime, parked.** Design/implementation decision: embedding a Lua VM in Astrate is not machine-checkable by the mule. Consider closing if Lua flow support is not on any active roadmap.
-- **#78 FDO device onboarding — milestone-4.0, investigation phase.** Too large for a single mule task; the investigation work (reading upstream's TO2 handling, inventorying endpoints/schema/keys) is a multi-session project. Parking for now until the v3.0 queue clears and this becomes the next milestone target.
-- **#1 stale — "Provide an Open Source IoT Platform unironically" (wontfix).** Has been open since the repo's founding with no activity. Consider closing.
-
+- ~~`docs/site/appengine-api.md` documents `GET` and `DELETE` on `/appengine/v1/<realm>/groups/<name>`~~
+  — **resolved 2026-09-04, and the original note was half wrong.** `GET /groups/{group}` does
+  exist (`internal/appengine/http.go:69`); only `DELETE` was absent, and it is absent from
+  upstream's own spec too (`docs/api/astarte_appengine_api.yaml` has no `/groups/{group}`
+  path at all). So the docs line was spurious, not the code. Line dropped.
+---
+- ~~`Router.Submit` TOCTOU on the `closed` flag~~ — **fixed 2026-09-04**, and none of the three
+  options in the original note was taken: (b) was wrong (a `select` does not save a send on a
+  closed channel — it panics either way). The fix is that `Drain` no longer closes the lane
+  channels at all; it closes `quit` under a write lock while `Submit` holds the read lock
+  across its send, so a lane can never be retired underneath an in-flight sender, and the lanes
+  exit on `quit` after draining what is buffered. `TestRouter_SubmitParkedWhenDrainRuns`
+  reproduces the old panic deterministically and passes on the fix.
+---
+- ~~**#87 `lua_map` — needs embedded Lua runtime, parked.**~~ — **closed 2026-09-04.**
+  Embedding a Lua VM is not machine-checkable by the mule and Lua flow support is on no active
+  roadmap. Reopen in a minute if that changes.
+- **#78 FDO device onboarding — milestone-4.0, investigation phase.** Too large for a single
+  mule task; the investigation work (reading upstream's TO2 handling, inventorying endpoints,
+  schema and keys) is a multi-session project. Parked until the v3.0 queue clears and this
+  becomes the next milestone target.
+- **#1 is never to be raised again.** Giulio's standing instruction, 2026-09-04: it stays open
+  permanently and is not a candidate for closing, triage, or a for-giulio entry. Do not
+  propose it again.
 ---
 
 - ~~**Flow v2.0: named multi-instance flows + pipeline config?**~~ — **decided

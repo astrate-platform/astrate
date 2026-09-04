@@ -400,3 +400,166 @@ func (b *blockingSink) len() int {
 	defer b.mu.Unlock()
 	return len(b.msgs)
 }
+
+// blockingBlock parks in Process until release is closed, so a test can hold
+// a lane's goroutine still and park senders inside the send itself.
+type blockingBlock struct {
+	release chan struct{}
+	entered chan struct{}
+	once    sync.Once
+	seen    atomic.Int64
+}
+
+func (b *blockingBlock) Process(*Message) ([]*Message, error) {
+	b.once.Do(func() { close(b.entered) })
+	<-b.release
+	b.seen.Add(1)
+	return nil, nil
+}
+
+func (b *blockingBlock) Name() string { return "blocking" }
+
+// TestRouter_SubmitParkedWhenDrainRuns is the regression test for the
+// Submit/Drain race. Submit checked the closed flag, released the lock, and
+// only then sent on the lane channel; Drain closed those channels. A sender
+// parked inside a full lane's send was therefore sending on a channel that
+// Drain closed underneath it — a panic in Submit's own caller, which
+// processOne's recover cannot reach, and which brings the process down.
+//
+// The setup makes that window wide instead of racing for it: one lane of
+// capacity 1, a block that parks forever, and three submits. The first is in
+// the block, the second sits in the buffer, and the third is parked inside
+// the send when Drain runs. Before the fix this test panics every time.
+func TestRouter_SubmitParkedWhenDrainRuns(t *testing.T) {
+	blk := &blockingBlock{release: make(chan struct{}), entered: make(chan struct{})}
+	graph, err := NewBlockGraph(blk)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := NewRouter(graph, RouterConfig{
+		Lanes:        1,
+		LaneCapacity: 1,
+		QoS0Overflow: OverflowBlock,
+		QoS1Overflow: OverflowBlock,
+	}, nil)
+	r.Run(context.Background())
+
+	r.Submit(makeMsg("k", 0), 1) // taken by the lane goroutine, parks in Process
+	<-blk.entered
+	r.Submit(makeMsg("k", 1), 1) // fills the buffer
+
+	parked := make(chan struct{})
+	returned := make(chan any, 1)
+	go func() {
+		defer func() { returned <- recover() }()
+		close(parked)
+		r.Submit(makeMsg("k", 2), 1) // no room: parks inside the send
+	}()
+	<-parked
+	// Give the sender time to actually reach the send before Drain runs.
+	time.Sleep(50 * time.Millisecond)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	drained := make(chan error, 1)
+	go func() { drained <- r.Drain(ctx) }()
+
+	// Drain cannot finish while the block is parked; let it go, then collect.
+	time.Sleep(50 * time.Millisecond)
+	close(blk.release)
+
+	if rec := <-returned; rec != nil {
+		t.Fatalf("Submit panicked while Drain retired the lanes: %v", rec)
+	}
+	if err := <-drained; err != nil {
+		t.Fatalf("drain: %v", err)
+	}
+}
+
+// TestRouter_ConcurrentSubmitDuringDrain hammers Submit from eight goroutines
+// while Drain runs, as a general concurrency smoke test under -race. It does
+// NOT reliably reproduce the Submit/Drain panic on the unfixed code — the
+// window there is a few instructions wide and the submitters mostly pile up
+// on the mutex Drain already holds. TestRouter_SubmitParkedWhenDrainRuns is
+// the deterministic regression test; this one guards the ordinary path.
+func TestRouter_ConcurrentSubmitDuringDrain(t *testing.T) {
+	for range 20 {
+		sink := &collectBlock{}
+		graph, err := NewBlockGraph(sink)
+		if err != nil {
+			t.Fatal(err)
+		}
+		// A small capacity keeps senders parked inside the send, which is
+		// exactly where the old window was.
+		r := NewRouter(graph, RouterConfig{
+			Lanes:        4,
+			LaneCapacity: 1,
+			QoS0Overflow: OverflowBlock,
+			QoS1Overflow: OverflowBlock,
+		}, nil)
+		r.Run(context.Background())
+
+		var wg sync.WaitGroup
+		var panicked atomic.Bool
+		start := make(chan struct{})
+		for g := range 8 {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				defer func() {
+					if rec := recover(); rec != nil {
+						panicked.Store(true)
+						t.Errorf("Submit panicked during Drain: %v", rec)
+					}
+				}()
+				<-start
+				for i := range 200 {
+					r.Submit(makeMsg(fmt.Sprintf("k%d", g), i), byte(i%2))
+				}
+			}()
+		}
+
+		close(start)
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		if err := r.Drain(ctx); err != nil {
+			cancel()
+			t.Fatalf("drain: %v", err)
+		}
+		cancel()
+		wg.Wait()
+		if panicked.Load() {
+			t.FailNow()
+		}
+	}
+}
+
+// TestRouter_DrainDeliversWhatWasAccepted checks the other half of the fix:
+// lanes now exit on quit instead of on a closed channel, so everything that
+// Submit accepted before Drain must still reach the sink.
+func TestRouter_DrainDeliversWhatWasAccepted(t *testing.T) {
+	sink := &collectBlock{}
+	graph, err := NewBlockGraph(sink)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := NewRouter(graph, RouterConfig{
+		Lanes:        1,
+		LaneCapacity: 256,
+		QoS0Overflow: OverflowBlock,
+		QoS1Overflow: OverflowBlock,
+	}, nil)
+	r.Run(context.Background())
+
+	const n = 200
+	for i := range n {
+		r.Submit(makeMsg("k", i), 1)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := r.Drain(ctx); err != nil {
+		t.Fatalf("drain: %v", err)
+	}
+	if got := sink.len(); got != n {
+		t.Fatalf("delivered %d after drain, want %d", got, n)
+	}
+}

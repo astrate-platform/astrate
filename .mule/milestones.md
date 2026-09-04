@@ -27,7 +27,9 @@ same wire-visible behaviour and operator-facing concepts (pipelines, blocks, nat
 containerised blocks) — not a port of the Elixir implementation. See
 `.mule/recipes/astarte-upstream.md`'s rule: port the idea, restated in Go, never the code.
 
-Status: **DONE** (2026-07-29). Runtime, factory, catalog (incl. filter/map), process
+Status: **DONE** (2026-07-29), tagged `v0.2.0` on 2026-09-04 — the milestone names
+(`v2.0`, `v3.0`) are milestone names, not release versions; the project is pre-1.0 and the
+version number keeps its own line. Runtime, factory, catalog (incl. filter/map), process
 wiring, and `/flow/v1` API are on `main`. **Parity audit** + **product decisions**
 recorded 2026-07-29 (`docs/handoff/flow-parity-audit-2026-07-29.md`,
 `docs/handoff/flow-v2-decisions-2026-07-29.md`).
