@@ -381,7 +381,7 @@ func mountAPIs(cfg config.Config, st *store.Store, e *engine.Engine, b *broker.B
 	// Upstream-parity per-service health endpoints (the dashboard's API
 	// status indicators poll them).
 	for _, svc := range []string{"appengine", "realmmanagement", "pairing"} {
-		observability.MountServiceCompat(mux, svc)
+		observability.MountServiceCompat(mux, svc, st.Health)
 	}
 
 	// Upstream-parity per-service version endpoints (issue #77): every

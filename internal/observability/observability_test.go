@@ -76,18 +76,53 @@ func TestReadinessAllOK(t *testing.T) {
 }
 
 func TestMountServiceCompat(t *testing.T) {
-	mux := http.NewServeMux()
-	for _, svc := range []string{"appengine", "realmmanagement", "pairing"} {
-		MountServiceCompat(mux, svc)
-	}
-	for _, svc := range []string{"appengine", "realmmanagement", "pairing"} {
+	svcs := []string{"appengine", "realmmanagement", "pairing"}
+
+	t.Run("HealthyOK", func(t *testing.T) {
+		mux := http.NewServeMux()
+		for _, svc := range svcs {
+			MountServiceCompat(mux, svc, func(context.Context) error { return nil })
+		}
+		for _, svc := range svcs {
+			rec := httptest.NewRecorder()
+			mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/"+svc+"/health", nil))
+			if rec.Code != http.StatusOK {
+				t.Errorf("%s/health = %d, want 200", svc, rec.Code)
+			}
+			if body := rec.Body.String(); body != `{"data":{"status":"ok"}}` {
+				t.Errorf("%s/health body = %s", svc, body)
+			}
+		}
+	})
+
+	// The Dashboard's per-service indicator is only useful if it can go red:
+	// a failing dependency probe must surface as 503, not upstream's static
+	// 200 (docs/COMPATIBILITY.md, deviation 18).
+	t.Run("UnhealthyDependency503", func(t *testing.T) {
+		mux := http.NewServeMux()
+		for _, svc := range svcs {
+			MountServiceCompat(mux, svc, func(context.Context) error { return errors.New("db down") })
+		}
+		for _, svc := range svcs {
+			rec := httptest.NewRecorder()
+			mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/"+svc+"/health", nil))
+			if rec.Code != http.StatusServiceUnavailable {
+				t.Errorf("%s/health = %d, want 503", svc, rec.Code)
+			}
+			if body := rec.Body.String(); body != `{"data":{"status":"unhealthy"}}` {
+				t.Errorf("%s/health body = %s", svc, body)
+			}
+		}
+	})
+
+	// A nil check keeps upstream's static 200 for callers that have no probe.
+	t.Run("NilCheckStaticOK", func(t *testing.T) {
+		mux := http.NewServeMux()
+		MountServiceCompat(mux, "pairing", nil)
 		rec := httptest.NewRecorder()
-		mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/"+svc+"/health", nil))
+		mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/pairing/health", nil))
 		if rec.Code != http.StatusOK {
-			t.Errorf("%s/health = %d, want 200", svc, rec.Code)
+			t.Errorf("pairing/health = %d, want 200", rec.Code)
 		}
-		if body := rec.Body.String(); body != `{"data":{"status":"ok"}}` {
-			t.Errorf("%s/health body = %s", svc, body)
-		}
-	}
+	})
 }

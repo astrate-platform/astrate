@@ -332,6 +332,34 @@ All additive or strictly-safer; none affect unmodified device SDKs.
     already-confirmed one (`ErrAlreadyRegistered`, mapped by the block to a
     log-and-drop).
 
+17. **Always synchronous where upstream 1.4 defaults to asynchronous** —
+    upstream 1.4 runs realm create/delete (Housekeeping), interface
+    install/update/delete (Realm Management) and trigger-delivery-policy
+    delete in the background, answering immediately and letting the caller opt
+    into synchronous execution with `?async_operation=false`. Astrate performs
+    every one of these synchronously and answers only once the work is done —
+    a strictly stronger guarantee, so a client written against upstream never
+    observes a regression. The parameter is accepted and ignored on either
+    value, on every one of those endpoints, so upstream clients that send it
+    keep working unchanged; pinned by
+    `TestRealmManagementAsyncOperationParam` and
+    `TestHousekeepingAsyncOperationParam`. Tracked in
+    `docs/UPSTREAM-EXPERIMENTAL.md` (#68) until upstream 1.4 is final.
+
+18. **Per-service health endpoints answer 503 when a dependency is down** —
+    upstream's unauthenticated `GET /{appengine,realmmanagement,pairing}/health`,
+    which the Astarte Dashboard polls for its per-service status indicators,
+    returns a static `200 {"data":{"status":"ok"}}`: the indicator cannot go
+    red, whatever state the instance is in. Astrate serves the same route and
+    the same 200 envelope, but runs the database probe that backs
+    `/astrate/v1/readiness` first and answers
+    `503 {"data":{"status":"unhealthy"}}` when it fails. Additive and strictly
+    safer — a Dashboard reading a healthy instance sees no difference. Astrate
+    additionally keeps the realm-scoped `GET /pairing/v1/{realm}/health` (#71),
+    which upstream 404s: it also resolves the realm, so an unknown realm
+    answers 404 and an unhealthy database 503, and FDO-flow devices can probe
+    it before they hold credentials.
+
 ## Infrastructure differences (by design)
 
 Not protocol deviations — these are the point of the project (`docs/DESIGN.md`):
