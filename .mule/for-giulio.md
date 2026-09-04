@@ -10,6 +10,19 @@ line once you have dealt with it — this file is a queue, not a log.
 
 ---
 
+- **keyAgreement: the parking condition from #51 has fired — implement now, or wait for a
+  stable v1.4.0?** (issue #92). #51 was closed saying "parked until the upstream 1.4
+  experimental spec stabilizes — reopen or file fresh when it does". Upstream `d084308`
+  (2026-08-31) published `082-key_agreement_protocol.md`, a full 267-line wire spec, and
+  deleted the "not yet implemented" sentences Astrate's broker ACL comment quotes (verified
+  today against upstream `master`: both sentences grep to 0, and 082 says the handshake is
+  implemented on the Astarte side). But the spec ships only in `v1.4.0-rc.5` — `v1.3.3` is
+  still the newest stable tag and Astrate targets 1.2.2, so the document has stabilized and
+  the release has not. Implementing it is the largest item in the parity backlog (CBOR codec,
+  X25519/P-256, HKDF, AES-256-GCM, a 5-state handshake, shared-secret persistence, five new
+  error names). Your call: build against the rc now, re-park until v1.4.0 is stable, or take
+  only the narrow comment fix (already queued as #93, safe either way).
+
 - **Group-scoped triggers (`group_name` on device/data triggers) compile but never match**
   (`internal/engine/triggers/match.go:11-12`). Decision deferred, tied to issue #17
   (group-WATCH-path reconciliation, trickle work, not mule): whatever group-membership
