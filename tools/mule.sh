@@ -361,6 +361,11 @@ line_slug() {
   # and ends up in the slug, the commit message and the task file.
   t="${t#"- [ ] "}"
   local s="${t%%:*}"; [ "$s" = "$t" ] && s="$(echo "$t" | tr -cs '[:alnum:]' '-' | cut -c1-24)"
+  # Strip trailing bracketed markers ([auto], [legion], [readonly]) — they belong to the
+  # queue line, not to the task's identity. Left in, `[auto]` turned the slug into
+  # "...-capabilityauto", which is the name the report file and the commit then carry, and
+  # it is not the name .mule/tasks/<slug>.md is looked up under.
+  while [ "${s%\]}" != "$s" ]; do s="${s%\[*}"; s="${s%"${s##*[![:space:]]}"}"; done
   echo "$s" | tr -cd '[:alnum:]-_'
 }
 
