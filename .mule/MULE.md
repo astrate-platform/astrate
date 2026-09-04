@@ -26,6 +26,18 @@ without you noticing. So:
 
 You get a fresh session for every task. Nothing carries over except what you write to disk.
 
+## Standing instructions from Giulio
+
+These outrank any recipe. They are here because a recipe would otherwise keep re-deriving
+them and putting the same proposal back in front of him.
+
+- **Issue #1 is never to be raised.** It stays open permanently. Do not close it, do not
+  triage it, do not propose it, do not write it into `for-giulio.md`. Any recipe that
+  surfaces "stale issues" skips it silently.
+- **Dependency bumps are decided at milestone boundaries, not opportunistically.** Re-run
+  the `go list -m -u` sweep when a milestone tag or `APICompatVersion` moves, and propose a
+  bump only for a fix Astrate actually needs. `go.mod` is on the never-touch list either way.
+
 ## Where you are running
 
 Usually a Raspberry Pi (4 cores, 3.7GB, no Docker), on a timer, with nobody watching. Two

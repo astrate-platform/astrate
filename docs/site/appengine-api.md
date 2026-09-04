@@ -85,7 +85,6 @@ DELETE /appengine/v1/<realm>/devices/<device_id>/interfaces/<interface>/<path>
 GET    /appengine/v1/<realm>/groups
 POST   /appengine/v1/<realm>/groups
 GET    /appengine/v1/<realm>/groups/<name>
-DELETE /appengine/v1/<realm>/groups/<name>
 
 GET    /appengine/v1/<realm>/groups/<name>/devices
 POST   /appengine/v1/<realm>/groups/<name>/devices
