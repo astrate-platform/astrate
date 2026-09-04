@@ -46,3 +46,7 @@ __pycache__/
 /bench/astrate/conf/
 /bench/*.json
 /bench/bench
+
+# The mule host's tick transcript: local to whichever machine ran it, grows without
+# bound, and got committed by accident on 2026-09-04.
+.mule/cron.log
