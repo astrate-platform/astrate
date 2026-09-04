@@ -28,6 +28,7 @@ command -v opencode >/dev/null || die "opencode is not on PATH"
 . "$CONFIG"
 SURVEY_BRANCH="${MULE_SURVEY_BRANCH:-mule/research}"
 SURVEY_TIMEOUT="${MULE_SURVEY_TIMEOUT:-3600}"
+MULE_ALARM_LABEL="${MULE_ALARM_LABEL:-mule-alarm}"
 MULE_AGENT="${MULE_AGENT:-build}"
 MULE_MODEL="${MULE_MODEL:-}"
 
@@ -119,6 +120,9 @@ short status line the recipe asks for."
   # 2026-08-26 without ever committing one of them. Ask git about the index directly.
   if [ "$changed" = 0 ] || git -C "$REPO" diff --cached --quiet; then
     note "nothing to commit — the recipe found no material change today"
+    # Not `return 0`: a previous run's push may have failed, leaving commits only on this
+    # host. Fall through to the push so a quiet day still drains that backlog.
+    push_branch
     return 0
   fi
 
@@ -129,10 +133,46 @@ short status line the recipe asks for."
   git -C "$REPO" commit -q -m "$msg"
   ok "committed to $SURVEY_BRANCH: $msg"
 
-  if [ -n "${MULE_PUSH:-}" ]; then
-    git -C "$REPO" push -q origin "$SURVEY_BRANCH" 2>/dev/null \
-      && ok "pushed $SURVEY_BRANCH" || note "push failed — the work is safe locally"
+  push_branch
+}
+
+# Push whatever is unpushed on the survey branch. Separated out because it must also run on
+# days with nothing to commit — see the early return above. Retries, because the failures seen
+# so far have all been transient network on the Pi, and a silent one strands the reports.
+push_branch() {
+  [ -n "${MULE_PUSH:-}" ] || return 0
+
+  local behind
+  behind=$(git -C "$REPO" rev-list --count "origin/$SURVEY_BRANCH..$SURVEY_BRANCH" 2>/dev/null || echo 0)
+  [ "${behind:-0}" = 0 ] && return 0
+
+  local try
+  for try in 1 2 3; do
+    if git -C "$REPO" push -q origin "$SURVEY_BRANCH" 2>/dev/null; then
+      ok "pushed $SURVEY_BRANCH ($behind commit(s))"
+      return 0
+    fi
+    [ "$try" = 3 ] || sleep $(( try * 20 ))
+  done
+
+  # Loudly, and on the third failure file it — a soft note here is exactly how a backlog grew
+  # to 16 unpushed reports unnoticed between 2026-07-28 and 2026-08-26.
+  bad "push failed 3x — $behind survey commit(s) exist ONLY on $(hostname), not on origin"
+  if command -v gh >/dev/null; then
+    gh issue create \
+      --title "mule: survey push has been failing — $behind report(s) only on $(hostname)" \
+      --body "\`tools/mule-survey.sh\` could not push \`$SURVEY_BRANCH\` after 3 attempts.
+$behind commit(s) exist only on \`$(hostname)\` at \`$REPO\`.
+
+The next successful run drains the backlog on its own, so this is usually transient network.
+If it persists, check the Pi's ssh key against origin:
+
+    ssh -T git@github.com
+    cd $REPO && git push origin $SURVEY_BRANCH" \
+      --label "$MULE_ALARM_LABEL" >/dev/null 2>&1 \
+      && note "filed an alarm issue" || true
   fi
+  return 1
 }
 
 case "${1:-run}" in

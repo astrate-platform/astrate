@@ -32,7 +32,7 @@ before running any of the ssh snippets below.
 | | role | reach it | what runs there |
 |---|---|---|---|
 | **Mac** | you work here | — | trickle (architect work), one-off skill runs, `gh` |
-| **Pi** `$MULE_PI_SSH` | unattended, always on | `ssh $MULE_PI_SSH` (bash -s, its shell is fish) | `mule.timer` (30 min), `mule-survey.timer` (daily ~03:00) |
+| **Pi** `$MULE_PI_SSH` | unattended, always on | `ssh $MULE_PI_SSH` (bash -s, its shell is fish) | `mule-planner.timer` (daily ~06:00, writes the day's tick times into cron), `mule-survey.timer` (daily ~03:00), `mule-upstream-watch.timer` (weekly, Mon ~04:00). There is **no** `mule.timer` — see below. |
 | **Legion Go** `$MULE_LEGION_SSH` (alias, works from Mac and Pi) | muscle, sleeps/travels | `ssh $MULE_LEGION_SSH` | upstream Astarte in Docker, `bench/`, the race-detector gate |
 
 This skill itself is installed in two places — Claude Code on the Mac, and opencode on the Pi
@@ -63,10 +63,11 @@ otherwise:
 source .mule/hosts
 # Pi: are the timers alive, when do they next fire
 if [ "$WHERE" = pi ]; then
-  systemctl list-timers mule.timer mule-survey.timer --no-pager
+  systemctl list-timers mule-planner.timer mule-survey.timer mule-upstream-watch.timer --no-pager
+  crontab -l | sed -n '/BEGIN mule-daily-schedule/,/END mule-daily-schedule/p' | grep -c tick
 else
   ssh -o BatchMode=yes -o ConnectTimeout=6 "$MULE_PI_SSH" \
-    'systemctl list-timers mule.timer mule-survey.timer --no-pager' \
+    'systemctl list-timers mule-planner.timer mule-survey.timer mule-upstream-watch.timer --no-pager; crontab -l | sed -n "/BEGIN mule-daily-schedule/,/END mule-daily-schedule/p" | grep -c tick' \
     || echo "Pi unreachable from here — that's a real finding only when \$WHERE != pi; if you ARE on the Pi and this branch still ran, the WHERE detection above is wrong, fix it, don't just report 'unreachable'"
 fi
 
@@ -108,7 +109,7 @@ are different facts and the first one is the far more common cause.
 | "fai qualcosa di utile", "cerca cose da fare", "top up the queue" | `mule` skill → `tools/mule.sh recipe <name>` (rotates: github-issues, astarte-upstream, code-review, docs-sync, hygiene, milestones) — **proposes into `.mule/todo.md`, executes nothing** | Mac (recipe runs here, proposals land in git) | **you approve the proposal before it can run** |
 | "dai un task a Big Pickle: ..." | `gh issue create --label mule --title "..."` (title = the whole task the mule reads — see `.mule/recipes/github-issues.md` for the shape a runnable one needs) | anywhere with `gh` | you write it, mule picks it up next tick |
 | "merge quello che ha fatto il mulo" | review the diff yourself, then `git checkout main && git merge --no-ff mule/queue` | Mac | you decide, never automatic |
-| "ferma/riattiva il mulo" | `ssh $MULE_PI_SSH 'systemctl stop\|start mule.timer'` | Pi | manual, instant |
+| "ferma/riattiva il mulo" | ticks are cron entries, not a timer: `ssh $MULE_PI_SSH 'crontab -l | sed "/BEGIN mule-daily-schedule/,/END mule-daily-schedule/d" | crontab -'` clears today's remaining ticks; `systemctl disable --now mule-planner.timer` stops tomorrow's from ever being written (and `enable --now` + `systemctl start mule-planner.service` brings it back the same day) | Pi | manual, instant |
 | "cosa ha trovato la survey", "controlla la survey" | `mule-triage` skill | Mac reads `mule/research` branch | mostly autonomous — Claude verifies + files issues, reports to you |
 | "rilancia la survey adesso" (fuori orario) | `ssh $MULE_PI_SSH 'systemctl start mule-survey.service'` (one-shot, doesn't wait for 03:00) — or run `tools/mule-survey.sh run` directly from the Mac if you want it faster/local | Pi (or Mac) | unattended once started; triage it after with `mule-triage` |
 | "guarda cosa c'è per te" / review escalations | read `.mule/for-giulio.md` together, resolve each line in conversation, delete it once handled (that file is a queue, not a log) | Mac | **this is the one that's always your turn** — nothing files or clears these automatically |
@@ -123,8 +124,16 @@ are different facts and the first one is the far more common cause.
 
 ## What's fully unattended right now (nothing to do unless something's wrong)
 
-- `mule.timer` — every 30 min on the Pi, works the queue, commits to `mule/queue`, pushes.
-  One task per tick, daily cap 16, does nothing when the queue is empty (correct, not broken).
+- **The mule's ticks — cron, not a timer.** `mule-planner.timer` fires once a day (~06:00) and
+  runs `tools/mule-plan-day.sh`, which picks a random number of ticks at random times inside two
+  windows and writes them as one-shot cron entries for that day; each entry runs
+  `tools/mule.sh tick`, one task, commits to `mule/queue`, pushes, logging to
+  `.mule/cron.log`. `mule.timer` was the old flat 30-minute schedule and
+  `tools/mule-setup-pi.sh` now deliberately deletes it — **its absence is correct, not a
+  fault**, so never "restore" it. To see today's plan, read the crontab block between
+  `BEGIN/END mule-daily-schedule`; to see what actually ran, `tail .mule/cron.log`. Does
+  nothing when the queue is empty (correct, not broken).
+- `mule-upstream-watch.timer` — weekly (Mon ~04:00), watches upstream Astarte.
 - `mule-survey.timer` — daily ~03:00 on the Pi, own clone/branch (`mule/research`), writes
   nothing on days with no material change upstream or in our own code.
 - Both post to `.mule/for-giulio.md` or open GitHub issues rather than ever touching `main`

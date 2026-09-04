@@ -753,9 +753,13 @@ check_pulse() {
 It is probably still ticking and exiting 0 — that is how this failure looks. Worth checking,
 on the Pi:
 
-    systemctl list-timers mule.timer
-    journalctl -u mule.service --since '-1 day' | tail -50
+    systemctl list-timers mule-planner.timer
+    crontab -l | sed -n '/BEGIN mule-daily-schedule/,/END mule-daily-schedule/p'
+    tail -50 /root/astrate-mule/.mule/cron.log
     cd /root/astrate-mule && bash tools/mule.sh status
+
+(Ticks are one-shot cron entries written each morning by mule-planner, not a systemd timer —
+`mule.timer` does not exist and is not supposed to.)
 
 Common causes, all of which have happened: the provider is refusing every run, the queue has
 nothing runnable in it, the working tree is dirty so every tick aborts, or push has been
