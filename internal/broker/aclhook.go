@@ -187,15 +187,22 @@ func (h *aclHook) OnACLCheck(cl *mqtt.Client, topic string, write bool) bool {
 	if sess := h.registry.get(cl.ID); sess != nil && sess.client == cl {
 		allowed = checkACL(sess.identity.BaseTopic(), topic, write, func(iface string) (interfaceschema.Ownership, bool) {
 			own, ok := sess.ownershipOf(iface)
-			if !ok {
-				// The interface may have been introspected after connect
-				// (the engine updates the row); reload, debounced.
-				ctx, cancel := context.WithTimeout(context.Background(), hookDBTimeout)
-				defer cancel()
-				sess.refreshIfStale(ctx, h.st, h.log)
-				own, ok = sess.ownershipOf(iface)
+			if ok {
+				return own, ok
 			}
-			return own, ok
+			// The interface may have been introspected after connect (the
+			// engine updates the row); reload, debounced.
+			ctx, cancel := context.WithTimeout(context.Background(), hookDBTimeout)
+			defer cancel()
+			if sess.refreshIfStale(ctx, h.st, h.log) {
+				return sess.ownershipOf(iface)
+			}
+			// Debounce skipped the reload: still inside the first
+			// introspectionReloadDebounce after connect, so the cache is
+			// cold. Resolve the unknown interface with one synchronous
+			// store read instead of denying the packet — mochi silently
+			// drops a denied QoS0 publish (processPublish).
+			return sess.syncOwnershipOf(ctx, h.st, h.log, iface)
 		})
 	} else if !write {
 		// Delivery to a session-present but disconnected device (offline

@@ -181,7 +181,10 @@ func (s *deviceSession) refresh(ctx context.Context, st Store, log *slog.Logger)
 }
 
 // refreshIfStale runs refresh at most once per introspectionReloadDebounce.
-func (s *deviceSession) refreshIfStale(ctx context.Context, st Store, log *slog.Logger) {
+// It reports whether the reload actually ran: false means the debounce
+// skipped it (the cache is still cold) and the caller must fall back to a
+// synchronous store read for the missed interface.
+func (s *deviceSession) refreshIfStale(ctx context.Context, st Store, log *slog.Logger) bool {
 	s.mu.Lock()
 	stale := time.Since(s.lastIntroLoad) >= introspectionReloadDebounce
 	if stale {
@@ -189,11 +192,48 @@ func (s *deviceSession) refreshIfStale(ctx context.Context, st Store, log *slog.
 	}
 	s.mu.Unlock()
 	if !stale {
-		return
+		return false
 	}
 	if err := s.refresh(ctx, st, log); err != nil {
 		log.Warn("introspection refresh failed", "client", s.identity.CN(), "error", err)
 	}
+	return true
+}
+
+// syncOwnershipOf resolves a single interface's ownership synchronously from
+// the store, bypassing the reload debounce — the cold-start fallback for an
+// interface introspected after connect. When the debounce skips refreshIfStale
+// the cache is still cold, and denying the packet against it would drop a
+// legitimate QoS0 publish (mochi's processPublish discards denied QoS0
+// silently). The resolved ownership is written back to the cache so the
+// per-interface store read happens once per introspection refresh cycle; an
+// interface the store does not know caches as denied, the same safe posture
+// as loadOwnership skipping unresolvable interfaces.
+func (s *deviceSession) syncOwnershipOf(ctx context.Context, st Store, log *slog.Logger, iface string) (interfaceschema.Ownership, bool) {
+	dev, err := st.GetDevice(ctx, s.realmID, s.identity.DeviceID)
+	if err != nil {
+		log.Debug("ACL cold-start interface resolution failed",
+			"client", s.identity.CN(), "interface", iface, "error", err)
+		return 0, false
+	}
+	ver, introspected := dev.Introspection[iface]
+	var own interfaceschema.Ownership
+	if introspected {
+		si, err := st.GetInterface(ctx, s.realmID, iface, ver.Major)
+		if err != nil {
+			log.Debug("ACL cold-start interface resolution failed",
+				"client", s.identity.CN(), "interface", iface, "major", ver.Major, "error", err)
+			return 0, false
+		}
+		own = si.Ownership
+	}
+	s.mu.Lock()
+	if s.ownership == nil {
+		s.ownership = make(map[string]interfaceschema.Ownership, 1)
+	}
+	s.ownership[iface] = own
+	s.mu.Unlock()
+	return own, introspected
 }
 
 // loadOwnership resolves each introspected interface's ownership. Interfaces

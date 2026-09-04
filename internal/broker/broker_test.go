@@ -422,6 +422,80 @@ func TestBrokerClientIDRemappedToCertCN(t *testing.T) {
 	publishAndCheckAttribution(t, identity.CN())
 }
 
+// TestBrokerACLColdStartIntrospectionMiss covers the connect-order race in
+// the ACL miss path: a device introspects (the engine persists the row) and
+// immediately publishes, before Broker.RefreshIntrospection runs. admit
+// stamps lastIntroLoad at connect, so refreshIfStale's debounce skips the
+// reload for the whole first second and the second cache check reads the
+// still-cold map — without the synchronous fallback the deny is dropped
+// silently by mochi for QoS0. lastIntroLoad is re-stamped just before the
+// publish so the debounce is deterministically pending regardless of machine
+// speed.
+func TestBrokerACLColdStartIntrospectionMiss(t *testing.T) {
+	ctx := context.Background()
+	st, realmCA, identity, _ := newFakeEnv(t)
+
+	// Connect with an empty-introspection device so the post-connect
+	// interface is genuinely unknown to the session cache.
+	st.mu.Lock()
+	dev := st.devices[devKey(1, identity.DeviceID)]
+	dev.Introspection = map[string]store.InterfaceVersion{}
+	st.mu.Unlock()
+
+	intake := newRecorderIntake(true)
+	serverCert, roots := testutil.ServerTLSCert(t)
+
+	b, err := New(ctx, Config{
+		TLSAddr:          "127.0.0.1:0",
+		ServerTLSCert:    serverCert,
+		SessionStorePath: t.TempDir() + "/sessions.db",
+		Logger:           discardLogger(),
+	}, st, intake, nil)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if err := b.Start(); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	t.Cleanup(func() { _ = b.Close() })
+
+	devKeyPriv, csrPEM := testutil.DeviceCSR(t)
+	certPEM, _, _, err := realmCA.SignCSR(csrPEM, identity.Realm, identity.DeviceID.String(), time.Hour)
+	if err != nil {
+		t.Fatalf("issuing device certificate: %v", err)
+	}
+	tlsCfg := testutil.DeviceTLSConfig(t, certPEM, devKeyPriv, roots)
+	client, _ := testutil.MQTTConnect(t, "ssl://"+b.TLSAddr(), identity.CN(), true, tlsCfg)
+
+	// The engine persists the introspection the device just sent...
+	st.mu.Lock()
+	dev = st.devices[devKey(1, identity.DeviceID)]
+	dev.Introspection["com.ex.DeviceData"] = store.InterfaceVersion{Major: 1}
+	st.interfaces["1/com.ex.DeviceData/1"] = &store.StoredInterface{
+		Name: "com.ex.DeviceData", Major: 1, Ownership: interfaceschema.OwnershipDevice,
+	}
+	st.mu.Unlock()
+
+	// ...but Broker.RefreshIntrospection has not run yet. Re-stamp the
+	// reload mark so the miss deterministically hits the debounce and the
+	// synchronous fallback under test.
+	sess := b.registry.get(identity.CN())
+	if sess == nil {
+		t.Fatalf("no live session for %s", identity.CN())
+	}
+	sess.mu.Lock()
+	sess.lastIntroLoad = time.Now()
+	sess.mu.Unlock()
+
+	base := identity.BaseTopic()
+	token := client.Publish(base+"/com.ex.DeviceData/value", 0, false, []byte("v"))
+	testutil.WaitToken(t, token, 5*time.Second)
+	msg := intake.next(t, 5*time.Second)
+	if msg.Topic != base+"/com.ex.DeviceData/value" || msg.QoS != 0 {
+		t.Fatalf("unexpected intake message: %+v", msg)
+	}
+}
+
 func TestReloadRealmsPicksUpNewRealm(t *testing.T) {
 	ctx := context.Background()
 	st, _, _, _ := newFakeEnv(t)
