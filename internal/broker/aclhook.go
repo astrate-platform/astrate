@@ -62,10 +62,11 @@ func checkACL(base, topic string, write bool, ownership ownershipFn) bool {
 		if rest == "capabilities" || rest == "control/emptyCache" || rest == "control/producer/properties" {
 			return true
 		}
-		// control/keyAgreement (080-mqtt-v1-protocol.md:172-176) is deliberately
-		// unsupported: upstream itself documents the handshake as "reserved and
-		// routed correctly, but not yet implemented", so falling through to the
-		// deny path below matches upstream's own status rather than being a gap.
+		// control/keyAgreement is deliberately denied: full key agreement is
+		// out of scope for Astrate's current 1.2.2 target, and upstream's wire
+		// spec (082-key_agreement_protocol.md) only ships with v1.4.0-rc.5,
+		// v1.3.3 being the newest stable tag. It stays denied until the
+		// implement-or-keep-parking decision in issue #92 resolves.
 		iface, path, found := strings.Cut(rest, "/")
 		if !found || path == "" { // data topics always carry a path (§3.3)
 			return false
