@@ -74,6 +74,41 @@ Astrate enforces trigger delivery policies with its own reading of transport fai
 
 `GET /v1/<realm>/version` reports the emulated upstream API level (`1.2.2`), not Astrate's own version.
 
+### 11. AppEngine data query: `sort=ascending`
+
+Additive. Upstream 1.2.2 serves time series newest-first and has no `sort` parameter; Astrate also accepts `sort=ascending`. Standard clients never send it.
+
+### 12. Group-listing pagination token
+
+Same wire shape (`?limit&from_token`, cursor in `links.next`), but the opaque token encodes a row offset instead of upstream's `insertion_uuid` keyset. Tokens are server-generated and never portable across servers, so there is no client-visible difference.
+
+### 13. AMQP trigger actions are rejected at creation
+
+Upstream 1.2.2 accepts trigger actions with `amqp_exchange`/`amqp_routing_key` and forwards events to RabbitMQ. Astrate has no AMQP bus, so it fails trigger installation with a per-field error instead of silently dropping events later; stored legacy AMQP triggers fail loudly at reload.
+
+### 14. AppEngine server-write taxonomy
+
+The write-path statuses are measured against upstream 1.2.0 and matched, with two deliberate divergences where upstream returns an unhandled `500`:
+
+- A wrong scalar type (and a malformed object aggregate) keeps upstream's `500` bug-for-bug; only the envelope wording differs.
+- `DELETE` on a server-owned *individual* datastream is `500` upstream while its object-aggregated sibling is `405 Cannot write to read-only resource`. Astrate answers the `405` form for both.
+
+### 15. Canonical detail casing follows measurement
+
+Upstream's Phoenix renders `Bad request` and `Internal server error`; Astrate uses the measured lowercase forms rather than the reconstructed title-case ones.
+
+### 16. `virtual_device_pool` publishes without an MQTT session
+
+Upstream's dynamic pool registers each first-seen id through Pairing and then spawns a real MQTT device, keeping the credentials secret in a local store -- losing that store permanently bricks every id whose certificate was issued, with no recovery path. Astrate keeps the observable contract (key grammar, first-seen registration through the pairing door, rows queryable like any device-owned datastream) but lands values through the engine ingest path and keeps secrets server-side, so that failure mode does not exist.
+
+### 17. Always synchronous where upstream 1.4 defaults to asynchronous
+
+Upstream 1.4 runs realm create/delete, interface install/update/delete and delivery-policy delete in the background, letting the caller opt into synchronous execution with `?async_operation=false`. Astrate performs all of them synchronously and answers only once the work is done -- a strictly stronger guarantee. The parameter is accepted and ignored on either value, so upstream clients that send it keep working unchanged.
+
+### 18. Per-service health endpoints answer 503 when a dependency is down
+
+Upstream's unauthenticated `GET /{appengine,realmmanagement,pairing}/health`, which the Astarte Dashboard polls for its per-service status indicators, returns a static `200` -- the indicator cannot go red whatever state the instance is in. Astrate serves the same route and the same `200` envelope, but runs its database probe first and answers `503` when it fails. Astrate additionally keeps the realm-scoped `GET /pairing/v1/<realm>/health`, which upstream 404s: it resolves the realm too, and devices can probe it before they hold credentials.
+
 ## Infrastructure differences (by design)
 
 - Single Go binary instead of Elixir microservices; no Kubernetes.
