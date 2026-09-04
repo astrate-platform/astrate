@@ -14,9 +14,27 @@ propose changes to it, do not make them.
 gh api repos/astarte-platform/astarte/releases --jq '.[0:5][] | "\(.tag_name)\t\(.published_at)"'
 ```
 
-Compare the newest tag to the version named in `docs/COMPATIBILITY.md`. If they match, say
+**First, before anything else, check the parked decisions.** Read `.mule/waiting-on.md`. For
+every row, ask whether the tag it is waiting for now exists upstream (the command above lists
+recent releases; use `gh api repos/astarte-platform/astarte/tags` if you need to look further
+back). Read each row's "waiting for" cell literally — a row waiting on a **stable** tag is not
+satisfied by an `-rc.N` of the same version.
+
+If a row's tag has landed, that is the single most valuable thing this run can report. Write
+it to `.mule/for-giulio.md` as its own escalation naming the issue, the tag, and the row's
+"what to do when it lands" text — **not** as a `- [ ]` line in `.mule/todo.md`, because a
+parked decision is Giulio's to make and is never a queue task. Do this even if you find
+nothing else all run, and do it before spending budget on the rest of the recipe.
+
+This step exists because it failed once: issue #51 was parked "until the upstream 1.4
+experimental spec stabilizes", the spec was published 2026-08-31, and this job saw the new
+tags weekly without ever connecting them to the parked issue. It was caught by hand four days
+later.
+
+Then compare the newest tag to the version named in `docs/COMPATIBILITY.md`. If they match, say
 so and stop — that is a complete, correct, cheap result, and it is the expected one most of
-the time. **Do not go looking for work when there is none.**
+the time. **Do not go looking for work when there is none.** (Reporting an un-parked row above
+is a complete result too, even when the version reference itself is current.)
 
 If upstream is ahead:
 

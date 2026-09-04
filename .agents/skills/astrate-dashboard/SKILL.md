@@ -78,6 +78,7 @@ gh issue list --label mule-review,mule-blocked,mule-alarm --state open
 
 # Anything waiting on a design decision from Giulio
 cat .mule/for-giulio.md   # if only the header/--- remains, it's empty — good
+cat .mule/waiting-on.md   # decisions parked on an upstream release; the weekly watch fires them
 
 # Has the daily survey found anything not yet triaged
 git fetch origin mule/research -q
@@ -112,6 +113,7 @@ are different facts and the first one is the far more common cause.
 | "ferma/riattiva il mulo" | ticks are cron entries, not a timer: `ssh $MULE_PI_SSH 'crontab -l | sed "/BEGIN mule-daily-schedule/,/END mule-daily-schedule/d" | crontab -'` clears today's remaining ticks; `systemctl disable --now mule-planner.timer` stops tomorrow's from ever being written (and `enable --now` + `systemctl start mule-planner.service` brings it back the same day) | Pi | manual, instant |
 | "cosa ha trovato la survey", "controlla la survey" | `mule-triage` skill | Mac reads `mule/research` branch | mostly autonomous — Claude verifies + files issues, reports to you |
 | "rilancia la survey adesso" (fuori orario) | `ssh $MULE_PI_SSH 'systemctl start mule-survey.service'` (one-shot, doesn't wait for 03:00) — or run `tools/mule-survey.sh run` directly from the Mac if you want it faster/local | Pi (or Mac) | unattended once started; triage it after with `mule-triage` |
+| "cosa stiamo aspettando", "è uscita la versione X?", parcheggiare una decisione fino a una release | `.mule/waiting-on.md` — one row per decision parked on a **specific upstream release tag**, with what un-parks it. The weekly `mule-upstream-watch` reads it first thing every run and escalates to `.mule/for-giulio.md` when a row's tag actually lands. Add a row whenever you park something on "when upstream ships X" — otherwise nobody notices when it does (that is exactly how #51 was missed for four days) | Mac to edit, Pi to check | you decide when it fires; the noticing is automatic |
 | "guarda cosa c'è per te" / review escalations | read `.mule/for-giulio.md` together, resolve each line in conversation, delete it once handled (that file is a queue, not a log) | Mac | **this is the one that's always your turn** — nothing files or clears these automatically |
 | "delega questo", "trickle mode", "pianifica una fase" | `trickle` skill | Mac (worktrees), delegate types via opencode | architect (you+Claude) design, supervisor reviews every round |
 | "riprendi il trickle" | `trickle` skill, reads `.trickle/plan.md`'s Status section for the resume point | Mac | same as above |
