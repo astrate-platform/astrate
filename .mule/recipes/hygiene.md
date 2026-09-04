@@ -5,12 +5,24 @@ The unglamorous maintenance nobody schedules. Run this occasionally; expect it t
 ## Checks, in order of value
 
 ```sh
-go list -m -u all 2>/dev/null | rg '\[' | head -20        # deps with newer versions
+# Directly-required deps with newer versions. Do NOT pipe this through `head` — the 2026-09-02
+# run did, spent its whole budget on transitive cloud/azure modules, and reported "only
+# transitive skew" while seven direct deps had updates. Ask go.mod which ones are ours.
+go list -m -u -f '{{if and .Update (not .Indirect)}}{{.Path}} {{.Version}} -> {{.Update.Version}}{{end}}' all 2>/dev/null | rg .
 govulncheck ./... 2>/dev/null || echo "govulncheck not installed"
-/Users/atsetilam/go/bin/golangci-lint run ./... 2>&1 | tail -30
+golangci-lint run ./... 2>&1 | tail -30   # on PATH: /root/go/bin on the Pi, ~/go/bin on the Mac
 rg -n 'TODO|FIXME|XXX|HACK' internal/ pkg/ cmd/ | head -30
 go test ./... 2>&1 | rg -i 'skip|no test files' | head -20
 ```
+
+## Standing rule on dependency bumps (Giulio, 2026-09-04)
+
+**Do not propose a bump just because a newer version exists.** The full sweep of 2026-09-04
+found seven direct deps with updates and none of them fixed anything this repo has; each
+would have cost a full test run to land. Re-run this sweep at every **milestone boundary**
+(the point where `APICompatVersion` or a milestone tag moves) and propose a bump only when
+it carries a fix Astrate actually needs — name the fix and the code path that hits it.
+`go.mod` is otherwise on the never-touch list.
 
 ## What to propose
 
