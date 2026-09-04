@@ -7,3 +7,4 @@ layer can actually do — read it before deciding whether a kind of task is wort
 
 | date | task | outcome | secs | note |
 | --- | --- | --- | --- | --- |
+| 2026-09-04 | purge-properties-compression-capabilityauto | done | 86s | 6f7a3d6 |
