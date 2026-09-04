@@ -10,3 +10,4 @@ layer can actually do — read it before deciding whether a kind of task is wort
 | 2026-09-04 | purge-properties-compression-capabilityauto | done | 86s | 6f7a3d6 |
 | 2026-09-04 | broker-acl-coldstart-introspection-miss | done | 629s | d201db4 |
 | 2026-09-04 | issue-93 | done | 108s | 24ad5b8 |
+| 2026-09-04 | broker-disconnect-device-zombie-session | blocked | 117s | wrote nothing |
