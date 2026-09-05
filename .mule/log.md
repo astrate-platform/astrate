@@ -14,3 +14,4 @@ layer can actually do — read it before deciding whether a kind of task is wort
 | 2026-09-04 | broker-offline-acl-tests | blocked | 208s | wrote nothing |
 | 2026-09-04 | broker-onconnect-doc-comment | blocked | 438s | tests failed: --- FAIL: TestMQTTSink_Retained (0.02s) |
 | 2026-09-05 | empty-introspection-verification | blocked | 106s | wrote nothing |
+| 2026-09-05 | probe-trigger-install-notification-delay | blocked | 308s | wrote nothing |
