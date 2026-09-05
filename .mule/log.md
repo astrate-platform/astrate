@@ -19,3 +19,4 @@ layer can actually do — read it before deciding whether a kind of task is wort
 | 2026-09-05 | docs-sync-pairing-health-path | done | 186s | d73e225 |
 | 2026-09-05 | docs-sync-pairing-register-404 | done | 106s | 44a7cae |
 | 2026-09-05 | swagger-httptest-coverage | done | 267s | ba79b34 |
+| 2026-09-05 | probe-property-resend-encoding | blocked | 100s | wrote nothing |
