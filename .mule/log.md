@@ -21,3 +21,4 @@ layer can actually do — read it before deciding whether a kind of task is wort
 | 2026-09-05 | swagger-httptest-coverage | done | 267s | ba79b34 |
 | 2026-09-05 | probe-property-resend-encoding | blocked | 100s | wrote nothing |
 | 2026-09-05 | compat-note-v133 | blocked | 44s | wrote nothing |
+| 2026-09-05 | flow-validate-source-sink | blocked | 360s | tests failed: --- FAIL: TestMQTTSink_Retained (0.02s) |
