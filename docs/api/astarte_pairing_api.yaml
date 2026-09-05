@@ -24,6 +24,49 @@ servers:
 security: []
 
 paths:
+  /pairing/v1/{realm}/health:
+    get:
+      operationId: getHealth
+      summary: Realm health check
+      description: |
+        Returns the health status of a realm's backing store. Unauthenticated
+        and unrate-limited — FDO-flow devices probe it before they hold
+        credentials.
+
+        Returns 200 when the realm exists and the database answers, 404 for an
+        unknown realm, and 503 when the database is unhealthy.
+      tags: [Pairing]
+      parameters:
+        - $ref: "#/components/parameters/RealmName"
+      responses:
+        "200":
+          description: Realm is healthy.
+          content:
+            application/json; charset=utf-8:
+              schema:
+                $ref: "#/components/schemas/DataEnvelopeHealthStatus"
+              example:
+                data:
+                  status: ok
+        "404":
+          description: Unknown realm.
+          content:
+            application/json; charset=utf-8:
+              schema:
+                $ref: "#/components/schemas/ErrorDetail"
+              example:
+                errors:
+                  detail: Not Found
+        "503":
+          description: Realm exists but the backing store is unhealthy.
+          content:
+            application/json; charset=utf-8:
+              schema:
+                $ref: "#/components/schemas/ErrorDetail"
+              example:
+                errors:
+                  detail: unhealthy
+
   /pairing/v1/{realm}/agent/devices:
     post:
       operationId: registerDevice
@@ -425,6 +468,22 @@ components:
       properties:
         data:
           $ref: "#/components/schemas/PairingInfo"
+
+    HealthStatus:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [ok]
+          description: Realm health status.
+
+    DataEnvelopeHealthStatus:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/HealthStatus"
 
     DataEnvelopeVerifyValid:
       type: object
