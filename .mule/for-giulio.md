@@ -10,6 +10,26 @@ line once you have dealt with it — this file is a queue, not a log.
 
 ---
 
+- **keyAgreement: the parking condition from #51 has fired — implement now, or wait for a
+  stable v1.4.0?** (issue #92, `upstream-parity`/`upstream-experimental`). #51 closed
+  2026-08-22 with "parked until the upstream 1.4 experimental spec stabilizes — reopen or
+  file fresh when it does". The document side has now stabilized: upstream `d084308`
+  (2026-08-31) published `082-key_agreement_protocol.md`, a full 267-line wire protocol
+  (topics `control/keyAgreement/0..4` — InitExchange/ExchangeResp/SecretHash/HashOk/
+  ExchangeFailed at QoS 2, CBOR bodies with CDDL, `alg` 0 ECDH_P256-HKDF_SHA256-AES_256_GCM,
+  CBOR-wrapped COSE_Key + 32-byte HkdfSalt, session-scoped keys, enumerated `ExchangeFailed`
+  codes), and deleted the "not yet implemented" sentences the old parking quoted (#93 already
+  fixed the stale ACL comment that cited them). But the spec ships only in `v1.4.0-rc.5` —
+  `v1.3.3` is still the newest stable tag and Astrate targets 1.2.2 — so the document has
+  stabilized and the release has not. Implementing it is the largest surface in the parity
+  backlog (CBOR codec, X25519/P-256, HKDF, AES-256-GCM, a 5-state handshake machine,
+  shared-secret persistence, five new error names). Your call: build against the rc now,
+  re-park until v1.4.0 is a stable tag, or take only the narrow #93 fix. (Escalated again
+  2026-09-05 — a prior escalation from the 2026-09-04 milestone run was lost in the queue
+  rebuild.)
+
+---
+
 - **govulncheck GO-2026-5970: reachable DoS in golang.org/x/text (infinite loop on invalid input, fixed in v0.39.0, available v0.41.0).** Astrate pins `x/text` indirect at v0.38.0 (go.mod:97) and pgx pulls it into production: `internal/store/notify.go:59` `store.Listen` → `pgx.ConnectConfig` → `unicode/norm.*`. This is the only govulncheck symbol finding that is not test-harness-only: GO-2026-6355/6354 (x/crypto/ssh deadlocked-channel DoS) and GO-2026-6253 (moby/go-archive tar path traversal) are reachable only through testcontainers in `internal/testutil/pg.go`, i.e. never in the deployed binary. `x/text` keeps API compatibility minor-to-minor and the modules Astrate exercises (`unicode/norm` via pgx, `text/language` via jsonschema) are unchanged, so this is a fix Astrate actually needs — the hygiene recipe's highest-priority category. Not a mule task (go.mod never-touch): your decision to bump ≥v0.39.0 now or fold into the next milestone-boundary sweep. Raw: https://pkg.go.dev/vuln/GO-2026-5970. (The 2026-09-04 dep sweep did not list x/text.)
 
 ---
