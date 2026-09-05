@@ -10,6 +10,16 @@ line once you have dealt with it — this file is a queue, not a log.
 
 ---
 
+- **github-issues triage run, 2026-09-05: nothing proposable, nothing stale.** All five open
+  issues were already covered by another mechanism. #94 is a mule-alarm (nothing landing in
+  15h), not a code issue — the idle window is the 2026-09-04 queue rebuild, expected. #93 has
+  a pushed commit (`8c61268`) awaiting review, its own recipe path. #92 is parked on a stable
+  v1.4.0 per the waiting-on row. #78 is the milestone-4.0 FDO design/investigation, already
+  escalated below. #1 untouched per standing instruction. No task lines proposed, no
+  for-giulio close suggestions.
+
+---
+
 - **keyAgreement: the parking condition from #51 has fired — implement now, or wait for a
   stable v1.4.0?** (issue #92, `upstream-parity`/`upstream-experimental`). #51 closed
   2026-08-22 with "parked until the upstream 1.4 experimental spec stabilizes — reopen or
