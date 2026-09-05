@@ -114,16 +114,6 @@ func (p *Pipeline) Validate() error {
 		return fmt.Errorf("flow: pipeline %q contains a cycle", p.ID)
 	}
 
-	hasSource := false
-	hasSink := false
-	for _, b := range p.Blocks {
-		if outDeg[b.Name] == 0 {
-			hasSink = true
-		}
-		if inDeg[b.Name] == 0 {
-			hasSource = true
-		}
-	}
 	// Re-compute source/sink from original edges since topo sort zeroed inDeg.
 	inDeg2 := make(map[string]int, len(p.Blocks))
 	outDeg2 := make(map[string]int, len(p.Blocks))
@@ -135,8 +125,8 @@ func (p *Pipeline) Validate() error {
 		outDeg2[c.From]++
 		inDeg2[c.To]++
 	}
-	hasSource = false
-	hasSink = false
+	hasSource := false
+	hasSink := false
 	for _, b := range p.Blocks {
 		if inDeg2[b.Name] == 0 {
 			hasSource = true
