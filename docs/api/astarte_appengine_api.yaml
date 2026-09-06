@@ -228,6 +228,299 @@ paths:
         "500":
           $ref: "#/components/responses/InternalServerError"
 
+    patch:
+      operationId: patchDeviceByAlias
+      summary: Update device attributes by alias
+      description: |
+        Partially updates a device's aliases, attributes, or credentials
+        inhibited status, looked up by alias. Returns the updated device status.
+      tags: [AppEngine - Devices]
+      security:
+        - a_aea: []
+      parameters:
+        - $ref: "#/components/parameters/RealmName"
+        - name: alias
+          in: path
+          required: true
+          description: The alias value to look up.
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json; charset=utf-8:
+            schema:
+              type: object
+              required: [data]
+              properties:
+                data:
+                  $ref: "#/components/schemas/DevicePatch"
+            example:
+              data:
+                aliases:
+                  serial_number: "ABC123"
+                attributes:
+                  firmware_version: "2.1.0"
+                credentials_inhibited: false
+      responses:
+        "200":
+          description: Updated device status.
+          content:
+            application/json; charset=utf-8:
+              schema:
+                $ref: "#/components/schemas/DataEnvelopeDeviceStatus"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/DeviceNotFound"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  /appengine/v1/{realm}/devices-by-alias/{alias}/interfaces:
+    get:
+      operationId: listInterfacesByAlias
+      summary: List interfaces by alias
+      description: |
+        Returns the names of all interfaces currently exposed by a device
+        looked up by alias.
+      tags: [AppEngine - Data]
+      security:
+        - a_aea: []
+      parameters:
+        - $ref: "#/components/parameters/RealmName"
+        - name: alias
+          in: path
+          required: true
+          description: The alias value to look up.
+          schema:
+            type: string
+      responses:
+        "200":
+          description: List of interface names.
+          content:
+            application/json; charset=utf-8:
+              schema:
+                $ref: "#/components/schemas/DataEnvelopeStringArray"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/DeviceNotFound"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  /appengine/v1/{realm}/devices-by-alias/{alias}/interfaces/{interface}:
+    get:
+      operationId: getDataByAlias
+      summary: Get interface data by alias
+      description: |
+        Returns the data for a device interface, looked up by alias. Supports
+        optional query parameters for time-range filtering and downsampling on
+        datastream interfaces.
+      tags: [AppEngine - Data]
+      security:
+        - a_aea: []
+      parameters:
+        - $ref: "#/components/parameters/RealmName"
+        - name: alias
+          in: path
+          required: true
+          description: The alias value to look up.
+          schema:
+            type: string
+        - $ref: "#/components/parameters/InterfaceName"
+        - $ref: "#/components/parameters/DataSince"
+        - $ref: "#/components/parameters/DataSinceAfter"
+        - $ref: "#/components/parameters/DataTo"
+        - $ref: "#/components/parameters/DataLimit"
+        - $ref: "#/components/parameters/DataDownsample"
+        - $ref: "#/components/parameters/DataSort"
+      responses:
+        "200":
+          description: Interface data.
+          content:
+            application/json; charset=utf-8:
+              schema:
+                $ref: "#/components/schemas/DataEnvelopeObject"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/DeviceNotFound"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  /appengine/v1/{realm}/devices-by-alias/{alias}/interfaces/{interface}/{path}:
+    get:
+      operationId: getDataAtPathByAlias
+      summary: Get data at path by alias
+      description: |
+        Returns data for a specific path within a device interface, looked up
+        by alias.
+      tags: [AppEngine - Data]
+      security:
+        - a_aea: []
+      parameters:
+        - $ref: "#/components/parameters/RealmName"
+        - name: alias
+          in: path
+          required: true
+          description: The alias value to look up.
+          schema:
+            type: string
+        - $ref: "#/components/parameters/InterfaceName"
+        - name: path
+          in: path
+          required: true
+          description: The data path (e.g. `/sensors/temperature/value`).
+          schema:
+            type: string
+        - $ref: "#/components/parameters/DataSince"
+        - $ref: "#/components/parameters/DataSinceAfter"
+        - $ref: "#/components/parameters/DataTo"
+        - $ref: "#/components/parameters/DataLimit"
+        - $ref: "#/components/parameters/DataDownsample"
+        - $ref: "#/components/parameters/DataSort"
+      responses:
+        "200":
+          description: Path data.
+          content:
+            application/json; charset=utf-8:
+              schema:
+                $ref: "#/components/schemas/DataEnvelopeObject"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/DeviceNotFound"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+    put:
+      operationId: putDataByAlias
+      summary: Set data at path by alias
+      description: |
+        Sets the value at a specific path in a device interface (server-owned
+        data), looked up by alias. Returns 200 on success.
+      tags: [AppEngine - Data]
+      security:
+        - a_aea: []
+      parameters:
+        - $ref: "#/components/parameters/RealmName"
+        - name: alias
+          in: path
+          required: true
+          description: The alias value to look up.
+          schema:
+            type: string
+        - $ref: "#/components/parameters/InterfaceName"
+        - name: path
+          in: path
+          required: true
+          description: The data path.
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json; charset=utf-8:
+            schema:
+              type: object
+              required: [data]
+              properties:
+                data:
+                  description: The value to set.
+      responses:
+        "200":
+          description: Data set successfully.
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/DeviceNotFound"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+    post:
+      operationId: publishDataByAlias
+      summary: Publish data at path by alias
+      description: |
+        Alias for PUT — publishes a value to a device interface path, looked
+        up by alias. Returns 200 on success.
+      tags: [AppEngine - Data]
+      security:
+        - a_aea: []
+      parameters:
+        - $ref: "#/components/parameters/RealmName"
+        - name: alias
+          in: path
+          required: true
+          description: The alias value to look up.
+          schema:
+            type: string
+        - $ref: "#/components/parameters/InterfaceName"
+        - name: path
+          in: path
+          required: true
+          description: The data path.
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json; charset=utf-8:
+            schema:
+              type: object
+              required: [data]
+              properties:
+                data:
+                  description: The value to publish.
+      responses:
+        "200":
+          description: Data published successfully.
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/DeviceNotFound"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+    delete:
+      operationId: deleteDataByAlias
+      summary: Delete data at path by alias
+      description: |
+        Unsets the property at a specific path (properties interface only),
+        looked up by alias. Returns 204 on success.
+      tags: [AppEngine - Data]
+      security:
+        - a_aea: []
+      parameters:
+        - $ref: "#/components/parameters/RealmName"
+        - name: alias
+          in: path
+          required: true
+          description: The alias value to look up.
+          schema:
+            type: string
+        - $ref: "#/components/parameters/InterfaceName"
+        - name: path
+          in: path
+          required: true
+          description: The data path.
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Data deleted. No body returned.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/DeviceNotFound"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
   # ── Interface data ──────────────────────────────────────────────────
 
   /appengine/v1/{realm}/devices/{device}/interfaces/{interface}:
