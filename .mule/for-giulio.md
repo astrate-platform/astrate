@@ -10,6 +10,29 @@ line once you have dealt with it — this file is a queue, not a log.
 
 ---
 
+- **Milestone recipe run, 2026-09-06: v3.0 (upstream 1.2.2 → 1.3/1.4) has no open
+  machine-checkable gaps left to file; the milestone now waits on two upstream gates, and the
+  `milestone-3.0` label is empty (this milestone's work lives under `upstream-parity`).** All
+  the 1.3-surface gaps from the #47–#89 backlog are delivered/closed — retention ceiling #72,
+  alias/group #52–#54 #59, query formats #55 #56, wire capabilities #47–#49, validation /
+  error-code fidelity #57 #61 #62 #79, per-service version #77, housekeeping #73–#76 — and the
+  remaining open items are already escalated, not fileable gaps: **#92 keyAgreement** (1.4
+  experimental decision, escalated 2026-09-05, gated on a stable upstream v1.4.0), **#78 FDO**
+  (milestone-4.0, escalated), **#93** aclhook comment rewrite (mule-review, pushed commit
+  `8c61268`). `docs/UPSTREAM-EXPERIMENTAL.md` rows #67/#68 are "1.4 experimental" and reconcile
+  only when upstream ships **v1.4 final** — not yet (still rc). Per **#90's frozen decision**
+  (2026-08-23), `APICompatVersion` stays 1.2.2 until the FULL 1.3 surface is complete *and*
+  every UPSTREAM-EXPERIMENTAL row at that level is reconciled, so the bump is not yet due. Your
+  call when v1.4.0 goes stable: answer #92 (implement against the rc, re-park, or narrow #93
+  only) — until then v3.0 has no open implementable work. This run filed **no issues** and
+  proposes **no** "complete, cut the tag" line: the open decision set is real and is yours.
+
+- **`milestones.md` v3.0 names a source doc that does not exist: `.mule/research/
+  upstream-parity-2026-08-22.md` is absent from `main` and from `origin/mule/research`.** The
+  investigation's *output* (issues #47–#89) is intact and reachable, so milestone work is
+  unaffected, but if that doc is your canonical 1.3/1.4 diff it needs restoring (or the
+  milestone paragraph re-pointed) before v4.0 drafting leans on it.
+
 - **docs-sync realm-management: two ASTRATE_ config keys exist in code but are missing from
   `docs/site/configuration-reference.md`** (site prose is yours, never edited by the mule).
   `ASTRATE_HOUSEKEEPING_DEFAULT_DATASTREAM_MAXIMUM_STORAGE_RETENTION` and
