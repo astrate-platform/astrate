@@ -24,3 +24,4 @@ layer can actually do — read it before deciding whether a kind of task is wort
 | 2026-09-05 | flow-validate-source-sink | blocked | 360s | tests failed: --- FAIL: TestMQTTSink_Retained (0.02s) |
 | 2026-09-05 | flow-validate-dead-source-sink-recompute | done | 200s | 7445176 |
 | 2026-09-06 | docs-sync-rm-datastream-retention-endpoint | done | 232s | 0574fd9 |
+| 2026-09-06 | docs-sync-rm-interfaces-detailed-param | done | 352s | 4094145 |
