@@ -28,23 +28,61 @@ paths:
     get:
       operationId: listInterfaces
       summary: List all installed interfaces
-      description: Returns the names of all interfaces installed in the realm.
+      description: |
+        Returns the names of all interfaces installed in the realm. When the
+        `detailed` query parameter is `true`, serves the additive 1.4-style
+        detailed listing instead (issue #66): one fully materialised interface
+        document per installed major, sorted by (name, major). Any other value —
+        absent included — keeps the names-only response, matching upstream 1.2,
+        which ignores the parameter entirely.
       tags: [Realm Management - Interfaces]
       security:
         - a_rma: []
       parameters:
         - $ref: "#/components/parameters/RealmName"
+        - name: detailed
+          in: query
+          required: false
+          description: |
+            When `true`, return the detailed interface listing (one materialised
+            document per installed interface major) instead of bare names.
+          schema:
+            type: boolean
+            default: false
       responses:
         "200":
-          description: A list of interface names.
+          description: A list of interface names, or of detailed interface documents when `detailed=true`.
           content:
             application/json; charset=utf-8:
               schema:
-                $ref: "#/components/schemas/DataEnvelopeStringArray"
-              example:
-                data:
-                  - org.example.Sensors
-                  - org.example.Actuators
+                oneOf:
+                  - $ref: "#/components/schemas/DataEnvelopeStringArray"
+                  - $ref: "#/components/schemas/DataEnvelopeInterfaceDetailedArray"
+              examples:
+                names:
+                  summary: Names-only response (default)
+                  value:
+                    data:
+                      - org.example.Sensors
+                      - org.example.Actuators
+                detailed:
+                  summary: Detailed interface listing (`?detailed=true`)
+                  value:
+                    data:
+                      - interface_name: org.example.Sensors
+                        version_major: 1
+                        version_minor: 0
+                        type: datastream
+                        ownership: device
+                        aggregation: individual
+                        mappings:
+                          - endpoint: /value
+                            type: double
+                            reliability: unreliable
+                            retention: discard
+                            expiry: 0
+                            explicit_timestamp: false
+                            database_retention_policy: no_ttl
         "401":
           $ref: "#/components/responses/Unauthorized"
         "500":
@@ -975,6 +1013,16 @@ components:
           type: array
           items:
             type: integer
+
+    DataEnvelopeInterfaceDetailedArray:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: array
+          description: One fully materialised interface document per installed interface major.
+          items:
+            $ref: "#/components/schemas/InterfaceDefinition"
 
     # ── Error envelopes ──
 
