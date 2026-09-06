@@ -40,13 +40,13 @@ line once you have dealt with it — this file is a queue, not a log.
   (lines 270-271 and 288); neither appears in `docs/site/configuration-reference.md`.
   Add them or confirm they are meant to be internal-only.
 
-- **github-issues triage run, 2026-09-05: nothing proposable, nothing stale.** All five open
-  issues were already covered by another mechanism. #94 is a mule-alarm (nothing landing in
-  15h), not a code issue — the idle window is the 2026-09-04 queue rebuild, expected. #93 has
-  a pushed commit (`8c61268`) awaiting review, its own recipe path. #92 is parked on a stable
-  v1.4.0 per the waiting-on row. #78 is the milestone-4.0 FDO design/investigation, already
-  escalated below. #1 untouched per standing instruction. No task lines proposed, no
-  for-giulio close suggestions.
+- **github-issues triage run, 2026-09-06: nothing proposable, nothing stale.** All six open
+  issues were already covered by another mechanism. #95 and #94 are mule-alarms (idle queue),
+  not code issues — expected during low-activity windows. #93 has a pushed commit (`8c61268`)
+  awaiting review, its own recipe path. #92 is parked on a stable v1.4.0 per the waiting-on
+  row. #78 is the milestone-4.0 FDO design/investigation, already escalated below. #1
+  untouched per standing instruction. No task lines proposed, no for-giulio close suggestions.
+  (Identical to 2026-09-05 run — issue list unchanged except new alarm #95.)
 
 ---
 
