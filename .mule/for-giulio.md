@@ -10,6 +10,13 @@ line once you have dealt with it — this file is a queue, not a log.
 
 ---
 
+- **docs-sync realm-management: two ASTRATE_ config keys exist in code but are missing from
+  `docs/site/configuration-reference.md`** (site prose is yours, never edited by the mule).
+  `ASTRATE_HOUSEKEEPING_DEFAULT_DATASTREAM_MAXIMUM_STORAGE_RETENTION` and
+  `ASTRATE_HOUSEKEEPING_REALM_DELETION_DISABLED` are consumed in `internal/config/config.go`
+  (lines 270-271 and 288); neither appears in `docs/site/configuration-reference.md`.
+  Add them or confirm they are meant to be internal-only.
+
 - **github-issues triage run, 2026-09-05: nothing proposable, nothing stale.** All five open
   issues were already covered by another mechanism. #94 is a mule-alarm (nothing landing in
   15h), not a code issue — the idle window is the 2026-09-04 queue rebuild, expected. #93 has
