@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/astrate-platform/astrate/internal/engine/stream"
 	"github.com/astrate-platform/astrate/internal/store"
 	"github.com/astrate-platform/astrate/pkg/deviceid"
 	"github.com/astrate-platform/astrate/pkg/payload"
@@ -181,5 +182,42 @@ func TestPublishDeviceValueErrors(t *testing.T) {
 	if upserts != 0 || fs.batchCount() != 0 || len(port.published()) != 0 {
 		t.Errorf("failed publishes left traces: %d upserts, %d batches, %d publishes",
 			upserts, fs.batchCount(), len(port.published()))
+	}
+}
+
+// TestPublishDeviceValueFiresBusAndTriggers: a device-owned ingest fans out
+// on the live bus and through the data triggers exactly like a real device's
+// data would, while still producing zero MQTT traffic — the virtual-device
+// contract in both directions.
+func TestPublishDeviceValueFiresBusAndTriggers(t *testing.T) {
+	ctx := context.Background()
+	fw := &fakeForwarder{}
+	rig, fs, port := newWiredRig(t, Config{Forwarder: fw})
+	addDeviceProps(t, rig, fs)
+	const iface = "com.astrate.test.DeviceProperties"
+	const path = "/state"
+	fs.addTrigger(realmAlphaID, "t_dev", changeTriggerDef("t_dev", "incoming_data", iface, 1, path))
+	if err := rig.e.RefreshTriggers(ctx, realmAlphaID); err != nil {
+		t.Fatalf("RefreshTriggers: %v", err)
+	}
+	events, cancel := rig.e.bus.Subscribe(realmAlpha, stream.Filter{}, 8)
+	defer cancel()
+
+	if err := rig.e.PublishDeviceValue(ctx, realmAlpha, devAlpha, iface, path,
+		json.RawMessage(`"on"`), nil); err != nil {
+		t.Fatalf("PublishDeviceValue: %v", err)
+	}
+
+	if ev := nextBusEvent(t, events); ev.Kind != stream.KindIncomingData ||
+		ev.Interface != iface || ev.Path != path || ev.Value != "on" {
+		t.Errorf("bus event = %+v", ev)
+	}
+	fw.waitForCount(t, "t_dev", 1)
+	ev := fw.ofTrigger("t_dev")[0]
+	if ev.Event.Type != "incoming_data" || ev.Event.Value != "on" {
+		t.Errorf("trigger event = %+v", ev.Event)
+	}
+	if pubs := port.published(); len(pubs) != 0 {
+		t.Errorf("device-owned ingest published to the broker: %+v", pubs)
 	}
 }

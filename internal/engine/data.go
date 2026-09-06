@@ -396,35 +396,10 @@ func (e *Engine) trackPrevious(ctx context.Context, sh *shard, rs *realmSchema, 
 	if snap, ok := sh.batch.pendingPrev[key]; ok {
 		prev, prevFound = snap.json, snap.exists
 	} else {
-		switch op.Kind {
-		case OpPropertySet, OpPropertyUnset:
-			p, err := e.st.GetProperty(ctx, op.RealmID, op.DeviceID, op.Interface.ID, op.Path)
-			switch {
-			case err == nil:
-				prev, prevFound = p.Value, true
-			case errors.Is(err, store.ErrNotFound):
-				// First-ever set (or re-unset): nothing there before.
-			default:
-				e.lookupFailed(op, err)
-				return
-			}
-		case OpIndividual:
-			r, err := e.st.LatestIndividual(ctx, op.RealmID, op.DeviceID, op.Interface.ID, op.Path)
-			switch {
-			case err == nil:
-				prev, prevFound, err = prevIndividualJSON(r)
-				if err != nil {
-					e.met.internalErrors.Inc()
-					e.log.Error("previous-value snapshot skipped: unreadable row",
-						"realm", op.Realm, "device", op.DeviceID.String(), "path", op.Path, "err", err)
-					return
-				}
-			case errors.Is(err, store.ErrNotFound):
-				// First sample on this path.
-			default:
-				e.lookupFailed(op, err)
-				return
-			}
+		prev, prevFound, err = e.lookupPrev(ctx, op)
+		if err != nil {
+			e.lookupFailed(op, err)
+			return
 		}
 	}
 
@@ -436,6 +411,74 @@ func (e *Engine) trackPrevious(ctx context.Context, sh *shard, rs *realmSchema, 
 		sh.batch.pendingPrev = make(map[prevKey]prevSnap)
 	}
 	sh.batch.pendingPrev[key] = prevSnap{exists: op.Kind != OpPropertyUnset, json: newJSON}
+}
+
+// lookupPrev reads the pre-write previous-value state of one endpoint from
+// the store: the property row for property ops, the newest sample for
+// individual datastreams. A missing row is not an error — found is false.
+func (e *Engine) lookupPrev(ctx context.Context, op *PersistOp) (prev []byte, found bool, err error) {
+	switch op.Kind {
+	case OpPropertySet, OpPropertyUnset:
+		p, err := e.st.GetProperty(ctx, op.RealmID, op.DeviceID, op.Interface.ID, op.Path)
+		switch {
+		case err == nil:
+			return p.Value, true, nil
+		case errors.Is(err, store.ErrNotFound):
+			return nil, false, nil
+		default:
+			return nil, false, err
+		}
+	case OpIndividual:
+		r, err := e.st.LatestIndividual(ctx, op.RealmID, op.DeviceID, op.Interface.ID, op.Path)
+		switch {
+		case err == nil:
+			return prevIndividualJSON(r)
+		case errors.Is(err, store.ErrNotFound):
+			return nil, false, nil
+		default:
+			return nil, false, err
+		}
+	default:
+		return nil, false, nil
+	}
+}
+
+// capturePrevious fills the previous-value snapshot of an op that persists
+// immediately — the server-/device-owned publish paths (PublishServerValue,
+// PublishDeviceValue, UnsetServerProperty) — with the same gate and store
+// lookups as trackPrevious, minus the shard micro-batch chain: each such
+// publish commits synchronously, so the store alone is always the correct
+// "previous". Change-derived conditions (value_change*, path_created/removed)
+// fire only when a trigger actually watches the endpoint, exactly like the
+// broker ingress path.
+func (e *Engine) capturePrevious(ctx context.Context, rs *realmSchema, op *PersistOp) {
+	if op.Kind == OpObject {
+		return // object-aggregated publishes stay outside v1's change scope
+	}
+	gate := triggers.DataEvent{
+		DeviceID:  op.DeviceID.String(),
+		Interface: op.Interface.Name,
+		Major:     op.Interface.Major,
+		Path:      op.Path,
+	}
+	watched := false
+	for _, tr := range rs.triggers {
+		if tr.TracksChanges(gate) {
+			watched = true
+			break
+		}
+	}
+	if !watched {
+		return
+	}
+	prev, prevFound, err := e.lookupPrev(ctx, op)
+	if err != nil {
+		e.lookupFailed(op, err)
+		return
+	}
+	op.Tracked = true
+	op.PrevExists = prevFound
+	op.Prev = prev
 }
 
 // lookupFailed records a degraded previous-value lookup.

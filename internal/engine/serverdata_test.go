@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/astrate-platform/astrate/internal/engine/stream"
 	"github.com/astrate-platform/astrate/internal/store"
 	"github.com/astrate-platform/astrate/pkg/deviceid"
 	"github.com/astrate-platform/astrate/pkg/payload"
@@ -308,5 +309,82 @@ func TestServerObjectAggregate(t *testing.T) {
 		"com.astrate.test.ServerObject", "/nope", json.RawMessage(`{"heating": 1.0}`), nil)
 	if !errors.Is(err, ErrPathNotFound) {
 		t.Errorf("bad prefix err = %v, want ErrPathNotFound", err)
+	}
+}
+
+// nextBusEvent returns the next live bus event, failing the test if none
+// arrives within the timeout.
+func nextBusEvent(t *testing.T, events <-chan stream.Event) stream.Event {
+	t.Helper()
+	select {
+	case ev, ok := <-events:
+		if !ok {
+			t.Fatal("bus closed before an event arrived")
+		}
+		return ev
+	case <-time.After(2 * time.Second):
+		t.Fatal("no bus event within 2s")
+		return stream.Event{}
+	}
+}
+
+// TestServerPublishFiresBusAndTriggers: a server-originated write fans out on
+// the live bus and through the data triggers exactly like a broker-ingressed
+// value would — incoming_data on every set, value_change against the previous
+// value, path_removed on unset. The virtual-device contract
+// (devicedata_test.go:3-4) extends to server-owned writes.
+func TestServerPublishFiresBusAndTriggers(t *testing.T) {
+	ctx := context.Background()
+	fw := &fakeForwarder{}
+	rig, fs, _ := newWiredRig(t, Config{Forwarder: fw})
+	const iface = "com.astrate.test.ServerProperties"
+	const path = "/identity/displayName"
+	fs.addTrigger(realmAlphaID, "t_in", changeTriggerDef("t_in", "incoming_data", iface, 1, path))
+	fs.addTrigger(realmAlphaID, "t_vc", changeTriggerDef("t_vc", "value_change", iface, 1, path))
+	fs.addTrigger(realmAlphaID, "t_pr", changeTriggerDef("t_pr", "path_removed", iface, 1, path))
+	if err := rig.e.RefreshTriggers(ctx, realmAlphaID); err != nil {
+		t.Fatalf("RefreshTriggers: %v", err)
+	}
+	events, cancel := rig.e.bus.Subscribe(realmAlpha, stream.Filter{}, 16)
+	defer cancel()
+
+	// Set #1: a bus card, incoming_data, and value_change(null → "alpha") —
+	// the first value creates the path.
+	if err := rig.e.PublishServerValue(ctx, realmAlpha, devAlpha, iface, path,
+		json.RawMessage(`"alpha"`), nil); err != nil {
+		t.Fatalf("PublishServerValue: %v", err)
+	}
+	if ev := nextBusEvent(t, events); ev.Kind != stream.KindIncomingData ||
+		ev.Interface != iface || ev.Path != path || ev.Value != "alpha" {
+		t.Errorf("set #1 bus event = %+v", ev)
+	}
+	fw.waitForCount(t, "t_in", 1)
+	fw.waitForCount(t, "t_vc", 1)
+	assertEvent(t, fw.ofTrigger("t_vc")[0], "value_change", nil, "alpha")
+
+	// Set #2, different value: value_change carries the previous one.
+	if err := rig.e.PublishServerValue(ctx, realmAlpha, devAlpha, iface, path,
+		json.RawMessage(`"beta"`), nil); err != nil {
+		t.Fatalf("PublishServerValue #2: %v", err)
+	}
+	if ev := nextBusEvent(t, events); ev.Value != "beta" {
+		t.Errorf("set #2 bus event = %+v", ev)
+	}
+	fw.waitForCount(t, "t_in", 2)
+	fw.waitForCount(t, "t_vc", 2)
+	assertEvent(t, lastOf(fw.ofTrigger("t_vc")), "value_change", "alpha", "beta")
+
+	// Unset: another bus card (null value) plus path_removed.
+	if err := rig.e.UnsetServerProperty(ctx, realmAlpha, devAlpha, iface, path); err != nil {
+		t.Fatalf("UnsetServerProperty: %v", err)
+	}
+	if ev := nextBusEvent(t, events); ev.Kind != stream.KindIncomingData ||
+		ev.Interface != iface || ev.Path != path {
+		t.Errorf("unset bus event = %+v", ev)
+	}
+	fw.waitForCount(t, "t_in", 3)
+	fw.waitForCount(t, "t_pr", 1)
+	if got := fw.ofTrigger("t_pr")[0].Event.Type; got != "path_removed" {
+		t.Errorf("unset trigger type = %q, want path_removed", got)
 	}
 }

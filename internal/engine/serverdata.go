@@ -89,8 +89,12 @@ type ownerDelivery struct {
 // paths (docs/ROADMAP.md §7.2 file 6.9): realm, device, and interface
 // resolution with the ownership gate parameterised, §2.6 payload
 // validation, and the persist switch. ownership selects which side may
-// write and which sentinel an ownership mismatch carries; delivery stays
-// with the caller.
+// write and which sentinel an ownership mismatch carries. On success the
+// op persists immediately and then runs the same post-commit observers as
+// the broker ingress path — previous-value capture for the change-derived
+// triggers, then fireData (data triggers + live bus), so a server- or
+// device-owned write is observed exactly like a real device's data
+// (devicedata_test.go:3-4). Wire delivery stays with the caller.
 func (e *Engine) publishAsOwner(ctx context.Context, realm string, id deviceid.ID,
 	ifaceName, path string, value json.RawMessage, ts *time.Time,
 	ownership interfaceschema.Ownership) (*ownerDelivery, error) {
@@ -166,6 +170,20 @@ func (e *Engine) publishAsOwner(ctx context.Context, realm string, id deviceid.I
 	case ci.Type == interfaceschema.Properties:
 		op.Kind = OpPropertySet
 		out.retain = true // properties stay retained (§3.4)
+	case ci.Aggregation == interfaceschema.AggregationObject:
+		op.Kind = OpObject
+		out.wireTS = &effTS
+		out.qos = mapping.Reliability
+		out.expiry = mapping.Expiry
+	default:
+		op.Kind = OpIndividual
+		out.wireTS = &effTS
+		out.qos = mapping.Reliability
+		out.expiry = mapping.Expiry
+	}
+	e.capturePrevious(ctx, rs, &op)
+	switch {
+	case ci.Type == interfaceschema.Properties:
 		row, err := propertyRow(&op)
 		if err != nil {
 			return nil, err
@@ -174,10 +192,6 @@ func (e *Engine) publishAsOwner(ctx context.Context, realm string, id deviceid.I
 			return nil, err
 		}
 	case ci.Aggregation == interfaceschema.AggregationObject:
-		op.Kind = OpObject
-		out.wireTS = &effTS
-		out.qos = mapping.Reliability
-		out.expiry = mapping.Expiry
 		row, err := objectRow(&op)
 		if err != nil {
 			return nil, err
@@ -186,10 +200,6 @@ func (e *Engine) publishAsOwner(ctx context.Context, realm string, id deviceid.I
 			return nil, err
 		}
 	default:
-		op.Kind = OpIndividual
-		out.wireTS = &effTS
-		out.qos = mapping.Reliability
-		out.expiry = mapping.Expiry
 		row, err := individualRow(&op)
 		if err != nil {
 			return nil, err
@@ -199,6 +209,7 @@ func (e *Engine) publishAsOwner(ctx context.Context, realm string, id deviceid.I
 		}
 	}
 	e.met.persistOps.WithLabelValues(op.Kind.String()).Inc()
+	e.fireData(rs, &op)
 	return out, nil
 }
 
@@ -235,6 +246,22 @@ func (e *Engine) UnsetServerProperty(ctx context.Context, realm string, id devic
 		return fmt.Errorf("%w: %s%s", ErrUnsetNotAllowed, ifaceName, path)
 	}
 
+	// Previous-value snapshot taken before the row is gone, so the
+	// change-derived conditions (path_removed, value_change) evaluate against
+	// the pre-unset value, then the op fires the same observers as any other
+	// committed unset.
+	op := PersistOp{
+		Realm:     realm,
+		RealmID:   rs.id,
+		DeviceID:  id,
+		Interface: ci,
+		Mapping:   mapping,
+		Path:      path,
+		Kind:      OpPropertyUnset,
+		TS:        time.Now().UTC(),
+	}
+	e.capturePrevious(ctx, rs, &op)
+
 	existed, err := e.st.UnsetProperty(ctx, rs.id, id, ci.ID, path)
 	if err != nil {
 		return err
@@ -242,6 +269,7 @@ func (e *Engine) UnsetServerProperty(ctx context.Context, realm string, id devic
 	if existed {
 		e.met.persistOps.WithLabelValues(OpPropertyUnset.String()).Inc()
 	}
+	e.fireData(rs, &op)
 
 	topic := deviceTopic(realm, id, ifaceName+path)
 	if err := e.broker.Publish(topic, []byte{}, 2, true, 0); err != nil {
