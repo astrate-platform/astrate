@@ -26,3 +26,4 @@ layer can actually do — read it before deciding whether a kind of task is wort
 | 2026-09-06 | docs-sync-rm-datastream-retention-endpoint | done | 232s | 0574fd9 |
 | 2026-09-06 | docs-sync-rm-interfaces-detailed-param | done | 352s | 4094145 |
 | 2026-09-06 | housekeeping-tests | done | 455s | 7583a7d |
+| 2026-09-06 | probe-props-resend-error-triggers | blocked | 331s | wrote nothing |
