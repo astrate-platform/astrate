@@ -456,6 +456,39 @@ paths:
         "500":
           $ref: "#/components/responses/InternalServerError"
 
+  /realmmanagement/v1/{realm}/config/datastream_maximum_storage_retention:
+    get:
+      operationId: getDatastreamMaximumStorageRetention
+      summary: Get datastream maximum storage retention
+      description: |
+        Returns the realm's datastream maximum storage retention in seconds
+        (upstream serves this since 1.2.0). An unset ceiling renders as 0 —
+        a recorded deviation from upstream, which answers null here (issue #60).
+      tags: [Realm Management - Config]
+      security:
+        - a_rma: []
+      parameters:
+        - $ref: "#/components/parameters/RealmName"
+      responses:
+        "200":
+          description: Datastream maximum storage retention in seconds.
+          content:
+            application/json; charset=utf-8:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: integer
+                    format: int64
+                    description: Maximum datastream storage retention in seconds. 0 means unset.
+              example:
+                data: 31536000
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
   # ── Version ─────────────────────────────────────────────────────────
 
   /realmmanagement/v1/{realm}/version:
