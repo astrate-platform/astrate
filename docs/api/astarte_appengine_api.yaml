@@ -909,6 +909,33 @@ paths:
           $ref: "#/components/responses/InternalServerError"
 
   /appengine/v1/{realm}/groups/{group}/devices/{device}:
+    get:
+      operationId: getGroupDevice
+      summary: Get group device details
+      description: |
+        Returns the device status for a device within a group, gated on group
+        membership.
+      tags: [AppEngine - Groups]
+      security:
+        - a_aea: []
+      parameters:
+        - $ref: "#/components/parameters/RealmName"
+        - $ref: "#/components/parameters/GroupName"
+        - $ref: "#/components/parameters/DeviceID"
+      responses:
+        "200":
+          description: Device status.
+          content:
+            application/json; charset=utf-8:
+              schema:
+                $ref: "#/components/schemas/DataEnvelopeDeviceStatus"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
     patch:
       operationId: patchGroupDevice
       summary: Update group device attributes
