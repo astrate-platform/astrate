@@ -48,11 +48,29 @@ type Reloader interface {
 	ReloadRealms(ctx context.Context) error
 }
 
+// realmStore is the slice of the store's realm repository the service needs.
+// *store.Store satisfies it; tests fake it to keep the service's unit tests
+// container-free.
+type realmStore interface {
+	CreateRealm(ctx context.Context, nr store.NewRealm) (*store.Realm, error)
+	GetRealmByName(ctx context.Context, name string) (*store.Realm, error)
+	UpdateRealm(ctx context.Context, name string, p store.RealmPatch) error
+	ListRealms(ctx context.Context) ([]store.Realm, error)
+	DeviceStats(ctx context.Context, realmID int16) (total, connected int64, err error)
+	DeleteRealm(ctx context.Context, name string) error
+}
+
+// sealer protects freshly-minted CA private keys before they reach the store.
+// *store.KeySealer satisfies it; tests fake it.
+type sealer interface {
+	Seal(plaintext []byte) ([]byte, error)
+}
+
 // Service implements the Housekeeping business logic over the store, holding
 // the key sealer used to protect freshly-minted CA private keys.
 type Service struct {
-	st       *store.Store
-	sealer   *store.KeySealer
+	st       realmStore
+	sealer   sealer
 	reloader Reloader
 	log      *slog.Logger
 
@@ -70,7 +88,7 @@ type Service struct {
 
 // NewService builds the service. reloader (the broker) may be nil; log
 // defaults to slog.Default().
-func NewService(st *store.Store, sealer *store.KeySealer, reloader Reloader, log *slog.Logger) *Service {
+func NewService(st realmStore, sealer sealer, reloader Reloader, log *slog.Logger) *Service {
 	if log == nil {
 		log = slog.Default()
 	}
