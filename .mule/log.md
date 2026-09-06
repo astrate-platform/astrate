@@ -29,3 +29,4 @@ layer can actually do — read it before deciding whether a kind of task is wort
 | 2026-09-06 | probe-props-resend-error-triggers | blocked | 331s | wrote nothing |
 | 2026-09-06 | server-data-trigger-bus | done | 827s | e46ce11 |
 | 2026-09-06 | docs-sync-appengine-by-alias-endpoints | done | 144s | 35359df |
+| 2026-09-06 | docs-sync-appengine-group-endpoints | done | 365s | 6ba74b8 |
