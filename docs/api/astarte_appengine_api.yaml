@@ -521,6 +521,32 @@ paths:
         "500":
           $ref: "#/components/responses/InternalServerError"
 
+  /appengine/v1/{realm}/devices/{device}/interfaces:
+    get:
+      operationId: listDeviceInterfaces
+      summary: List device interfaces
+      description: |
+        Returns the names of all interfaces currently exposed by a device.
+      tags: [AppEngine - Data]
+      security:
+        - a_aea: []
+      parameters:
+        - $ref: "#/components/parameters/RealmName"
+        - $ref: "#/components/parameters/DeviceID"
+      responses:
+        "200":
+          description: List of interface names.
+          content:
+            application/json; charset=utf-8:
+              schema:
+                $ref: "#/components/schemas/DataEnvelopeStringArray"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/DeviceNotFound"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
   # ── Interface data ──────────────────────────────────────────────────
 
   /appengine/v1/{realm}/devices/{device}/interfaces/{interface}:
@@ -779,6 +805,34 @@ paths:
         "500":
           $ref: "#/components/responses/InternalServerError"
 
+  /appengine/v1/{realm}/groups/{group}:
+    get:
+      operationId: getGroup
+      summary: Get group info
+      description: Returns the group identity (group name).
+      tags: [AppEngine - Groups]
+      security:
+        - a_aea: []
+      parameters:
+        - $ref: "#/components/parameters/RealmName"
+        - $ref: "#/components/parameters/GroupName"
+      responses:
+        "200":
+          description: Group info.
+          content:
+            application/json; charset=utf-8:
+              schema:
+                $ref: "#/components/schemas/DataEnvelopeGroupInfo"
+              example:
+                data:
+                  group_name: sensors
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
   /appengine/v1/{realm}/groups/{group}/devices:
     get:
       operationId: listGroupDevices
@@ -855,6 +909,52 @@ paths:
           $ref: "#/components/responses/InternalServerError"
 
   /appengine/v1/{realm}/groups/{group}/devices/{device}:
+    patch:
+      operationId: patchGroupDevice
+      summary: Update group device attributes
+      description: |
+        Partially updates a device's aliases, attributes, or credentials
+        inhibited status within a group. Returns the updated device status.
+      tags: [AppEngine - Groups]
+      security:
+        - a_aea: []
+      parameters:
+        - $ref: "#/components/parameters/RealmName"
+        - $ref: "#/components/parameters/GroupName"
+        - $ref: "#/components/parameters/DeviceID"
+      requestBody:
+        required: true
+        content:
+          application/json; charset=utf-8:
+            schema:
+              type: object
+              required: [data]
+              properties:
+                data:
+                  $ref: "#/components/schemas/DevicePatch"
+            example:
+              data:
+                aliases:
+                  serial_number: "ABC123"
+                attributes:
+                  firmware_version: "2.1.0"
+                credentials_inhibited: false
+      responses:
+        "200":
+          description: Updated device status.
+          content:
+            application/json; charset=utf-8:
+              schema:
+                $ref: "#/components/schemas/DataEnvelopeDeviceStatus"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
     delete:
       operationId: removeGroupDevice
       summary: Remove a device from a group
@@ -869,6 +969,223 @@ paths:
       responses:
         "204":
           description: Device removed. No body returned.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  /appengine/v1/{realm}/groups/{group}/devices/{device}/interfaces:
+    get:
+      operationId: listInterfacesInGroup
+      summary: List interfaces in group for device
+      description: |
+        Returns the names of all interfaces currently exposed by a device
+        within a group.
+      tags: [AppEngine - Groups]
+      security:
+        - a_aea: []
+      parameters:
+        - $ref: "#/components/parameters/RealmName"
+        - $ref: "#/components/parameters/GroupName"
+        - $ref: "#/components/parameters/DeviceID"
+      responses:
+        "200":
+          description: List of interface names.
+          content:
+            application/json; charset=utf-8:
+              schema:
+                $ref: "#/components/schemas/DataEnvelopeStringArray"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  /appengine/v1/{realm}/groups/{group}/devices/{device}/interfaces/{interface}:
+    get:
+      operationId: getDataInGroup
+      summary: Get interface data in group
+      description: |
+        Returns the data for a device's interface within a group. Supports
+        optional query parameters for time-range filtering and downsampling on
+        datastream interfaces.
+      tags: [AppEngine - Groups]
+      security:
+        - a_aea: []
+      parameters:
+        - $ref: "#/components/parameters/RealmName"
+        - $ref: "#/components/parameters/GroupName"
+        - $ref: "#/components/parameters/DeviceID"
+        - $ref: "#/components/parameters/InterfaceName"
+        - $ref: "#/components/parameters/DataSince"
+        - $ref: "#/components/parameters/DataSinceAfter"
+        - $ref: "#/components/parameters/DataTo"
+        - $ref: "#/components/parameters/DataLimit"
+        - $ref: "#/components/parameters/DataDownsample"
+        - $ref: "#/components/parameters/DataSort"
+      responses:
+        "200":
+          description: Interface data.
+          content:
+            application/json; charset=utf-8:
+              schema:
+                $ref: "#/components/schemas/DataEnvelopeObject"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  /appengine/v1/{realm}/groups/{group}/devices/{device}/interfaces/{interface}/{path}:
+    get:
+      operationId: getDataAtPathInGroup
+      summary: Get data at path in group
+      description: Returns data for a specific path within a device interface in a group.
+      tags: [AppEngine - Groups]
+      security:
+        - a_aea: []
+      parameters:
+        - $ref: "#/components/parameters/RealmName"
+        - $ref: "#/components/parameters/GroupName"
+        - $ref: "#/components/parameters/DeviceID"
+        - $ref: "#/components/parameters/InterfaceName"
+        - name: path
+          in: path
+          required: true
+          description: The data path (e.g. `/sensors/temperature/value`).
+          schema:
+            type: string
+        - $ref: "#/components/parameters/DataSince"
+        - $ref: "#/components/parameters/DataSinceAfter"
+        - $ref: "#/components/parameters/DataTo"
+        - $ref: "#/components/parameters/DataLimit"
+        - $ref: "#/components/parameters/DataDownsample"
+        - $ref: "#/components/parameters/DataSort"
+      responses:
+        "200":
+          description: Path data.
+          content:
+            application/json; charset=utf-8:
+              schema:
+                $ref: "#/components/schemas/DataEnvelopeObject"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+    put:
+      operationId: putDataInGroup
+      summary: Set data at path in group
+      description: |
+        Sets the value at a specific path in a device interface (server-owned
+        data) within a group. Returns 200 on success.
+      tags: [AppEngine - Groups]
+      security:
+        - a_aea: []
+      parameters:
+        - $ref: "#/components/parameters/RealmName"
+        - $ref: "#/components/parameters/GroupName"
+        - $ref: "#/components/parameters/DeviceID"
+        - $ref: "#/components/parameters/InterfaceName"
+        - name: path
+          in: path
+          required: true
+          description: The data path.
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json; charset=utf-8:
+            schema:
+              type: object
+              required: [data]
+              properties:
+                data:
+                  description: The value to set.
+      responses:
+        "200":
+          description: Data set successfully.
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+    post:
+      operationId: publishDataInGroup
+      summary: Publish data at path in group
+      description: |
+        Alias for PUT — publishes a value to a device interface path within
+        a group. Returns 200 on success.
+      tags: [AppEngine - Groups]
+      security:
+        - a_aea: []
+      parameters:
+        - $ref: "#/components/parameters/RealmName"
+        - $ref: "#/components/parameters/GroupName"
+        - $ref: "#/components/parameters/DeviceID"
+        - $ref: "#/components/parameters/InterfaceName"
+        - name: path
+          in: path
+          required: true
+          description: The data path.
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json; charset=utf-8:
+            schema:
+              type: object
+              required: [data]
+              properties:
+                data:
+                  description: The value to publish.
+      responses:
+        "200":
+          description: Data published successfully.
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+    delete:
+      operationId: deleteDataInGroup
+      summary: Delete data at path in group
+      description: |
+        Unsets the property at a specific path (properties interface only),
+        within a group. Returns 204 on success.
+      tags: [AppEngine - Groups]
+      security:
+        - a_aea: []
+      parameters:
+        - $ref: "#/components/parameters/RealmName"
+        - $ref: "#/components/parameters/GroupName"
+        - $ref: "#/components/parameters/DeviceID"
+        - $ref: "#/components/parameters/InterfaceName"
+        - name: path
+          in: path
+          required: true
+          description: The data path.
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Data deleted. No body returned.
         "401":
           $ref: "#/components/responses/Unauthorized"
         "404":
@@ -1041,7 +1358,22 @@ components:
             type: string
           description: Initial list of device IDs in the group.
 
+    GroupInfo:
+      type: object
+      required: [group_name]
+      properties:
+        group_name:
+          type: string
+          description: The group name.
+
     # ── Envelope variants ──
+
+    DataEnvelopeGroupInfo:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/GroupInfo"
 
     DataEnvelopeDeviceStatus:
       type: object
