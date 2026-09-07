@@ -195,6 +195,10 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/DeviceNotFound"
+        "409":
+          $ref: "#/components/responses/ConflictAliasInUse"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
         "500":
           $ref: "#/components/responses/InternalServerError"
 
@@ -275,6 +279,8 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/DeviceNotFound"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
         "500":
           $ref: "#/components/responses/InternalServerError"
 
@@ -392,6 +398,8 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/DeviceNotFound"
+        "422":
+          $ref: "#/components/responses/ValidationErrors"
         "500":
           $ref: "#/components/responses/InternalServerError"
 
@@ -619,6 +627,8 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/DeviceNotFound"
+        "422":
+          $ref: "#/components/responses/ValidationErrors"
         "500":
           $ref: "#/components/responses/InternalServerError"
 
@@ -802,6 +812,8 @@ paths:
           $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/ValidationErrors"
         "500":
           $ref: "#/components/responses/InternalServerError"
 
@@ -852,6 +864,17 @@ paths:
             type: boolean
             default: false
           description: When true, return full device status objects.
+        - name: from_token
+          in: query
+          schema:
+            type: string
+          description: Pagination cursor (UUID v1 format) — start after this device.
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+          description: Maximum number of devices to return (defaults to 100).
       responses:
         "200":
           description: Group devices.
@@ -865,6 +888,8 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationErrors"
         "500":
           $ref: "#/components/responses/InternalServerError"
 
@@ -1103,6 +1128,8 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationErrors"
         "500":
           $ref: "#/components/responses/InternalServerError"
 
@@ -1472,6 +1499,18 @@ components:
             detail:
               type: string
 
+    FieldErrorsDetail:
+      type: object
+      required: [errors]
+      properties:
+        errors:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              type: string
+          description: Per-field error messages (changeset shape).
+
   responses:
     BadRequest:
       description: Bad Request — malformed or missing data envelope.
@@ -1522,3 +1561,34 @@ components:
           example:
             errors:
               detail: Internal Server Error
+
+    ValidationErrors:
+      description: Validation Error — one or more fields failed validation.
+      content:
+        application/json; charset=utf-8:
+          schema:
+            $ref: "#/components/schemas/FieldErrorsDetail"
+          example:
+            errors:
+              group_name:
+                - can't be blank
+
+    UnprocessableEntity:
+      description: Unprocessable Entity — attribute key not found on device.
+      content:
+        application/json; charset=utf-8:
+          schema:
+            $ref: "#/components/schemas/ErrorDetail"
+          example:
+            errors:
+              detail: Attribute key not found
+
+    ConflictAliasInUse:
+      description: Conflict — the alias value is already owned by another device.
+      content:
+        application/json; charset=utf-8:
+          schema:
+            $ref: "#/components/schemas/ErrorDetail"
+          example:
+            errors:
+              detail: Alias already in use
