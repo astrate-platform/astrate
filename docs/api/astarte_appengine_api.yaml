@@ -342,6 +342,9 @@ paths:
         - $ref: "#/components/parameters/DataLimit"
         - $ref: "#/components/parameters/DataDownsample"
         - $ref: "#/components/parameters/DataSort"
+        - $ref: "#/components/parameters/DataFormat"
+        - $ref: "#/components/parameters/DataAllowBigIntegers"
+        - $ref: "#/components/parameters/DataAllowSafeBigIntegers"
       responses:
         "200":
           description: Interface data.
@@ -389,6 +392,9 @@ paths:
         - $ref: "#/components/parameters/DataLimit"
         - $ref: "#/components/parameters/DataDownsample"
         - $ref: "#/components/parameters/DataSort"
+        - $ref: "#/components/parameters/DataFormat"
+        - $ref: "#/components/parameters/DataAllowBigIntegers"
+        - $ref: "#/components/parameters/DataAllowSafeBigIntegers"
       responses:
         "200":
           description: Path data.
@@ -580,6 +586,9 @@ paths:
         - $ref: "#/components/parameters/DataLimit"
         - $ref: "#/components/parameters/DataDownsample"
         - $ref: "#/components/parameters/DataSort"
+        - $ref: "#/components/parameters/DataFormat"
+        - $ref: "#/components/parameters/DataAllowBigIntegers"
+        - $ref: "#/components/parameters/DataAllowSafeBigIntegers"
       responses:
         "200":
           description: Interface data.
@@ -620,6 +629,9 @@ paths:
         - $ref: "#/components/parameters/DataLimit"
         - $ref: "#/components/parameters/DataDownsample"
         - $ref: "#/components/parameters/DataSort"
+        - $ref: "#/components/parameters/DataFormat"
+        - $ref: "#/components/parameters/DataAllowBigIntegers"
+        - $ref: "#/components/parameters/DataAllowSafeBigIntegers"
       responses:
         "200":
           description: Path data.
@@ -1086,6 +1098,9 @@ paths:
         - $ref: "#/components/parameters/DataLimit"
         - $ref: "#/components/parameters/DataDownsample"
         - $ref: "#/components/parameters/DataSort"
+        - $ref: "#/components/parameters/DataFormat"
+        - $ref: "#/components/parameters/DataAllowBigIntegers"
+        - $ref: "#/components/parameters/DataAllowSafeBigIntegers"
       responses:
         "200":
           description: Interface data.
@@ -1127,6 +1142,9 @@ paths:
         - $ref: "#/components/parameters/DataLimit"
         - $ref: "#/components/parameters/DataDownsample"
         - $ref: "#/components/parameters/DataSort"
+        - $ref: "#/components/parameters/DataFormat"
+        - $ref: "#/components/parameters/DataAllowBigIntegers"
+        - $ref: "#/components/parameters/DataAllowSafeBigIntegers"
       responses:
         "200":
           description: Path data.
@@ -1346,6 +1364,40 @@ components:
         enum: [ascending, descending]
         default: descending
       description: Sort order for datastream results.
+
+    DataFormat:
+      name: format
+      in: query
+      schema:
+        type: string
+        enum: [structured, table, disjoint_tables]
+        default: structured
+      description: |
+        Output format for the returned data. `structured` (the default) returns
+        flat objects; `table` returns a `{data, metadata}` envelope with rows
+        aligned to a sorted `table_header`; `disjoint_tables` pivots to a map of
+        column name to `[value, timestamp]` pairs.
+
+    DataAllowBigIntegers:
+      name: allow_bigintegers
+      in: query
+      schema:
+        type: boolean
+        default: false
+      description: |
+        When false, big-integer (longinteger) values on object interfaces are
+        serialized as decimal strings so no JavaScript caller loses precision.
+
+    DataAllowSafeBigIntegers:
+      name: allow_safe_bigintegers
+      in: query
+      schema:
+        type: boolean
+        default: false
+      description: |
+        When true, big-integer (longinteger) values on object interfaces stay
+        numbers when they fit JavaScript's safe integer range (|v| ≤ 9007199254740991)
+        and fall back to decimal strings otherwise.
 
   schemas:
     # ── Device types ──
