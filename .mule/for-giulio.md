@@ -10,6 +10,16 @@ line once you have dealt with it — this file is a queue, not a log.
 
 ---
 
+- **github-issues triage run, 2026-09-07: nothing proposable, nothing stale.** All six open
+  issues were already covered by another mechanism. #96/#95/#94 are mule-alarms (idle queue),
+  not code issues — expected during low-activity windows. #93 has a pushed commit (`8c61268`)
+  awaiting review, its own recipe path. #92 is parked on a stable v1.4.0 per the waiting-on
+  row. #78 is the milestone-4.0 FDO design/investigation, already escalated below. #1
+  untouched per standing instruction. No task lines proposed, no for-giulio close suggestions.
+  (Identical to the 2026-09-06 run — issue list unchanged except new alarm #96.)
+
+---
+
 - **Milestone recipe run, 2026-09-06: v3.0 (upstream 1.2.2 → 1.3/1.4) has no open
   machine-checkable gaps left to file; the milestone now waits on two upstream gates, and the
   `milestone-3.0` label is empty (this milestone's work lives under `upstream-parity`).** All
