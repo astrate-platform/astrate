@@ -36,3 +36,4 @@ layer can actually do — read it before deciding whether a kind of task is wort
 | 2026-09-07 | docs-sync-appengine-data-422-interface-level | done | 153s | f53d1ee |
 | 2026-09-07 | appengine-snapshot-ignores-query-params | blocked | 327s | wrote nothing |
 | 2026-09-07 | appengine-group-token-roundtrip-test | blocked | 306s | lint failed: internal/appengine/groups_token_test.go:14:5: redefines-builtin-id: redefinition of the built-in function max (revive) |
+| 2026-09-07 | docs-sync-appengine-data-output-params | done | 215s | 262fdd5 |
