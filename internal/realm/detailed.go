@@ -66,8 +66,8 @@ func writeDetailedMapping(b *bytes.Buffer, m *interfaceschema.Mapping, datastrea
 	b.Write(quoteJSON(m.Reliability.String()))
 	b.WriteString(`,"retention":`)
 	b.Write(quoteJSON(m.Retention.String()))
-	fmt.Fprintf(b, `,"expiry":%d,"explicit_timestamp":%t,"database_retention_policy":`,
-		m.Expiry, m.ExplicitTimestamp)
+	fmt.Fprintf(b, `,"expiry":%d,"explicit_timestamp":%t,"required":%t,"encrypted":%t,"database_retention_policy":`,
+		m.Expiry, m.ExplicitTimestamp, m.Required, m.Encrypted)
 	b.Write(quoteJSON(m.DatabaseRetentionPolicy.String()))
 	if m.DatabaseRetentionPolicy == interfaceschema.UseTTL {
 		fmt.Fprintf(b, `,"database_retention_ttl":%d`, m.DatabaseRetentionTTL)
