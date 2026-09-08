@@ -40,3 +40,4 @@ layer can actually do — read it before deciding whether a kind of task is wort
 | 2026-09-08 | probe-required-mapping-flag | done | 426s | db9d06e |
 | 2026-09-08 | compat-note-v14-rc | blocked | 326s | wrote nothing |
 | 2026-09-08 | detailed-listing-required-encrypted-flags | done | 159s | 63b629e |
+| 2026-09-08 | store-alias-values-taken-test | done | 85s | a07bd6a |
