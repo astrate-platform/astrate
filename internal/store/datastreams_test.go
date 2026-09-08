@@ -4,6 +4,7 @@ package store
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -168,6 +169,45 @@ func testDatastreams(t *testing.T, s *Store) {
 		}
 		if !latest["/d"].TS.Equal(base.Add(2 * time.Minute)) {
 			t.Errorf("/d snapshot ts = %v, want newest", latest["/d"].TS)
+		}
+	})
+
+	t.Run("LatestIndividual", func(t *testing.T) {
+		realm := mustCreateRealm(t, s)
+		device := mustRegisterDevice(t, s, realm.ID)
+		si := mustInstallInterface(t, s, realm.ID, allTypesDef)
+
+		base := time.Date(2026, 4, 1, 0, 0, 0, 0, time.UTC)
+		var batch DatastreamBatch
+		// Two samples on the same series: newer timestamp and higher value.
+		for i := range 2 {
+			v := float64(i * 10)
+			batch.Individual = append(batch.Individual, IndividualRow{
+				RealmID: realm.ID, DeviceID: device, InterfaceID: si.ID,
+				EndpointID: si.Endpoints["/d"], Path: "/d",
+				TS: base.Add(time.Duration(i) * time.Minute), ReceptionTS: base,
+				ValueDouble: &v,
+			})
+		}
+		if err := s.AppendDatastreams(ctx, batch); err != nil {
+			t.Fatalf("AppendDatastreams: %v", err)
+		}
+
+		got, err := s.LatestIndividual(ctx, realm.ID, device, si.ID, "/d")
+		if err != nil {
+			t.Fatalf("LatestIndividual: %v", err)
+		}
+		if got.ValueDouble == nil || *got.ValueDouble != 10 {
+			t.Errorf("latest double = %v, want 10", got.ValueDouble)
+		}
+		if !got.TS.Equal(base.Add(time.Minute)) {
+			t.Errorf("latest ts = %v, want %v", got.TS, base.Add(time.Minute))
+		}
+
+		// Empty series must yield ErrNotFound.
+		_, err = s.LatestIndividual(ctx, realm.ID, device, si.ID, "/missing")
+		if !errors.Is(err, ErrNotFound) {
+			t.Errorf("empty series: got %v, want ErrNotFound", err)
 		}
 	})
 
