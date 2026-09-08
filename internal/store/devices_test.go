@@ -379,4 +379,49 @@ func testDevices(t *testing.T, s *Store) {
 		}
 		_ = d2
 	})
+
+	t.Run("AliasValuesTaken", func(t *testing.T) {
+		realm := mustCreateRealm(t, s)
+		self := mustRegisterDevice(t, s, realm.ID)
+		other := mustRegisterDevice(t, s, realm.ID)
+
+		if err := s.PatchDeviceAliases(ctx, realm.ID, self, map[string]*string{
+			"serial": strPtr("sn-self"),
+		}); err != nil {
+			t.Fatalf("PatchDeviceAliases(self): %v", err)
+		}
+		if err := s.PatchDeviceAliases(ctx, realm.ID, other, map[string]*string{
+			"serial": strPtr("sn-other"),
+		}); err != nil {
+			t.Fatalf("PatchDeviceAliases(other): %v", err)
+		}
+
+		// No device in the realm carries any of these values.
+		taken, err := s.AliasValuesTaken(ctx, realm.ID, self, []string{"sn-none", "nope"})
+		if err != nil {
+			t.Fatalf("AliasValuesTaken (unused values): %v", err)
+		}
+		if taken {
+			t.Error("unused values reported as taken")
+		}
+
+		// Another device carries one of the values.
+		taken, err = s.AliasValuesTaken(ctx, realm.ID, self, []string{"sn-other", "nope"})
+		if err != nil {
+			t.Fatalf("AliasValuesTaken (other's value): %v", err)
+		}
+		if !taken {
+			t.Error("another device's alias value not reported as taken")
+		}
+
+		// The same device carries the value: it must not count itself
+		// (excluded via d.id <> $2).
+		taken, err = s.AliasValuesTaken(ctx, realm.ID, self, []string{"sn-self"})
+		if err != nil {
+			t.Fatalf("AliasValuesTaken (own value): %v", err)
+		}
+		if taken {
+			t.Error("device's own alias value counted as taken by itself")
+		}
+	})
 }
