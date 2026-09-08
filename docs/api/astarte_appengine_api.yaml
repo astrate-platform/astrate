@@ -72,7 +72,7 @@ paths:
                   summary: Device status list with pagination
                   value:
                     data:
-                      - device_id: dT6hS2W9TT6LEnP25ks_lg
+                      - id: dT6hS2W9TT6LEnP25ks_lg
                         aliases: {}
                         attributes: {}
                         connected: true
@@ -80,8 +80,13 @@ paths:
                         first_registration: "2024-01-15 10:00:00.000Z"
                         last_disconnection: null
                         credentials_inhibited: false
+                        groups: []
+                        total_received_msgs: 12
+                        total_received_bytes: 4096
                         introspection:
-                          org.example.Sensors: 0
+                          org.example.Sensors:
+                            major: 0
+                            minor: 1
                     links:
                       self: "/v1/test/devices?details=true&limit=1"
                       next: "/v1/test/devices?details=true&from_token=dT6hS2W9TT6LEnP25ks_lg&limit=1"
@@ -1404,9 +1409,9 @@ components:
 
     DeviceStatus:
       type: object
-      required: [device_id, connected]
+      required: [id, connected]
       properties:
-        device_id:
+        id:
           type: string
         aliases:
           type: object
@@ -1434,12 +1439,43 @@ components:
           description: Timestamp of last disconnection.
         credentials_inhibited:
           type: boolean
-        introspection:
-          type: object
-          additionalProperties:
-            type: integer
+        groups:
+          type: array
+          items:
+            type: string
+          description: Group names the device belongs to.
+        total_received_msgs:
+          type: integer
+          format: int64
+        total_received_bytes:
+          type: integer
+          format: int64
+        first_credentials_request:
+          type: string
           nullable: true
-          description: Map of interface name to major version.
+          description: Timestamp of first credentials request.
+        last_seen_ip:
+          type: string
+          description: Last seen IP address. Omitted when never seen.
+        previous_interfaces:
+          $ref: "#/components/schemas/Introspection"
+          nullable: true
+          description: Introspection before the last update, when present.
+        introspection:
+          $ref: "#/components/schemas/Introspection"
+          nullable: true
+          description: Map of interface name to its major and minor version.
+
+    Introspection:
+      type: object
+      additionalProperties:
+        type: object
+        required: [major, minor]
+        properties:
+          major:
+            type: integer
+          minor:
+            type: integer
 
     DevicePatch:
       type: object
