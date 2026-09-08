@@ -41,3 +41,4 @@ layer can actually do — read it before deciding whether a kind of task is wort
 | 2026-09-08 | compat-note-v14-rc | blocked | 326s | wrote nothing |
 | 2026-09-08 | detailed-listing-required-encrypted-flags | done | 159s | 63b629e |
 | 2026-09-08 | store-alias-values-taken-test | done | 85s | a07bd6a |
+| 2026-09-08 | store-latest-individual-test | done | 134s | 741794c |
