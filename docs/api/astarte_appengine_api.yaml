@@ -1359,7 +1359,7 @@ components:
       in: query
       schema:
         type: integer
-      description: Downsample to this many data points (must be >= 2).
+      description: Downsample to this many data points (must be > 2).
 
     DataSort:
       name: sort
