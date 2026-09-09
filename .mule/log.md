@@ -48,3 +48,4 @@ layer can actually do — read it before deciding whether a kind of task is wort
 | 2026-09-09 | pairing-bearer-secret-test | done | 90s | 32544c0 |
 | 2026-09-09 | pairing-remoteip-fallback-test | done | 469s | 3d6e790 |
 | 2026-09-09 | docs-sync-hk-patch-endpoint | done | 403s | 9fc9f33 |
+| 2026-09-09 | docs-sync-hk-retention-field | done | 142s | d6d7c7f |
