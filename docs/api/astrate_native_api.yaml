@@ -3,9 +3,9 @@ info:
   title: Astrate Native API
   description: |
     Astrate-native operational and real-time API surface. Covers liveness,
-    readiness, and Prometheus metrics (no auth), compat health endpoints for
-    the Astarte Dashboard, and two WebSocket endpoints: the native live
-    event stream and the Phoenix V2-compatible channels endpoint.
+    readiness, and Prometheus metrics (no auth), compat health and version
+    endpoints for the Astarte Dashboard, and two WebSocket endpoints: the
+    native live event stream and the Phoenix V2-compatible channels endpoint.
   version: "0.0.1"
   license:
     name: "Apache-2.0 with SECO Exclusion"
@@ -180,6 +180,84 @@ paths:
                 data:
                   status: unhealthy
 
+  # ── Compat version (upstream parity) ────────────────────────────────
+
+  /appengine/version:
+    get:
+      operationId: getAppEngineVersion
+      summary: AppEngine API version
+      description: |
+        Upstream-parity unauthenticated version endpoint. Returns the API
+        compatibility version of the AppEngine service; the Astarte Dashboard
+        reads one per service at startup.
+      tags: [Compat Health]
+      responses:
+        "200":
+          description: API compatibility version.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DataEnvelopeVersion"
+              example:
+                data: "1.2.2"
+
+  /realmmanagement/version:
+    get:
+      operationId: getRealmManagementVersion
+      summary: Realm Management API version
+      description: |
+        Upstream-parity unauthenticated version endpoint. Returns the API
+        compatibility version of the Realm Management service; the Astarte
+        Dashboard reads one per service at startup.
+      tags: [Compat Health]
+      responses:
+        "200":
+          description: API compatibility version.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DataEnvelopeVersion"
+              example:
+                data: "1.2.2"
+
+  /pairing/version:
+    get:
+      operationId: getPairingVersion
+      summary: Pairing API version
+      description: |
+        Upstream-parity unauthenticated version endpoint. Returns the API
+        compatibility version of the Pairing service; the Astarte Dashboard
+        reads one per service at startup.
+      tags: [Compat Health]
+      responses:
+        "200":
+          description: API compatibility version.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DataEnvelopeVersion"
+              example:
+                data: "1.2.2"
+
+  /housekeeping/version:
+    get:
+      operationId: getHousekeepingVersion
+      summary: Housekeeping API version
+      description: |
+        Upstream-parity unauthenticated version endpoint. Returns the API
+        compatibility version of the Housekeeping service; the Astarte
+        Dashboard reads one per service at startup.
+      tags: [Compat Health]
+      responses:
+        "200":
+          description: API compatibility version.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DataEnvelopeVersion"
+              example:
+                data: "1.2.2"
+
   # ── Native WebSocket (live stream) ──────────────────────────────────
 
   /astrate/v1/{realm}/socket:
@@ -329,6 +407,14 @@ components:
             status:
               type: string
               enum: [ok, unhealthy]
+
+    DataEnvelopeVersion:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: string
+          description: The service's API compatibility version.
 
     ErrorDetail:
       type: object
