@@ -46,3 +46,4 @@ layer can actually do — read it before deciding whether a kind of task is wort
 | 2026-09-08 | docs-sync-appengine-data-set-422 | blocked | 251s | wrote nothing |
 | 2026-09-08 | docs-sync-appengine-downsample-min | done | 86s | db506f9 |
 | 2026-09-09 | pairing-bearer-secret-test | done | 90s | 32544c0 |
+| 2026-09-09 | pairing-remoteip-fallback-test | done | 469s | 3d6e790 |
