@@ -10,6 +10,16 @@ line once you have dealt with it — this file is a queue, not a log.
 
 ---
 
+- **Milestone recipe run, 2026-09-09: v3.0 unchanged since 2026-09-06 — still waiting on
+  upstream gates.** `milestone-3.0` label remains empty. The three open `upstream-parity`
+  issues are the same: #92 keyAgreement (upstream decision, gated on stable v1.4.0), #93
+  aclhook comment (pushed commit `8c61268`, mule-review), #78 FDO (milestone-4.0). Both
+  UPSTREAM-EXPERIMENTAL rows (#67 required/encrypted flags, #68 async_operation) still wait
+  on upstream v1.4 final (currently rc.5). `APICompatVersion` stays 1.2.2 per #90's frozen
+  decision. No new gaps found, no issues filed, no task lines proposed.
+
+---
+
 - **github-issues triage run, 2026-09-08: nothing proposable, nothing stale.** All six open
   issues were already covered by another mechanism. #97/#96/#95/#94 are mule-alarms (idle
   queue), not code issues — expected during low-activity windows. #93 has a pushed commit
