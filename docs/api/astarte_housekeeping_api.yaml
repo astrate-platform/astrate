@@ -137,6 +137,55 @@ paths:
         "500":
           $ref: "#/components/responses/InternalServerError"
 
+    patch:
+      operationId: patchRealm
+      summary: Update a realm
+      description: |
+        Updates one or more fields of an existing realm. Anything not named here
+        is rejected with `invalid_update_parameters`. A null
+        `device_registration_limit` or `datastream_maximum_storage_retention`
+        clears that field. Returns 200 with an empty body on success.
+      tags: [Housekeeping]
+      security:
+        - a_ha: []
+      parameters:
+        - $ref: "#/components/parameters/RealmName"
+      requestBody:
+        required: true
+        content:
+          application/json; charset=utf-8:
+            schema:
+              type: object
+              required: [data]
+              properties:
+                data:
+                  $ref: "#/components/schemas/RealmPatch"
+            example:
+              data:
+                jwt_public_key_pem: |
+                  -----BEGIN PUBLIC KEY-----
+                  MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE...
+                  -----END PUBLIC KEY-----
+                device_registration_limit: 100
+                datastream_maximum_storage_retention: 3600
+      responses:
+        "200":
+          description: Realm updated successfully. No body returned.
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+        "422":
+          $ref: "#/components/responses/ValidationErrors"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
     delete:
       operationId: deleteRealm
       summary: Delete a realm
@@ -229,6 +278,24 @@ components:
           nullable: true
           description: Maximum number of devices allowed in this realm. Null means unlimited.
 
+    RealmPatch:
+      type: object
+      properties:
+        jwt_public_key_pem:
+          type: string
+          nullable: true
+          description: PEM-encoded public key used to verify realm JWTs. Omitted leaves the key unchanged.
+        device_registration_limit:
+          type: integer
+          format: int32
+          nullable: true
+          description: Maximum number of devices allowed in this realm. Null clears the limit (unlimited).
+        datastream_maximum_storage_retention:
+          type: integer
+          format: int64
+          nullable: true
+          description: Maximum datastream storage retention in seconds. Null clears the retention.
+
     # ── Error envelopes ──
 
     ErrorDetail:
@@ -244,6 +311,18 @@ components:
               description: Human-readable error detail string.
           example:
             detail: Bad Request
+
+    FieldErrorsDetail:
+      type: object
+      required: [errors]
+      properties:
+        errors:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              type: string
+          description: Per-field error messages (changeset shape).
 
   responses:
     BadRequest:
@@ -285,6 +364,27 @@ components:
           example:
             errors:
               detail: Not Found
+
+    MethodNotAllowed:
+      description: Method Not Allowed — realm deletion is disabled for this deployment.
+      content:
+        application/json; charset=utf-8:
+          schema:
+            $ref: "#/components/schemas/ErrorDetail"
+          example:
+            errors:
+              detail: Realm deletion disabled
+
+    ValidationErrors:
+      description: Unprocessable Entity — update parameters failed validation.
+      content:
+        application/json; charset=utf-8:
+          schema:
+            $ref: "#/components/schemas/FieldErrorsDetail"
+          example:
+            errors:
+              error_name:
+                - invalid_update_parameters
 
     Conflict:
       description: Conflict — resource already exists (e.g. realm name taken).
