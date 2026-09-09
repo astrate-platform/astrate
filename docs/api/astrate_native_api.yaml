@@ -114,6 +114,15 @@ paths:
               example:
                 data:
                   status: ok
+        "503":
+          description: Service is unhealthy — readiness probe failed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DataEnvelopeHealthStatus"
+              example:
+                data:
+                  status: unhealthy
 
   /realmmanagement/health:
     get:
@@ -133,6 +142,15 @@ paths:
               example:
                 data:
                   status: ok
+        "503":
+          description: Service is unhealthy — readiness probe failed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DataEnvelopeHealthStatus"
+              example:
+                data:
+                  status: unhealthy
 
   /pairing/health:
     get:
@@ -152,6 +170,15 @@ paths:
               example:
                 data:
                   status: ok
+        "503":
+          description: Service is unhealthy — readiness probe failed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DataEnvelopeHealthStatus"
+              example:
+                data:
+                  status: unhealthy
 
   # ── Native WebSocket (live stream) ──────────────────────────────────
 
@@ -301,7 +328,7 @@ components:
           properties:
             status:
               type: string
-              enum: [ok]
+              enum: [ok, unhealthy]
 
     ErrorDetail:
       type: object
