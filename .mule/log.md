@@ -45,3 +45,4 @@ layer can actually do — read it before deciding whether a kind of task is wort
 | 2026-09-08 | docs-sync-appengine-device-status-schema | done | 255s | 00da133 |
 | 2026-09-08 | docs-sync-appengine-data-set-422 | blocked | 251s | wrote nothing |
 | 2026-09-08 | docs-sync-appengine-downsample-min | done | 86s | db506f9 |
+| 2026-09-09 | pairing-bearer-secret-test | done | 90s | 32544c0 |
