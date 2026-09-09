@@ -51,3 +51,4 @@ layer can actually do — read it before deciding whether a kind of task is wort
 | 2026-09-09 | docs-sync-hk-retention-field | done | 142s | d6d7c7f |
 | 2026-09-09 | realm-pure-helper-tests | done | 403s | 39eb70a |
 | 2026-09-09 | docs-sync-native-compat-health-503 | done | 202s | 656e21e |
+| 2026-09-09 | docs-sync-native-compat-version-endpoints | done | 480s | d148f16 |
