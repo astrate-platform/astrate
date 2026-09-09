@@ -261,6 +261,11 @@ components:
           format: int32
           nullable: true
           description: Maximum number of devices allowed in this realm. Null means unlimited.
+        datastream_maximum_storage_retention:
+          type: integer
+          format: int64
+          nullable: true
+          description: Maximum datastream storage retention in seconds. Null means unlimited.
 
     RealmCreate:
       type: object
@@ -277,6 +282,11 @@ components:
           format: int32
           nullable: true
           description: Maximum number of devices allowed in this realm. Null means unlimited.
+        datastream_maximum_storage_retention:
+          type: integer
+          format: int64
+          nullable: true
+          description: Maximum datastream storage retention in seconds. Null means unlimited.
 
     RealmPatch:
       type: object
