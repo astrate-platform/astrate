@@ -10,6 +10,18 @@ line once you have dealt with it — this file is a queue, not a log.
 
 ---
 
+- **Flow code review, 2026-09-10: `DeletePipeline` semantics need your call.**
+  `DeletePipeline` (internal/flowapi/service.go:199-206) removes a pipeline
+  silently even when durable flows still reference it; running instances keep
+  the old graph, but their next reload fails ("pipeline not found") and a
+  block death after that starts the auto-restart loop retrying forever against
+  the missing pipeline. `UpdatePipeline` already reports `referencing_flows`
+  (service.go:162-182, issue #44) — should DELETE also refuse (409) while
+  flows reference it, or return the referencing names and allow? Design choice,
+  not a mule task.
+
+---
+
 - **github-issues triage run, 2026-09-10: nothing proposable, nothing stale.** Nine open
   issues: #99–#94 are mule-alarms (idle queue), not code issues. #93 has a pushed commit
   (`8c61268`) awaiting review, its own recipe path. #92 is parked on a stable v1.4.0 per the
