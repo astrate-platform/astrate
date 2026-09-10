@@ -39,6 +39,27 @@ func TestWriteErrorMapping(t *testing.T) {
 	}
 }
 
+func TestResolveAutoRestart(t *testing.T) {
+	boolPtr := func(v bool) *bool { return &v }
+	cases := []struct {
+		name string
+		p    *bool
+		want bool
+	}{
+		{"nil defaults to true", nil, true},
+		{"explicit true honored", boolPtr(true), true},
+		{"explicit false honored", boolPtr(false), false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := resolveAutoRestart(tc.p)
+			if got != tc.want {
+				t.Errorf("resolveAutoRestart(%v) = %v, want %v", tc.p, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestValidationDetail(t *testing.T) {
 	cases := []struct {
 		name string

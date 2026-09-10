@@ -138,10 +138,7 @@ func (a *API) startFlow(w http.ResponseWriter, r *http.Request) {
 		_ = astarteapi.WriteBadRequest(w)
 		return
 	}
-	autoRestart := true
-	if body.AutoRestart != nil {
-		autoRestart = *body.AutoRestart
-	}
+	autoRestart := resolveAutoRestart(body.AutoRestart)
 	view, err := a.svc.CreateAndStartFlow(r.Context(), r.PathValue("realm"), CreateFlowRequest{
 		Name:        body.Name,
 		Pipeline:    body.Pipeline,
@@ -292,6 +289,15 @@ func (a *API) writeError(w http.ResponseWriter, err error) {
 	default:
 		_ = astarteapi.WriteInternalServerError(w)
 	}
+}
+
+// resolveAutoRestart returns the effective auto_restart value from a request
+// body. Missing (nil) defaults to true; a present value is honored as-is.
+func resolveAutoRestart(p *bool) bool {
+	if p == nil {
+		return true
+	}
+	return *p
 }
 
 func validationDetail(err error) string {
