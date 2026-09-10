@@ -56,3 +56,4 @@ layer can actually do — read it before deciding whether a kind of task is wort
 | 2026-09-10 | flowapi-validationdetail-test | done | 121s | 832d8fb |
 | 2026-09-10 | flowapi-autorestart-default-test | done | 148s | e272cfa |
 | 2026-09-10 | docs-sync-pairing-status-enum | done | 89s | 2f6176c |
+| 2026-09-10 | docs-sync-pairing-version-endpoint | done | 95s | c867b2c |
