@@ -38,3 +38,35 @@ func TestWriteErrorMapping(t *testing.T) {
 		}
 	}
 }
+
+func TestValidationDetail(t *testing.T) {
+	cases := []struct {
+		name string
+		err  error
+		want string
+	}{
+		{
+			name: "strips prefix",
+			err:  fmt.Errorf("flowapi: validation failed: bad block"),
+			want: "bad block",
+		},
+		{
+			name: "non-prefix passes through",
+			err:  errors.New("something else"),
+			want: "something else",
+		},
+		{
+			name: "prefix only not stripped",
+			err:  errors.New("flowapi: validation failed: "),
+			want: "flowapi: validation failed: ",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := validationDetail(tc.err)
+			if got != tc.want {
+				t.Errorf("got %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
