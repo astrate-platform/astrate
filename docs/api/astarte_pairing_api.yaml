@@ -409,7 +409,7 @@ components:
                   description: PEM-encoded CA certificate for the MQTT TLS connection (Astrate extension).
         status:
           type: string
-          enum: [confirmed, pending, denied, expired]
+          enum: [confirmed, pending, inhibited]
           description: Device pairing status.
         version:
           type: string
