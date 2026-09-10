@@ -10,6 +10,10 @@ line once you have dealt with it — this file is a queue, not a log.
 
 ---
 
+- **docs-sync pairing, 2026-09-10: docs/site names the pre-credentials wire status `registered`; the API returns `pending`.** `docs/site/pairing-and-security.md:56` ("flips status `registered -> confirmed`") and `:91` ("**registered** -- device registered, awaiting first credentials request"), plus `docs/site/data-modeling.md:94`, all give `registered` as a device status value. But `service.Info` emits `pending` for any device that is neither confirmed nor inhibited (internal/pairing/service.go:296-299 — upstream-parity per the comment at service.go:282-285; the DB value is `registered`, store/devices.go:19-27). Wire values are `pending`/`confirmed`/`inhibited`. Site prose is yours — reword to `pending`, or confirm the site intentionally describes the DB value.
+
+---
+
 - **Flow code review, 2026-09-10: `DeletePipeline` semantics need your call.**
   `DeletePipeline` (internal/flowapi/service.go:199-206) removes a pipeline
   silently even when durable flows still reference it; running instances keep
