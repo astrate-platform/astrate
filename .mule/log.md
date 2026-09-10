@@ -54,3 +54,4 @@ layer can actually do — read it before deciding whether a kind of task is wort
 | 2026-09-09 | docs-sync-native-compat-version-endpoints | done | 480s | d148f16 |
 | 2026-09-10 | flowapi-autorestart-terminal-failure | done | 251s | 8ce04d2 |
 | 2026-09-10 | flowapi-validationdetail-test | done | 121s | 832d8fb |
+| 2026-09-10 | flowapi-autorestart-default-test | done | 148s | e272cfa |
