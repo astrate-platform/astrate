@@ -582,8 +582,19 @@ func (s *Service) endRestart(instanceID string) {
 	delete(s.restarting, instanceID)
 }
 
+// isTerminalRestartFailure reports whether a RestartFlowInstance rebuild
+// error is permanent: ErrValidation means the flow's pipeline/config no
+// longer resolves (deleted pipeline, invalid stored definition, unknown
+// block), so no number of retries can succeed. Store/manager errors are
+// transient and keep the backoff loop alive.
+func isTerminalRestartFailure(err error) bool {
+	return errors.Is(err, ErrValidation)
+}
+
 // restartWithBackoff keeps re-running RestartFlowInstance until it succeeds,
-// the durable row disappears (flow deleted), or auto_restart is turned off.
+// the durable row disappears (flow deleted), auto_restart is turned off, or
+// the rebuild fails with a terminal error (ErrValidation — the flow marks
+// itself failed and there is nothing left to retry).
 func (s *Service) restartWithBackoff(realm string, realmID int16, name, instanceID string) {
 	defer s.endRestart(instanceID)
 	bg := context.Background()
@@ -613,6 +624,11 @@ func (s *Service) restartWithBackoff(realm string, realmID int16, name, instance
 		if err == nil {
 			s.log.Info("flow auto-restarted after block death",
 				"realm", realm, "flow", name, "attempt", attempt+1)
+			return
+		}
+		if isTerminalRestartFailure(err) {
+			s.log.Error("flow auto-restart stopped: rebuild failure is permanent",
+				"realm", realm, "flow", name, "attempt", attempt+1, "error", err)
 			return
 		}
 		s.log.Warn("flow auto-restart attempt failed",

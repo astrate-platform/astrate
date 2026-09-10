@@ -3,6 +3,8 @@ package flowapi
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -115,6 +117,34 @@ func TestSplitInstanceID(t *testing.T) {
 func TestFlowInstanceIDAlias(t *testing.T) {
 	if flow.InstanceID("r", "n") != flow.PipelineID("r", "n") {
 		t.Fatal("PipelineID should alias InstanceID")
+	}
+}
+
+// TestIsTerminalRestartFailure pins the auto-restart classification:
+// ErrValidation from the rebuild path (deleted pipeline, unresolvable
+// config/definition) is permanent and must stop the backoff loop, while
+// store/manager errors are transient and must keep it retrying.
+func TestIsTerminalRestartFailure(t *testing.T) {
+	cases := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{"nil", nil, false},
+		{"pipeline deleted", fmt.Errorf("%w: pipeline %q not found", ErrValidation, "device-to-http"), true},
+		{"invalid stored config", fmt.Errorf("%w: config must be a JSON object: %v", ErrValidation, errors.New("unexpected end")), true},
+		{"definition does not parse", fmt.Errorf("%w: %v", ErrValidation, errors.New("syntax error")), true},
+		{"plain error", errors.New("postgres: connection refused"), false},
+		{"store not found", fmt.Errorf("%w: flow %q", store.ErrNotFound, "f1"), false},
+		{"store already exists", fmt.Errorf("%w: flow %q", store.ErrAlreadyExists, "f1"), false},
+		{"wrapped non-validation", fmt.Errorf("resolve: %w", errors.New("boom")), false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := isTerminalRestartFailure(tc.err); got != tc.want {
+				t.Errorf("isTerminalRestartFailure(%v) = %v, want %v", tc.err, got, tc.want)
+			}
+		})
 	}
 }
 
