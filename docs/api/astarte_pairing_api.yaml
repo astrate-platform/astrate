@@ -67,6 +67,42 @@ paths:
                 errors:
                   detail: unhealthy
 
+  /pairing/v1/{realm}/version:
+    get:
+      operationId: getVersion
+      summary: Get emulated API version
+      description: |
+        Returns the emulated upstream API compatibility version. Unauthenticated
+        — mirrors upstream's public pairing version endpoint.
+
+        The Astarte Dashboard gates feature UI on this value.
+      tags: [Pairing]
+      parameters:
+        - $ref: "#/components/parameters/RealmName"
+      responses:
+        "200":
+          description: API compatibility version.
+          content:
+            application/json; charset=utf-8:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: string
+                    description: Version string.
+              example:
+                data: "1.1.0"
+        "404":
+          description: Unknown realm.
+          content:
+            application/json; charset=utf-8:
+              schema:
+                $ref: "#/components/schemas/ErrorDetail"
+              example:
+                errors:
+                  detail: Not Found
+
   /pairing/v1/{realm}/agent/devices:
     post:
       operationId: registerDevice
