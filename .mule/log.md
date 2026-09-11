@@ -64,3 +64,4 @@ layer can actually do — read it before deciding whether a kind of task is wort
 | 2026-09-11 | interfaceschema-compat-attrs-flip-test | done | 329s | 4fe1f4f |
 | 2026-09-11 | interfaceschema-object-attrs-uniformity | done | 344s | c6c8362 |
 | 2026-09-11 | interfaceschema-malformed-placeholder-fixtures | done | 130s | f6a44a2 |
+| 2026-09-11 | interfaceschema-enum-roundtrip-coverage | done | 185s | f955958 |
