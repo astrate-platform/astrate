@@ -111,6 +111,35 @@ func TestMatchBacktracking(t *testing.T) {
 	}
 }
 
+// TestInteriorLiteralDoesNotShadowParam pins the rule that an interior-only
+// literal child — one with no mapping at the matching depth — does not shadow
+// its parametric sibling (trie.go matchNode): with only "/a/b/c" (leaf at
+// depth 3) and "/a/%{p}" declared, Match("/a/b") falls through the
+// mapping-less interior node "b" to the parametric branch, while
+// Match("/a/b/c") still resolves literals first. Statement coverage cannot
+// see this: matchNode reports 100% in the broken variant too, because every
+// statement executes while the value only differs.
+func TestInteriorLiteralDoesNotShadowParam(t *testing.T) {
+	trie := NewEndpointTrie()
+	deep := &CompiledMapping{EndpointID: 1, ValueType: Double}
+	param := &CompiledMapping{EndpointID: 2, ValueType: Double}
+	if err := trie.Add("/a/b/c", deep); err != nil {
+		t.Fatalf("Add(/a/b/c): %v", err)
+	}
+	if err := trie.Add("/a/%{p}", param); err != nil {
+		t.Fatalf("Add(/a/%%{p}): %v", err)
+	}
+
+	if got, ok := trie.Match("/a/b"); !ok || got != param {
+		t.Fatalf("Match(/a/b) = %+v (ok=%v), want the /a/%%{p} mapping (EndpointID %d)",
+			got, ok, param.EndpointID)
+	}
+	if got, ok := trie.Match("/a/b/c"); !ok || got != deep {
+		t.Fatalf("Match(/a/b/c) = %+v (ok=%v), want the /a/b/c mapping (EndpointID %d)",
+			got, ok, deep.EndpointID)
+	}
+}
+
 func TestAddRejections(t *testing.T) {
 	trie := NewEndpointTrie()
 	m := &CompiledMapping{ValueType: Double}
