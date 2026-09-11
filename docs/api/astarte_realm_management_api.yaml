@@ -462,6 +462,8 @@ paths:
           $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/ValidationError"
         "500":
           $ref: "#/components/responses/InternalServerError"
 
