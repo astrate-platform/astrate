@@ -60,3 +60,4 @@ layer can actually do — read it before deciding whether a kind of task is wort
 | 2026-09-11 | docs-sync-rm-delete-interface-status | done | 123s | b37d11f |
 | 2026-09-11 | docs-sync-rm-mapping-required-encrypted | done | 137s | 5f8cb25 |
 | 2026-09-11 | docs-sync-rm-put-auth-422 | done | 145s | 8554720 |
+| 2026-09-11 | docs-sync-rm-version-example | blocked | 97s | opencode exited 1 |
