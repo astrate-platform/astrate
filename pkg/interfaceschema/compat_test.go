@@ -23,6 +23,69 @@ const baseV10 = `{
 	]
 }`
 
+// pinnedV10 pins the three datastream-only immutable attribute pairs at
+// non-zero values, so the flip cases below exercise a real mutation of one
+// attribute instead of a default-to-value transition.
+const pinnedV10 = `{
+	"interface_name": "com.astrate.test.Upgrade",
+	"version_major": 1,
+	"version_minor": 0,
+	"type": "datastream",
+	"ownership": "device",
+	"mappings": [
+		{"endpoint": "/%{sensor_id}/value", "type": "double", "reliability": "guaranteed",
+		 "retention": "stored", "expiry": 3600,
+		 "database_retention_policy": "use_ttl", "database_retention_ttl": 3600},
+		{"endpoint": "/%{sensor_id}/status", "type": "string"}
+	]
+}`
+
+// pinnedV11 is pinnedV10 with the minor bumped: every pinned immutable
+// attribute stays put, which an upgrade must accept. It is the
+// at-immutability acceptance twin of the retention/expiry/database-retention
+// flip cases below.
+const pinnedV11 = `{
+	"interface_name": "com.astrate.test.Upgrade",
+	"version_major": 1,
+	"version_minor": 1,
+	"type": "datastream",
+	"ownership": "device",
+	"mappings": [
+		{"endpoint": "/%{sensor_id}/value", "type": "double", "reliability": "guaranteed",
+		 "retention": "stored", "expiry": 3600,
+		 "database_retention_policy": "use_ttl", "database_retention_ttl": 3600},
+		{"endpoint": "/%{sensor_id}/status", "type": "string"}
+	]
+}`
+
+// pinnedPropsV10 is a properties interface carrying allow_unset (a
+// properties-only immutable attribute) at its non-zero value.
+const pinnedPropsV10 = `{
+	"interface_name": "com.astrate.test.Upgrade",
+	"version_major": 1,
+	"version_minor": 0,
+	"type": "properties",
+	"ownership": "device",
+	"mappings": [
+		{"endpoint": "/%{sensor_id}/enabled", "type": "boolean", "allow_unset": true},
+		{"endpoint": "/%{sensor_id}/mode", "type": "string"}
+	]
+}`
+
+// pinnedPropsV11 is the at-immutability acceptance twin of the allow_unset
+// flip case: allow_unset stays true across the minor bump.
+const pinnedPropsV11 = `{
+	"interface_name": "com.astrate.test.Upgrade",
+	"version_major": 1,
+	"version_minor": 1,
+	"type": "properties",
+	"ownership": "device",
+	"mappings": [
+		{"endpoint": "/%{sensor_id}/enabled", "type": "boolean", "allow_unset": true},
+		{"endpoint": "/%{sensor_id}/mode", "type": "string"}
+	]
+}`
+
 func mustParse(t *testing.T, doc string) *interfaceschema.Interface {
 	t.Helper()
 	iface, err := interfaceschema.ParseInterface([]byte(doc))
@@ -224,6 +287,109 @@ func TestCheckMinorUpgradeTable(t *testing.T) {
 				]
 			}`,
 			wantSub:   "changed explicit_timestamp",
+			wantClass: interfaceschema.ErrIncompatibleEndpointChange,
+		},
+		{
+			name:   "retention at immutability accepted",
+			oldDoc: pinnedV10,
+			next:   pinnedV11,
+		},
+		{
+			name:   "retention mutated",
+			oldDoc: pinnedV10,
+			next: `{
+				"interface_name": "com.astrate.test.Upgrade",
+				"version_major": 1, "version_minor": 1,
+				"type": "datastream", "ownership": "device",
+				"mappings": [
+					{"endpoint": "/%{sensor_id}/value", "type": "double", "reliability": "guaranteed",
+					 "retention": "volatile", "expiry": 3600,
+					 "database_retention_policy": "use_ttl", "database_retention_ttl": 3600},
+					{"endpoint": "/%{sensor_id}/status", "type": "string"}
+				]
+			}`,
+			wantSub:   "changed retention",
+			wantClass: interfaceschema.ErrIncompatibleEndpointChange,
+		},
+		{
+			name:   "expiry at immutability accepted",
+			oldDoc: pinnedV10,
+			next:   pinnedV11,
+		},
+		{
+			name:   "expiry mutated",
+			oldDoc: pinnedV10,
+			next: `{
+				"interface_name": "com.astrate.test.Upgrade",
+				"version_major": 1, "version_minor": 1,
+				"type": "datastream", "ownership": "device",
+				"mappings": [
+					{"endpoint": "/%{sensor_id}/value", "type": "double", "reliability": "guaranteed",
+					 "retention": "stored", "expiry": 7200,
+					 "database_retention_policy": "use_ttl", "database_retention_ttl": 3600},
+					{"endpoint": "/%{sensor_id}/status", "type": "string"}
+				]
+			}`,
+			wantSub:   "changed expiry",
+			wantClass: interfaceschema.ErrIncompatibleEndpointChange,
+		},
+		{
+			name:   "database retention at immutability accepted",
+			oldDoc: pinnedV10,
+			next:   pinnedV11,
+		},
+		{
+			name:   "database_retention_policy mutated",
+			oldDoc: pinnedV10,
+			next: `{
+				"interface_name": "com.astrate.test.Upgrade",
+				"version_major": 1, "version_minor": 1,
+				"type": "datastream", "ownership": "device",
+				"mappings": [
+					{"endpoint": "/%{sensor_id}/value", "type": "double", "reliability": "guaranteed",
+					 "retention": "stored", "expiry": 3600,
+					 "database_retention_policy": "no_ttl"},
+					{"endpoint": "/%{sensor_id}/status", "type": "string"}
+				]
+			}`,
+			wantSub:   "changed database_retention_policy",
+			wantClass: interfaceschema.ErrIncompatibleEndpointChange,
+		},
+		{
+			name:   "database_retention_ttl mutated",
+			oldDoc: pinnedV10,
+			next: `{
+				"interface_name": "com.astrate.test.Upgrade",
+				"version_major": 1, "version_minor": 1,
+				"type": "datastream", "ownership": "device",
+				"mappings": [
+					{"endpoint": "/%{sensor_id}/value", "type": "double", "reliability": "guaranteed",
+					 "retention": "stored", "expiry": 3600,
+					 "database_retention_policy": "use_ttl", "database_retention_ttl": 7200},
+					{"endpoint": "/%{sensor_id}/status", "type": "string"}
+				]
+			}`,
+			wantSub:   "changed database_retention_ttl",
+			wantClass: interfaceschema.ErrIncompatibleEndpointChange,
+		},
+		{
+			name:   "allow_unset at immutability accepted",
+			oldDoc: pinnedPropsV10,
+			next:   pinnedPropsV11,
+		},
+		{
+			name:   "allow_unset mutated",
+			oldDoc: pinnedPropsV10,
+			next: `{
+				"interface_name": "com.astrate.test.Upgrade",
+				"version_major": 1, "version_minor": 1,
+				"type": "properties", "ownership": "device",
+				"mappings": [
+					{"endpoint": "/%{sensor_id}/enabled", "type": "boolean", "allow_unset": false},
+					{"endpoint": "/%{sensor_id}/mode", "type": "string"}
+				]
+			}`,
+			wantSub:   "changed allow_unset",
 			wantClass: interfaceschema.ErrIncompatibleEndpointChange,
 		},
 	}
