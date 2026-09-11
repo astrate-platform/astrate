@@ -82,6 +82,8 @@ paths:
                             retention: discard
                             expiry: 0
                             explicit_timestamp: false
+                            required: false
+                            encrypted: false
                             database_retention_policy: no_ttl
         "401":
           $ref: "#/components/responses/Unauthorized"
@@ -855,6 +857,14 @@ components:
           default: false
         explicit_timestamp:
           type: boolean
+          default: false
+        required:
+          type: boolean
+          description: Datastream-only. Whether the mapping value is mandatory.
+          default: false
+        encrypted:
+          type: boolean
+          description: Datastream-only. Whether the mapping value is stored encrypted.
           default: false
         description:
           type: string
