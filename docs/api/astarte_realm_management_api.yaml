@@ -252,8 +252,8 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
-        "422":
-          description: Unprocessable Entity — major version not 0 or interface in use.
+        "403":
+          description: Forbidden — major version not 0 or interface in use.
           content:
             application/json; charset=utf-8:
               schema:
@@ -263,12 +263,12 @@ paths:
                   summary: Major version is not 0
                   value:
                     errors:
-                      detail: "Interface major version is not 0, can't be deleted"
+                      detail: "Interface can't be deleted"
                 in_use:
                   summary: Interface in use by device
                   value:
                     errors:
-                      detail: "Cannot delete an interface that is used by a device introspection"
+                      detail: "Interface can't be deleted since it's currently used"
         "500":
           $ref: "#/components/responses/InternalServerError"
 
