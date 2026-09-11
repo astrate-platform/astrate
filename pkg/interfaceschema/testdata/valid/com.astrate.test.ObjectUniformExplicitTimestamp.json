@@ -1,0 +1,13 @@
+{
+  "interface_name": "com.astrate.test.ObjectUniformExplicitTimestamp",
+  "version_major": 1,
+  "version_minor": 0,
+  "type": "datastream",
+  "aggregation": "object",
+  "ownership": "device",
+  "description": "Astrate test fixture: object aggregation with uniform explicit_timestamp across mappings.",
+  "mappings": [
+    {"endpoint": "/left", "type": "double", "explicit_timestamp": true},
+    {"endpoint": "/right", "type": "double", "explicit_timestamp": true}
+  ]
+}

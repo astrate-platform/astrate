@@ -25,5 +25,10 @@
   "24-unknown-field.json": "unknown field",
   "25-retention-on-properties.json": "\"retention\" is not allowed on properties",
   "26-negative-expiry.json": "expiry must be >= 0",
-  "27-trailing-garbage.json": "trailing data"
+  "27-trailing-garbage.json": "trailing data",
+  "28-object-mixed-retention.json": "share the same retention",
+  "29-object-mixed-expiry.json": "share the same expiry",
+  "30-object-mixed-explicit-timestamp.json": "share the same explicit_timestamp",
+  "31-object-mixed-database-retention.json": "share the same database_retention_policy",
+  "32-object-mixed-database-retention-ttl.json": "share the same database_retention_ttl"
 }

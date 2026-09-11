@@ -1,0 +1,12 @@
+{
+  "interface_name": "com.astrate.test.ObjectMixedDatabaseRetentionTTL",
+  "version_major": 1,
+  "version_minor": 0,
+  "type": "datastream",
+  "ownership": "device",
+  "aggregation": "object",
+  "mappings": [
+    {"endpoint": "/lat", "type": "double", "database_retention_policy": "use_ttl", "database_retention_ttl": 86400},
+    {"endpoint": "/lng", "type": "double", "database_retention_policy": "use_ttl", "database_retention_ttl": 3600}
+  ]
+}

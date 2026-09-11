@@ -1,0 +1,12 @@
+{
+  "interface_name": "com.astrate.test.ObjectMixedExpiry",
+  "version_major": 1,
+  "version_minor": 0,
+  "type": "datastream",
+  "ownership": "device",
+  "aggregation": "object",
+  "mappings": [
+    {"endpoint": "/lat", "type": "double", "expiry": 3600},
+    {"endpoint": "/lng", "type": "double", "expiry": 7200}
+  ]
+}

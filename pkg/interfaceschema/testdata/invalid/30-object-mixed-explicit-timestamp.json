@@ -1,0 +1,12 @@
+{
+  "interface_name": "com.astrate.test.ObjectMixedExplicitTimestamp",
+  "version_major": 1,
+  "version_minor": 0,
+  "type": "datastream",
+  "ownership": "device",
+  "aggregation": "object",
+  "mappings": [
+    {"endpoint": "/lat", "type": "double", "explicit_timestamp": true},
+    {"endpoint": "/lng", "type": "double", "explicit_timestamp": false}
+  ]
+}

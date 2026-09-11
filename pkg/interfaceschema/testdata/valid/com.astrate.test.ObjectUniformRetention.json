@@ -1,0 +1,13 @@
+{
+  "interface_name": "com.astrate.test.ObjectUniformRetention",
+  "version_major": 1,
+  "version_minor": 0,
+  "type": "datastream",
+  "aggregation": "object",
+  "ownership": "device",
+  "description": "Astrate test fixture: object aggregation with uniform retention across mappings.",
+  "mappings": [
+    {"endpoint": "/left", "type": "double", "retention": "volatile"},
+    {"endpoint": "/right", "type": "double", "retention": "volatile"}
+  ]
+}

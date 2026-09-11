@@ -1,0 +1,13 @@
+{
+  "interface_name": "com.astrate.test.ObjectUniformDatabaseRetention",
+  "version_major": 1,
+  "version_minor": 0,
+  "type": "datastream",
+  "aggregation": "object",
+  "ownership": "device",
+  "description": "Astrate test fixture: object aggregation with uniform database_retention_policy and ttl across mappings.",
+  "mappings": [
+    {"endpoint": "/left", "type": "double", "database_retention_policy": "use_ttl", "database_retention_ttl": 86400},
+    {"endpoint": "/right", "type": "double", "database_retention_policy": "use_ttl", "database_retention_ttl": 86400}
+  ]
+}
