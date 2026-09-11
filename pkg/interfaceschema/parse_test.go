@@ -273,6 +273,42 @@ func TestEnumRoundTrips(t *testing.T) {
 			return out.String(), err
 		})
 	}
+	for _, v := range []interfaceschema.Ownership{
+		interfaceschema.OwnershipDevice, interfaceschema.OwnershipServer,
+	} {
+		check(t, v.String(), v, func(b []byte) (string, error) {
+			var out interfaceschema.Ownership
+			err := json.Unmarshal(b, &out)
+			return out.String(), err
+		})
+	}
+	for _, v := range []interfaceschema.Aggregation{
+		interfaceschema.AggregationIndividual, interfaceschema.AggregationObject,
+	} {
+		check(t, v.String(), v, func(b []byte) (string, error) {
+			var out interfaceschema.Aggregation
+			err := json.Unmarshal(b, &out)
+			return out.String(), err
+		})
+	}
+	for _, v := range []interfaceschema.Retention{
+		interfaceschema.RetentionDiscard, interfaceschema.RetentionVolatile, interfaceschema.RetentionStored,
+	} {
+		check(t, v.String(), v, func(b []byte) (string, error) {
+			var out interfaceschema.Retention
+			err := json.Unmarshal(b, &out)
+			return out.String(), err
+		})
+	}
+	for _, v := range []interfaceschema.DatabaseRetentionPolicy{
+		interfaceschema.NoTTL, interfaceschema.UseTTL,
+	} {
+		check(t, v.String(), v, func(b []byte) (string, error) {
+			var out interfaceschema.DatabaseRetentionPolicy
+			err := json.Unmarshal(b, &out)
+			return out.String(), err
+		})
+	}
 	for vt := interfaceschema.Double; vt <= interfaceschema.DateTimeArray; vt++ {
 		check(t, vt.String(), vt, func(b []byte) (string, error) {
 			var out interfaceschema.ValueType
