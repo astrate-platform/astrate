@@ -30,5 +30,9 @@
   "29-object-mixed-expiry.json": "share the same expiry",
   "30-object-mixed-explicit-timestamp.json": "share the same explicit_timestamp",
   "31-object-mixed-database-retention.json": "share the same database_retention_policy",
-  "32-object-mixed-database-retention-ttl.json": "share the same database_retention_ttl"
+  "32-object-mixed-database-retention-ttl.json": "share the same database_retention_ttl",
+  "33-endpoint-malformed-placeholder-open.json": "malformed placeholder",
+  "34-endpoint-malformed-placeholder-mid.json": "malformed placeholder",
+  "35-endpoint-malformed-placeholder-unclosed.json": "malformed placeholder",
+  "36-endpoint-invalid-placeholder-name.json": "invalid placeholder name"
 }
