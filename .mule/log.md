@@ -58,3 +58,4 @@ layer can actually do — read it before deciding whether a kind of task is wort
 | 2026-09-10 | docs-sync-pairing-status-enum | done | 89s | 2f6176c |
 | 2026-09-10 | docs-sync-pairing-version-endpoint | done | 95s | c867b2c |
 | 2026-09-11 | docs-sync-rm-delete-interface-status | done | 123s | b37d11f |
+| 2026-09-11 | docs-sync-rm-mapping-required-encrypted | done | 137s | 5f8cb25 |
