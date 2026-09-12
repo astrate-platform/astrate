@@ -351,6 +351,7 @@ func TestJSONProfile(t *testing.T) {
 		{name: "t rfc3339", in: `{"v":22.5,"t":"2026-06-10T12:34:56.789Z"}`, vt: interfaceschema.Double, explicit: true, want: 22.5, wantTS: &ts},
 		{name: "t epoch ms", in: `{"v":22.5,"t":1781094896789}`, vt: interfaceschema.Double, explicit: true, want: 22.5, wantTS: &ts},
 		{name: "t ignored without explicit", in: `{"v":22.5,"t":"2026-06-10T12:34:56.789Z"}`, vt: interfaceschema.Double, want: 22.5},
+		{name: "t bad string still rejected without explicit", in: `{"v":1,"t":"yesterday"}`, vt: interfaceschema.Double, wantReason: ReasonBadTimestamp},
 		{name: "t required but missing", in: `{"v":22.5}`, vt: interfaceschema.Double, explicit: true, wantReason: ReasonBadTimestamp},
 		{name: "t bad string", in: `{"v":1,"t":"yesterday"}`, vt: interfaceschema.Double, explicit: true, wantReason: ReasonBadTimestamp},
 		{name: "t bool", in: `{"v":1,"t":true}`, vt: interfaceschema.Double, explicit: true, wantReason: ReasonBadTimestamp},
