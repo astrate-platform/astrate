@@ -4,7 +4,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
-	"math"
+	"math/big"
 	"strconv"
 	"time"
 
@@ -248,10 +248,10 @@ func jsonNumber(raw json.RawMessage) (json.Number, error) {
 
 // jsonInt64 converts a JSON number token to int64. Plain decimal-integer
 // tokens convert exactly across the whole int64 range. Fraction or exponent
-// forms are accepted only when integral and strictly inside the float64-exact
-// window (|x| < 2^53): beyond it the decimal→binary parse itself may round,
-// silently corrupting the value — such values must use the decimal-string
-// form (§3.5.3).
+// forms are accepted only when the token is an exact decimal integer (5.0,
+// 1e3, 0.5e1) and strictly inside the float64-exact window (|x| < 2^53):
+// beyond it the decimal→binary parse itself may round, silently corrupting
+// the value — such values must use the decimal-string form (§3.5.3).
 func jsonInt64(num json.Number) (int64, error) {
 	i, err := strconv.ParseInt(string(num), 10, 64)
 	if err == nil {
@@ -264,10 +264,22 @@ func jsonInt64(num json.Number) (int64, error) {
 	if err != nil {
 		return 0, rejectf(ReasonTypeMismatch, "number %s is not decodable", num)
 	}
-	if f != math.Trunc(f) || f <= -float64(maxSafeJSONInt) || f >= float64(maxSafeJSONInt) {
+	// Fallback path: ParseFloat rounds, so judge the token, not the parsed
+	// value. 5e-400 parses to an integral 0 and 4503599627370496.5 rounds
+	// onto an integer, yet neither is an exact decimal integer.
+	if !jsonTokenIsExactInt(string(num)) || f <= -float64(maxSafeJSONInt) || f >= float64(maxSafeJSONInt) {
 		return 0, rejectf(ReasonTypeMismatch, "number %s does not coerce to an integer exactly", num)
 	}
 	return int64(f), nil
+}
+
+// jsonTokenIsExactInt reports whether the decimal token denotes an exact
+// integer (42, 5.0, 1e3, 0.5e1), as opposed to a fraction (1.25) or an
+// underflowing magnitude (5e-400) that a float64 parse would place on or
+// round toward an integer.
+func jsonTokenIsExactInt(token string) bool {
+	r, ok := new(big.Rat).SetString(token)
+	return ok && r.IsInt()
 }
 
 // clip truncates a raw token for use in human-readable reject details.
