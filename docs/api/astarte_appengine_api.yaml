@@ -461,6 +461,8 @@ paths:
           $ref: "#/components/responses/DeviceNotFound"
         "405":
           $ref: "#/components/responses/MethodNotAllowed"
+        "422":
+          $ref: "#/components/responses/ValueTooLarge"
         "500":
           $ref: "#/components/responses/InternalServerError"
 
@@ -509,6 +511,8 @@ paths:
           $ref: "#/components/responses/DeviceNotFound"
         "405":
           $ref: "#/components/responses/MethodNotAllowed"
+        "422":
+          $ref: "#/components/responses/ValueTooLarge"
         "500":
           $ref: "#/components/responses/InternalServerError"
 
@@ -699,6 +703,8 @@ paths:
           $ref: "#/components/responses/DeviceNotFound"
         "405":
           $ref: "#/components/responses/MethodNotAllowed"
+        "422":
+          $ref: "#/components/responses/ValueTooLarge"
         "500":
           $ref: "#/components/responses/InternalServerError"
 
@@ -742,6 +748,8 @@ paths:
           $ref: "#/components/responses/DeviceNotFound"
         "405":
           $ref: "#/components/responses/MethodNotAllowed"
+        "422":
+          $ref: "#/components/responses/ValueTooLarge"
         "500":
           $ref: "#/components/responses/InternalServerError"
 
@@ -1219,6 +1227,8 @@ paths:
           $ref: "#/components/responses/NotFound"
         "405":
           $ref: "#/components/responses/MethodNotAllowed"
+        "422":
+          $ref: "#/components/responses/ValueTooLarge"
         "500":
           $ref: "#/components/responses/InternalServerError"
 
@@ -1263,6 +1273,8 @@ paths:
           $ref: "#/components/responses/NotFound"
         "405":
           $ref: "#/components/responses/MethodNotAllowed"
+        "422":
+          $ref: "#/components/responses/ValueTooLarge"
         "500":
           $ref: "#/components/responses/InternalServerError"
 
@@ -1698,6 +1710,16 @@ components:
             errors:
               group_name:
                 - can't be blank
+
+    ValueTooLarge:
+      description: Unprocessable Entity — the value is larger than the per-value size limit (64 KiB).
+      content:
+        application/json; charset=utf-8:
+          schema:
+            $ref: "#/components/schemas/ErrorDetail"
+          example:
+            errors:
+              detail: Value size exceeds size limits
 
     UnprocessableEntity:
       description: Unprocessable Entity — attribute key not found on device.
