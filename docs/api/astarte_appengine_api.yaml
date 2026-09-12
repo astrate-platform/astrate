@@ -173,7 +173,7 @@ paths:
       requestBody:
         required: true
         content:
-          application/json; charset=utf-8:
+          application/merge-patch+json:
             schema:
               type: object
               required: [data]
@@ -257,7 +257,7 @@ paths:
       requestBody:
         required: true
         content:
-          application/json; charset=utf-8:
+          application/merge-patch+json:
             schema:
               type: object
               required: [data]
@@ -1022,7 +1022,7 @@ paths:
       requestBody:
         required: true
         content:
-          application/json; charset=utf-8:
+          application/merge-patch+json:
             schema:
               type: object
               required: [data]
