@@ -70,3 +70,4 @@ layer can actually do — read it before deciding whether a kind of task is wort
 | 2026-09-12 | docs-sync-ae-write-value-422 | done | 338s | 17f6f70 |
 | 2026-09-12 | docs-sync-ae-post-groups-409 | done | 128s | d6865a1 |
 | 2026-09-12 | payload-longinteger-fraction-quantize | done | 356s | d7babc6 |
+| 2026-09-12 | payload-json-malformed-t-not-tolerated | done | 99s | 5b56557 |
