@@ -67,3 +67,4 @@ layer can actually do — read it before deciding whether a kind of task is wort
 | 2026-09-11 | interfaceschema-enum-roundtrip-coverage | done | 185s | f955958 |
 | 2026-09-11 | interfaceschema-trie-interior-literal-param | done | 121s | 705795f |
 | 2026-09-12 | docs-sync-ae-write-405 | done | 400s | 9ed08c3 |
+| 2026-09-12 | docs-sync-ae-write-value-422 | done | 338s | 17f6f70 |
