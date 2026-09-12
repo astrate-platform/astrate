@@ -71,3 +71,4 @@ layer can actually do — read it before deciding whether a kind of task is wort
 | 2026-09-12 | docs-sync-ae-post-groups-409 | done | 128s | d6865a1 |
 | 2026-09-12 | payload-longinteger-fraction-quantize | done | 356s | d7babc6 |
 | 2026-09-12 | payload-json-malformed-t-not-tolerated | done | 99s | 5b56557 |
+| 2026-09-12 | docs-sync-ae-post-group-devices-409 | done | 179s | cbf81af |
