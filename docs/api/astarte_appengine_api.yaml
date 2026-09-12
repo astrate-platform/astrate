@@ -853,6 +853,8 @@ paths:
           $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "409":
+          $ref: "#/components/responses/ConflictGroupAlreadyExists"
         "422":
           $ref: "#/components/responses/ValidationErrors"
         "500":
@@ -1740,3 +1742,13 @@ components:
           example:
             errors:
               detail: Alias already in use
+
+    ConflictGroupAlreadyExists:
+      description: Conflict — a group with the given name already exists.
+      content:
+        application/json; charset=utf-8:
+          schema:
+            $ref: "#/components/schemas/ErrorDetail"
+          example:
+            errors:
+              detail: Group already exists
