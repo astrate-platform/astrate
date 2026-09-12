@@ -973,6 +973,8 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/ConflictDeviceAlreadyInGroup"
         "500":
           $ref: "#/components/responses/InternalServerError"
 
@@ -1752,3 +1754,13 @@ components:
           example:
             errors:
               detail: Group already exists
+
+    ConflictDeviceAlreadyInGroup:
+      description: Conflict — the device is already a member of the given group.
+      content:
+        application/json; charset=utf-8:
+          schema:
+            $ref: "#/components/schemas/ErrorDetail"
+          example:
+            errors:
+              detail: Device already in group
