@@ -76,3 +76,4 @@ layer can actually do — read it before deciding whether a kind of task is wort
 | 2026-09-13 | store-todo-lttb-stale | done | 66s | 829f408 |
 | 2026-09-13 | config-fail-loud-engine-shards | done | 150s | 83482e4 |
 | 2026-09-13 | config-fail-loud-dev-mode | done | 227s | 27d8165 |
+| 2026-09-13 | config-key-resolvers-test | done | 143s | 9e68a01 |
