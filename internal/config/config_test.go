@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -15,6 +16,108 @@ func writeTOML(t *testing.T, body string) string {
 		t.Fatal(err)
 	}
 	return p
+}
+
+func writePEMFile(t *testing.T, body string) string {
+	t.Helper()
+	p := filepath.Join(t.TempDir(), "key.pem")
+	if err := os.WriteFile(p, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return p
+}
+
+func TestHousekeepingKeys(t *testing.T) {
+	t.Run("inline plus file PEM concatenated and trimmed", func(t *testing.T) {
+		filePEM := "-----BEGIN PUBLIC KEY-----\nfile-key\n-----END PUBLIC KEY-----"
+		cfg := Config{
+			Housekeeping: HousekeepingConfig{
+				JWTPublicKeys:     []string{"inline-a", "inline-b"},
+				JWTPublicKeyFiles: []string{writePEMFile(t, "\n"+filePEM+"\n\n")},
+			},
+		}
+		keys, err := cfg.HousekeepingKeys()
+		if err != nil {
+			t.Fatalf("HousekeepingKeys: %v", err)
+		}
+		want := []string{"inline-a", "inline-b", filePEM}
+		if !slices.Equal(keys, want) {
+			t.Errorf("keys = %q, want %q", keys, want)
+		}
+	})
+	t.Run("inline keys only", func(t *testing.T) {
+		cfg := Config{
+			Housekeeping: HousekeepingConfig{JWTPublicKeys: []string{"a"}},
+		}
+		keys, err := cfg.HousekeepingKeys()
+		if err != nil {
+			t.Fatalf("HousekeepingKeys: %v", err)
+		}
+		if !slices.Equal(keys, []string{"a"}) {
+			t.Errorf("keys = %q, want [a]", keys)
+		}
+	})
+	t.Run("missing file error names the path", func(t *testing.T) {
+		missing := filepath.Join(t.TempDir(), "no-such.pem")
+		cfg := Config{
+			Housekeeping: HousekeepingConfig{JWTPublicKeyFiles: []string{missing}},
+		}
+		if _, err := cfg.HousekeepingKeys(); err == nil {
+			t.Fatal("expected error, got nil")
+		} else if !strings.Contains(err.Error(), missing) {
+			t.Errorf("error %q does not mention path %q", err.Error(), missing)
+		}
+	})
+}
+
+func TestRealmJWTPublicKey(t *testing.T) {
+	t.Run("file PEM read and trimmed", func(t *testing.T) {
+		filePEM := "-----BEGIN PUBLIC KEY-----\nrealm-key\n-----END PUBLIC KEY-----"
+		cfg := Config{
+			Realm: RealmConfig{JWTPublicKeyFile: writePEMFile(t, "\n"+filePEM+"\n\n")},
+		}
+		got, err := cfg.RealmJWTPublicKey()
+		if err != nil {
+			t.Fatalf("RealmJWTPublicKey: %v", err)
+		}
+		if got != filePEM {
+			t.Errorf("key = %q, want %q", got, filePEM)
+		}
+	})
+	t.Run("inline wins over file, not trimmed", func(t *testing.T) {
+		cfg := Config{
+			Realm: RealmConfig{
+				JWTPublicKey:     "\n inline-pem \n",
+				JWTPublicKeyFile: filepath.Join(t.TempDir(), "no-such.pem"),
+			},
+		}
+		got, err := cfg.RealmJWTPublicKey()
+		if err != nil {
+			t.Fatalf("RealmJWTPublicKey: %v", err)
+		}
+		if got != "\n inline-pem \n" {
+			t.Errorf("key = %q, want inline block verbatim", got)
+		}
+	})
+	t.Run("neither set returns empty", func(t *testing.T) {
+		var cfg Config
+		got, err := cfg.RealmJWTPublicKey()
+		if err != nil {
+			t.Fatalf("RealmJWTPublicKey: %v", err)
+		}
+		if got != "" {
+			t.Errorf("key = %q, want empty", got)
+		}
+	})
+	t.Run("missing file error names the path", func(t *testing.T) {
+		missing := filepath.Join(t.TempDir(), "no-such.pem")
+		cfg := Config{Realm: RealmConfig{JWTPublicKeyFile: missing}}
+		if _, err := cfg.RealmJWTPublicKey(); err == nil {
+			t.Fatal("expected error, got nil")
+		} else if !strings.Contains(err.Error(), missing) {
+			t.Errorf("error %q does not mention path %q", err.Error(), missing)
+		}
+	})
 }
 
 func TestDefaultsAndPrecedence(t *testing.T) {
