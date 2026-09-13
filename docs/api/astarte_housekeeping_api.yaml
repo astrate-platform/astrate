@@ -427,7 +427,7 @@ components:
             $ref: "#/components/schemas/ErrorDetail"
           example:
             errors:
-              detail: "housekeeping: validation failed: realm name must not be empty"
+              detail: "realm_name can't be blank"
 
     InternalServerError:
       description: Internal Server Error — unexpected failure.
