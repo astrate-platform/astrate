@@ -135,12 +135,9 @@ func (s *Store) runMigrations() error {
 }
 
 // probeCapabilities detects optional database features once at startup.
-//
-// TODO(extension point, docs/ROADMAP.md §0.1 rule 3 / docs/DESIGN.md §2.5):
-// when timescaledb_toolkit is present, Downsample should switch from the
-// time_bucket+avg default to toolkit lttb() downsampling. The probe already
-// records availability in s.hasToolkit; the time_bucket path in
-// datastreams.go is the always-working default.
+// The toolkit result is recorded in s.hasToolkit and exposed to callers via
+// HasToolkitLTTB, which selects the lttb() path (DownsampleLTTB) over the
+// time_bucket+avg default (Downsample) — docs/DESIGN.md §2.5.
 func (s *Store) probeCapabilities(ctx context.Context) error {
 	const q = `SELECT EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'timescaledb_toolkit')`
 	if err := s.pool.QueryRow(ctx, q).Scan(&s.hasToolkit); err != nil {
