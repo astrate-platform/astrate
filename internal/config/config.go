@@ -253,7 +253,11 @@ func applyEnv(cfg *Config) error {
 	str("ASTRATE_LOG_FORMAT", &cfg.Log.Format)
 
 	if v, ok := os.LookupEnv("ASTRATE_MQTT_INSECURE_DEV_MODE"); ok {
-		cfg.MQTT.InsecureDevMode, _ = strconv.ParseBool(v)
+		b, err := strconv.ParseBool(v)
+		if err != nil {
+			return fmt.Errorf("config: mqtt.insecure_dev_mode %q must be a boolean", v)
+		}
+		cfg.MQTT.InsecureDevMode = b
 	}
 	// Like the realm-deletion gate above: the shard count is a fail-loud
 	// value — a malformed ASTRATE_ENGINE_SHARDS says operator error rather

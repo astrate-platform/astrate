@@ -383,6 +383,49 @@ insecure_dev_mode = true
 	})
 }
 
+func TestMQTTInsecureDevModeEnv(t *testing.T) {
+	const env = "ASTRATE_MQTT_INSECURE_DEV_MODE"
+	body := `
+[database]
+dsn = "x"
+[mqtt]
+insecure_dev_mode = true
+tls_cert_file = "cert.pem"
+tls_key_file = "key.pem"
+`
+	load := func(t *testing.T) (Config, error) {
+		t.Helper()
+		return Load(writeTOML(t, body))
+	}
+
+	t.Run("env overrides toml", func(t *testing.T) {
+		t.Setenv(env, "false")
+		cfg, err := load(t)
+		if err != nil {
+			t.Fatalf("Load: %v", err)
+		}
+		if cfg.MQTT.InsecureDevMode {
+			t.Errorf("env %s=false → insecure_dev_mode true, want false", env)
+		}
+	})
+	t.Run("true parses", func(t *testing.T) {
+		t.Setenv(env, "true")
+		cfg, err := load(t)
+		if err != nil {
+			t.Fatalf("Load: %v", err)
+		}
+		if !cfg.MQTT.InsecureDevMode {
+			t.Errorf("env %s=true → insecure_dev_mode false, want true", env)
+		}
+	})
+	t.Run("yes fails loud", func(t *testing.T) {
+		t.Setenv(env, "yes")
+		if _, err := load(t); err == nil {
+			t.Error("malformed insecure_dev_mode env: got nil error")
+		}
+	})
+}
+
 func TestHousekeepingRealmDeletionDisabledEnv(t *testing.T) {
 	const env = "ASTRATE_HOUSEKEEPING_REALM_DELETION_DISABLED"
 	body := `
