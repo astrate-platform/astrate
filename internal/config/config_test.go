@@ -352,6 +352,37 @@ insecure_dev_mode = true
 	})
 }
 
+func TestEngineShardsEnv(t *testing.T) {
+	const env = "ASTRATE_ENGINE_SHARDS"
+	body := `
+[database]
+dsn = "x"
+[mqtt]
+insecure_dev_mode = true
+`
+	load := func(t *testing.T) (Config, error) {
+		t.Helper()
+		return Load(writeTOML(t, body))
+	}
+
+	t.Run("valid applies", func(t *testing.T) {
+		t.Setenv(env, "4")
+		cfg, err := load(t)
+		if err != nil {
+			t.Fatalf("Load: %v", err)
+		}
+		if cfg.Engine.Shards != 4 {
+			t.Errorf("env %s=4 → shards %d, want 4", env, cfg.Engine.Shards)
+		}
+	})
+	t.Run("banana fails loud", func(t *testing.T) {
+		t.Setenv(env, "banana")
+		if _, err := load(t); err == nil {
+			t.Error("malformed shards env: got nil error")
+		}
+	})
+}
+
 func TestHousekeepingRealmDeletionDisabledEnv(t *testing.T) {
 	const env = "ASTRATE_HOUSEKEEPING_REALM_DELETION_DISABLED"
 	body := `

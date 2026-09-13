@@ -255,10 +255,15 @@ func applyEnv(cfg *Config) error {
 	if v, ok := os.LookupEnv("ASTRATE_MQTT_INSECURE_DEV_MODE"); ok {
 		cfg.MQTT.InsecureDevMode, _ = strconv.ParseBool(v)
 	}
+	// Like the realm-deletion gate above: the shard count is a fail-loud
+	// value — a malformed ASTRATE_ENGINE_SHARDS says operator error rather
+	// than silently keeping the TOML/default count.
 	if v, ok := os.LookupEnv("ASTRATE_ENGINE_SHARDS"); ok {
-		if n, err := strconv.Atoi(v); err == nil {
-			cfg.Engine.Shards = n
+		n, err := strconv.Atoi(v)
+		if err != nil {
+			return fmt.Errorf("config: engine.shards %q must be an integer", v)
 		}
+		cfg.Engine.Shards = n
 	}
 
 	// The realm default-retention override (#73) accepts both the ASTRATE_-
