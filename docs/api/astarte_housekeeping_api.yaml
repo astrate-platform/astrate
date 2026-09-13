@@ -179,8 +179,6 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
-        "405":
-          $ref: "#/components/responses/MethodNotAllowed"
         "422":
           $ref: "#/components/responses/ValidationErrors"
         "500":
@@ -204,6 +202,10 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+        "422":
+          $ref: "#/components/responses/UnprocessableDeletion"
         "500":
           $ref: "#/components/responses/InternalServerError"
 
@@ -395,6 +397,17 @@ components:
             errors:
               error_name:
                 - invalid_update_parameters
+
+    UnprocessableDeletion:
+      description: Unprocessable Entity — realm has devices still connected and cannot be deleted.
+      content:
+        application/json; charset=utf-8:
+          schema:
+            $ref: "#/components/schemas/FieldErrorsDetail"
+          example:
+            errors:
+              error_name:
+                - connected_devices_present
 
     Conflict:
       description: Conflict — resource already exists (e.g. realm name taken).
