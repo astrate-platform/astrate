@@ -130,6 +130,19 @@ func TestMiddleware(t *testing.T) {
 		testutil.Golden(t, "envelope_403.json", w.Body.Bytes())
 	})
 
+	t.Run("NoAstarteClaims403", func(t *testing.T) {
+		// A validly signed token carrying no Astarte claims authenticates
+		// (signature ok) but authorizes nothing: 403, not 401. Every other
+		// 403 fixture has some claim on the wrong surface; this pins the
+		// grant-less path (empty grants map -> Authorizes false).
+		grantlessToken := signToken(t, jwt.SigningMethodRS256, tk.rsaKey, jwt.MapClaims{})
+		w := do(mux, "POST", "/pairing/v1/test/agent/devices", grantlessToken)
+		if w.Code != http.StatusForbidden {
+			t.Fatalf("status: got %d, want 403", w.Code)
+		}
+		testutil.Golden(t, "envelope_403.json", w.Body.Bytes())
+	})
+
 	t.Run("Authorized200", func(t *testing.T) {
 		w := do(mux, "POST", "/pairing/v1/test/agent/devices", pairingToken)
 		if w.Code != http.StatusOK {
