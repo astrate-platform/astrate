@@ -129,6 +129,29 @@ func TestCacheHitHonoursExpiry(t *testing.T) {
 	}
 }
 
+func TestNewCacheSizesBelowOneFallBackToDefault(t *testing.T) {
+	tk := keys(t)
+	pubPEM := publicPEM(t, &tk.rsaKey.PublicKey)
+	token := signToken(t, jwt.SigningMethodRS256, tk.rsaKey, jwt.MapClaims{
+		"a_pa": []string{".*::.*"},
+		"exp":  time.Now().Add(time.Hour).Unix(),
+	})
+
+	for _, size := range []int{0, -1} {
+		c := NewCache(size)
+		if c.lru.Len() != 0 {
+			t.Fatalf("NewCache(%d): fresh cache holds %d entries, want 0", size, c.lru.Len())
+		}
+		tok, err := c.Verify(token, []string{pubPEM})
+		if err != nil {
+			t.Fatalf("NewCache(%d): Verify failed: %v", size, err)
+		}
+		if !tok.Authorizes(ClaimPairing, "POST", "x") {
+			t.Fatalf("NewCache(%d): Verify returned a token without the signed claims", size)
+		}
+	}
+}
+
 func TestCacheFailedVerificationNotCached(t *testing.T) {
 	tk := keys(t)
 	pubPEM := publicPEM(t, &tk.ecKey.PublicKey) // wrong key on purpose
