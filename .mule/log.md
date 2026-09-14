@@ -81,3 +81,4 @@ layer can actually do — read it before deciding whether a kind of task is wort
 | 2026-09-13 | docs-sync-hk-validation-example | done | 68s | d762f00 |
 | 2026-09-14 | auth-iat-not-required-test | done | 257s | 6524c7f |
 | 2026-09-14 | auth-empty-claims-403-test | done | 348s | b91247c |
+| 2026-09-14 | auth-cache-default-size-test | done | 157s | 874797b |
