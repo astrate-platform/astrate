@@ -200,6 +200,26 @@ func TestVerifyKeyRotation(t *testing.T) {
 	}
 }
 
+func TestVerifyFutureIatAccepted(t *testing.T) {
+	tk := keys(t)
+	// iat is not validated (upstream parity, jwt.go:104-105). A token whose
+	// iat is in the future, with no exp/nbf, must still verify — a regression
+	// that adds jwt.WithIssuedAt to the parser would silently reject tokens
+	// from skewed-clock issuers.
+	futureIat := time.Now().Add(time.Hour).Unix()
+	s := signToken(t, jwt.SigningMethodRS256, tk.rsaKey, jwt.MapClaims{
+		"a_pa": []string{".*::.*"},
+		"iat":  futureIat,
+	})
+	tok, err := Verify(s, []crypto.PublicKey{&tk.rsaKey.PublicKey}, time.Now)
+	if err != nil {
+		t.Fatalf("Verify with future iat: %v", err)
+	}
+	if _, ok := tok.ExpiresAt(); ok {
+		t.Error("ExpiresAt: want none for exp-less token")
+	}
+}
+
 func TestParsePublicKeysPEM(t *testing.T) {
 	tk := keys(t)
 
