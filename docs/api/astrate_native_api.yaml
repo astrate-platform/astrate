@@ -290,8 +290,7 @@ paths:
 
         **SSE protocol:** each event is a `data:` frame followed by a blank line.
 
-        Authentication: `a_ch` realm JWT (via Authorization header or
-        `?token=` query parameter).
+        Authentication: `a_ch` realm JWT via Authorization header.
       tags: [WebSocket]
       parameters:
         - $ref: "#/components/parameters/RealmName"
