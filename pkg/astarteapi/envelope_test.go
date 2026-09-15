@@ -68,6 +68,24 @@ func TestGoldenEnvelopes(t *testing.T) {
 			},
 		},
 		{
+			name: "data with nil metadata", golden: "data_nil_metadata.json", wantStatus: 200,
+			write: func(w http.ResponseWriter) error {
+				// nil metadata must omit the key entirely, not emit null.
+				return astarteapi.WriteDataWithMetadata(w, 200, []string{"dT6hS2W9TT6LEnP25ks_lg"}, nil)
+			},
+		},
+		{
+			name: "data with metadata", golden: "data_metadata.json", wantStatus: 200,
+			write: func(w http.ResponseWriter) error {
+				// Realistic format=table shape from renderIndividual.
+				return astarteapi.WriteDataWithMetadata(w, 200, []string{"dT6hS2W9TT6LEnP25ks_lg"},
+					map[string]any{
+						"columns":      map[string]int{"timestamp": 0, "temperature": 1},
+						"table_header": []string{"timestamp", "temperature"},
+					})
+			},
+		},
+		{
 			name: "bad request", golden: "error_bad_request.json", wantStatus: 400,
 			write: astarteapi.WriteBadRequest,
 		},
