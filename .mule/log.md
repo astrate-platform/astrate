@@ -85,3 +85,4 @@ layer can actually do — read it before deciding whether a kind of task is wort
 | 2026-09-15 | hk-zero-retention-asymmetry | done | 904s | 015a706 |
 | 2026-09-15 | hk-zero-reglimit-create-asymmetry | blocked | 37s | opencode exited 1 |
 | 2026-09-15 | hk-zero-retention-asymmetry | done | 567s | 203af1c |
+| 2026-09-15 | docs-sync-native-socket-query-token-auth | done | 98s | 8148aae |
