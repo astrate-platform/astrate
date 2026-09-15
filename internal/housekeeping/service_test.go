@@ -178,6 +178,59 @@ func TestCreateRealmDefaultRetention(t *testing.T) {
 	})
 }
 
+// TestCreateRealmZeroRetentionUnsets pins the upstream-parity behaviour of
+// datastream_maximum_storage_retention: 0 is a valid value but means unset,
+// exactly like PATCH's 0→ClearRetention — upstream's engine folds retention 0
+// to nil at the DB layer ("ScyllaDB considers TTL=0 as unset", Astarte
+// v1.2.0). An explicit 0 must not pick up the configured default (#73).
+func TestCreateRealmZeroRetentionUnsets(t *testing.T) {
+	ctx := context.Background()
+	zero := int64(0)
+	def := int64(3600)
+
+	t.Run("explicit zero stores nil", func(t *testing.T) {
+		st := &fakeStore{}
+		svc := NewService(st, &fakeSealer{}, nil, nil)
+
+		rv, err := svc.CreateRealm(ctx, "zerorealm", "key", nil, &zero)
+		if err != nil {
+			t.Fatalf("CreateRealm: %v", err)
+		}
+		if got := st.created[0].DatastreamMaximumStorageRetention; got != nil {
+			t.Errorf("store received retention = %v, want nil (unset)", got)
+		}
+		if rv.DatastreamMaximumStorageRetention != nil {
+			t.Errorf("view retention = %v, want nil", *rv.DatastreamMaximumStorageRetention)
+		}
+	})
+
+	t.Run("explicit zero beats configured default", func(t *testing.T) {
+		st := &fakeStore{}
+		svc := NewService(st, &fakeSealer{}, nil, nil).
+			WithDefaultDatastreamMaximumStorageRetention(&def)
+
+		if _, err := svc.CreateRealm(ctx, "zerorealm2", "key", nil, &zero); err != nil {
+			t.Fatalf("CreateRealm: %v", err)
+		}
+		if got := st.created[0].DatastreamMaximumStorageRetention; got != nil {
+			t.Errorf("store received retention = %v, want nil, not the default %d", got, def)
+		}
+	})
+
+	t.Run("positive retention is stored", func(t *testing.T) {
+		st := &fakeStore{}
+		svc := NewService(st, &fakeSealer{}, nil, nil)
+
+		pos := int64(60)
+		if _, err := svc.CreateRealm(ctx, "zerorealm3", "key", nil, &pos); err != nil {
+			t.Fatalf("CreateRealm: %v", err)
+		}
+		if got := st.created[0].DatastreamMaximumStorageRetention; got == nil || *got != pos {
+			t.Errorf("store received retention = %v, want 60", got)
+		}
+	})
+}
+
 // TestDeleteRealmGating covers #75 at the service level: the deletion-disabled
 // flag answers ErrDeletionDisabled before any store access, and a realm with
 // connected devices answers ErrConnectedDevicesPresent without deleting.

@@ -148,6 +148,14 @@ func (s *Service) CreateRealm(ctx context.Context, name, jwtPublicKeyPEM string,
 	}
 	if retention == nil {
 		retention = s.defaultRetention
+	} else if *retention == 0 {
+		// 0 ≡ unset, upstream parity (measured Astarte v1.2.0): the engine
+		// folds retention 0 to nil at the DB layer ("ScyllaDB considers
+		// TTL=0 as unset"), PATCH maps 0 to ClearRetention, and the store's
+		// retention sweep only treats values > 0 as ceilings. An explicit 0
+		// is still explicit: it must not pick up the configured default
+		// (#73), so fold before the nil-injection above.
+		retention = nil
 	}
 
 	realmCA, err := ca.Generate(name, 0)
