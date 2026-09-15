@@ -84,3 +84,4 @@ layer can actually do — read it before deciding whether a kind of task is wort
 | 2026-09-14 | auth-cache-default-size-test | done | 157s | 874797b |
 | 2026-09-15 | hk-zero-retention-asymmetry | done | 904s | 015a706 |
 | 2026-09-15 | hk-zero-reglimit-create-asymmetry | blocked | 37s | opencode exited 1 |
+| 2026-09-15 | hk-zero-retention-asymmetry | done | 567s | 203af1c |
