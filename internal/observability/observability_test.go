@@ -26,6 +26,8 @@ func TestMetricsExposesGauges(t *testing.T) {
 	for _, want := range []string{
 		"astrate_broker_sessions 3",
 		"astrate_db_pool_acquired_conns 2",
+		"astrate_db_pool_idle_conns 5",
+		"astrate_db_pool_total_conns 7",
 		"astrate_db_pool_max_conns 10",
 		"go_goroutines", // runtime collector present
 	} {
