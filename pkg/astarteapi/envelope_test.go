@@ -128,12 +128,34 @@ func TestGoldenEnvelopes(t *testing.T) {
 			write: func(w http.ResponseWriter) error {
 				// Upstream nests changeset errors inside the failing part of a
 				// trigger definition; keys must come out sorted with no HTML
-				// escaping and no trailing newline.
+				// escaping and without a trailing newline.
 				return astarteapi.WriteRawErrors(w, 422, map[string]any{
 					"action": map[string][]string{
 						"http_url":    {"should be at least 8 character(s)", "must be a valid http(s) URL"},
 						"http_method": {"is invalid"},
 					},
+				})
+			},
+		},
+		{
+			name: "field errors multi-key", golden: "error_fields_multikey.json", wantStatus: 422,
+			write: func(w http.ResponseWriter) error {
+				// Multi-key field errors: top-level map keys must be sorted
+				// on the wire so a sort regression cannot pass the suite.
+				return astarteapi.WriteFieldErrors(w, 422, map[string][]string{
+					"name":  {"must not be empty"},
+					"email": {"is invalid"},
+				})
+			},
+		},
+		{
+			name: "raw errors multi-key", golden: "error_raw_multikey.json", wantStatus: 422,
+			write: func(w http.ResponseWriter) error {
+				// Multi-key raw errors: top-level map keys must be sorted
+				// on the wire so a sort regression cannot pass the suite.
+				return astarteapi.WriteRawErrors(w, 422, map[string][]string{
+					"http_url":    {"should be at least 8 character(s)"},
+					"http_method": {"is invalid"},
 				})
 			},
 		},
