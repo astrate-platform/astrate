@@ -89,3 +89,4 @@ layer can actually do — read it before deciding whether a kind of task is wort
 | 2026-09-15 | astarteapi-metadata-envelope-test | done | 238s | 1365cb8 |
 | 2026-09-16 | astarteapi-multikey-sorted-golden | done | 215s | bfffbed |
 | 2026-09-16 | docs-sync-pairing-deviceendpoints-dead-404-403 | done | 379s | f0d6a4d |
+| 2026-09-16 | docs-sync-pairing-version-404-unreachable | done | 200s | bc73f65 |
