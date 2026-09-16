@@ -223,8 +223,6 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "403":
           $ref: "#/components/responses/Forbidden"
-        "404":
-          $ref: "#/components/responses/DeviceNotFound"
         "422":
           $ref: "#/components/responses/ValidationError"
         "429":
@@ -263,10 +261,6 @@ paths:
                   version: "0.1.0-test"
         "401":
           $ref: "#/components/responses/Unauthorized"
-        "403":
-          $ref: "#/components/responses/Forbidden"
-        "404":
-          $ref: "#/components/responses/DeviceNotFound"
         "500":
           $ref: "#/components/responses/InternalServerError"
 
@@ -336,8 +330,6 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "403":
           $ref: "#/components/responses/Forbidden"
-        "404":
-          $ref: "#/components/responses/DeviceNotFound"
         "422":
           $ref: "#/components/responses/ValidationError"
         "500":
