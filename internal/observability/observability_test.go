@@ -53,6 +53,9 @@ func TestReadiness(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Errorf("health = %d, want 200", rec.Code)
 	}
+	if ct := rec.Header().Get("Content-Type"); ct != "application/json" {
+		t.Errorf("health Content-Type = %q, want application/json", ct)
+	}
 
 	// One failing dependency makes readiness 503.
 	rec = httptest.NewRecorder()
@@ -62,6 +65,9 @@ func TestReadiness(t *testing.T) {
 	}
 	if !strings.Contains(rec.Body.String(), "down") {
 		t.Errorf("readiness body should name the failing check: %s", rec.Body)
+	}
+	if ct := rec.Header().Get("Content-Type"); ct != "application/json" {
+		t.Errorf("readiness Content-Type = %q, want application/json", ct)
 	}
 }
 
@@ -110,6 +116,9 @@ func TestReadinessAllOK(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Errorf("readiness = %d, want 200", rec.Code)
 	}
+	if ct := rec.Header().Get("Content-Type"); ct != "application/json" {
+		t.Errorf("readiness Content-Type = %q, want application/json", ct)
+	}
 }
 
 func TestMountServiceCompat(t *testing.T) {
@@ -128,6 +137,9 @@ func TestMountServiceCompat(t *testing.T) {
 			}
 			if body := rec.Body.String(); body != `{"data":{"status":"ok"}}` {
 				t.Errorf("%s/health body = %s", svc, body)
+			}
+			if ct := rec.Header().Get("Content-Type"); ct != "application/json" {
+				t.Errorf("%s/health Content-Type = %q, want application/json", svc, ct)
 			}
 		}
 	})
@@ -148,6 +160,9 @@ func TestMountServiceCompat(t *testing.T) {
 			}
 			if body := rec.Body.String(); body != `{"data":{"status":"unhealthy"}}` {
 				t.Errorf("%s/health body = %s", svc, body)
+			}
+			if ct := rec.Header().Get("Content-Type"); ct != "application/json" {
+				t.Errorf("%s/health Content-Type = %q, want application/json", svc, ct)
 			}
 		}
 	})
