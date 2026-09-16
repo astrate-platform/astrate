@@ -93,15 +93,6 @@ paths:
                     description: Version string.
               example:
                 data: "1.1.0"
-        "404":
-          description: Unknown realm.
-          content:
-            application/json; charset=utf-8:
-              schema:
-                $ref: "#/components/schemas/ErrorDetail"
-              example:
-                errors:
-                  detail: Not Found
 
   /pairing/v1/{realm}/agent/devices:
     post:
