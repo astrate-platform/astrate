@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestMetricsExposesGauges(t *testing.T) {
@@ -59,6 +60,40 @@ func TestReadiness(t *testing.T) {
 	}
 	if !strings.Contains(rec.Body.String(), "down") {
 		t.Errorf("readiness body should name the failing check: %s", rec.Body)
+	}
+}
+
+func TestReadinessWedgedCheckBoundedByBudget(t *testing.T) {
+	// A ctx-honoring wedged dependency blocks until the deadline; the
+	// readiness endpoint must return 503 within the injected budget instead
+	// of hanging for the full default readinessTimeout.
+	const budget = 50 * time.Millisecond
+
+	h := NewHealth(NewMetrics().Handler())
+	h.timeout = budget
+	// Context deadline exceeded is the report a wedged-but-cooperative
+	// dependency gives when its probe is cancelled.
+	h.AddReadiness("database", func(ctx context.Context) error {
+		<-ctx.Done()
+		return ctx.Err()
+	})
+	mux := http.NewServeMux()
+	h.Mount(mux)
+
+	start := time.Now()
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/astrate/v1/readiness", nil))
+	elapsed := time.Since(start)
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Errorf("readiness = %d, want 503", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), "database") ||
+		!strings.Contains(rec.Body.String(), "deadline exceeded") {
+		t.Errorf("readiness body should report the wedged check: %s", rec.Body)
+	}
+	if elapsed > budget*5 {
+		t.Errorf("readiness took %s, want it bounded by injected budget %s", elapsed, budget)
 	}
 }
 

@@ -21,6 +21,7 @@ type Check func(ctx context.Context) error
 type Health struct {
 	metrics http.Handler
 	ready   []namedCheck
+	timeout time.Duration
 }
 
 type namedCheck struct {
@@ -30,7 +31,7 @@ type namedCheck struct {
 
 // NewHealth builds the surface around an existing metrics handler.
 func NewHealth(metrics http.Handler) *Health {
-	return &Health{metrics: metrics}
+	return &Health{metrics: metrics, timeout: readinessTimeout}
 }
 
 // AddReadiness registers a named dependency probed by /readiness.
@@ -53,7 +54,7 @@ func (h *Health) handleHealth(w http.ResponseWriter, _ *http.Request) {
 // handleReadiness runs every dependency check; any failure yields 503 with the
 // per-check status so operators see which dependency is down.
 func (h *Health) handleReadiness(w http.ResponseWriter, r *http.Request) {
-	ctx, cancel := context.WithTimeout(r.Context(), readinessTimeout)
+	ctx, cancel := context.WithTimeout(r.Context(), h.timeout)
 	defer cancel()
 
 	checks := make(map[string]string, len(h.ready))
