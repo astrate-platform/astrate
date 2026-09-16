@@ -92,3 +92,4 @@ layer can actually do — read it before deciding whether a kind of task is wort
 | 2026-09-16 | docs-sync-pairing-version-404-unreachable | done | 200s | bc73f65 |
 | 2026-09-16 | observability-readiness-wedge-test | done | 178s | 4ef2e23 |
 | 2026-09-16 | observability-dbpool-gauge-coverage | done | 62s | 19cd4f1 |
+| 2026-09-16 | observability-health-content-type-test | done | 250s | f6c27f5 |
