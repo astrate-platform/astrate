@@ -92,7 +92,7 @@ paths:
                     type: string
                     description: Version string.
               example:
-                data: "1.1.0"
+                data: "1.2.2"
 
   /pairing/v1/{realm}/agent/devices:
     post:

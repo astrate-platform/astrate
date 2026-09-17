@@ -393,9 +393,7 @@ func mountAPIs(cfg config.Config, st *store.Store, e *engine.Engine, b *broker.B
 	for _, svc := range []string{"appengine", "realmmanagement", "pairing", "housekeeping"} {
 		observability.MountVersionCompat(mux, svc, version)
 	}
-	mux.Handle("GET /appengine/v1/{realm}/version",
-		mw.RequireRealmAny(auth.ClaimAppEngine)(observability.VersionHandler(version)))
-	mux.Handle("GET /pairing/v1/{realm}/version", observability.VersionHandler(version))
+	mountRealmVersion(mux, mw)
 
 	metrics.RegisterBrokerSessions(func() float64 { return float64(b.SessionCount()) })
 	metrics.RegisterDBPool(func() observability.DBPoolStats {
@@ -423,6 +421,18 @@ func mountAPIs(cfg config.Config, st *store.Store, e *engine.Engine, b *broker.B
 		handler = httpx.CORS(cfg.HTTP.CORSAllowedOrigins)(handler)
 	}
 	return handler, hkSvc, nil
+}
+
+// mountRealmVersion registers the realm-scoped version endpoints observed on
+// upstream 1.2.0 (test/conformance/upstream/verify-versions.json): AppEngine's
+// requires a realm token, pairing's is public. Both report the emulated
+// upstream API level, the value the Astarte Dashboard feature-gates its UI on
+// (COMPATIBILITY.md deviation 10) — not Astrate's build version. RM's
+// realm-scoped route is served by its own API.
+func mountRealmVersion(mux *http.ServeMux, mw *auth.Middleware) {
+	mux.Handle("GET /appengine/v1/{realm}/version",
+		mw.RequireRealmAny(auth.ClaimAppEngine)(observability.VersionHandler(realm.APICompatVersion)))
+	mux.Handle("GET /pairing/v1/{realm}/version", observability.VersionHandler(realm.APICompatVersion))
 }
 
 // brokerReadiness reports the broker listener as ready when a TCP connection to
