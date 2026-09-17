@@ -24,6 +24,9 @@ func CORS(allowedOrigins []string) func(http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			origin := r.Header.Get("Origin")
 			if origin == "" || (!wildcard && !allowed[origin]) {
+				if !wildcard {
+					w.Header().Add("Vary", "Origin")
+				}
 				next.ServeHTTP(w, r)
 				return
 			}

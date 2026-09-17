@@ -57,6 +57,9 @@ func TestCORSActualRequestStamped(t *testing.T) {
 	if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "http://localhost:4040" {
 		t.Errorf("Allow-Origin = %q", got)
 	}
+	if got := rec.Header().Get("Vary"); got != "Origin" {
+		t.Errorf("Vary = %q, want Origin", got)
+	}
 }
 
 func TestCORSDisallowedOriginPassesThroughUnstamped(t *testing.T) {
@@ -68,6 +71,9 @@ func TestCORSDisallowedOriginPassesThroughUnstamped(t *testing.T) {
 	}
 	if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "" {
 		t.Errorf("Allow-Origin stamped for disallowed origin: %q", got)
+	}
+	if got := rec.Header().Get("Vary"); got != "Origin" {
+		t.Errorf("Vary = %q, want Origin on the disallowed-origin pass-through", got)
 	}
 	// A preflight from a disallowed origin reaches the mux (which 404s/405s it);
 	// no CORS approval is expressed either way.
@@ -99,6 +105,9 @@ func TestCORSNoOriginUntouched(t *testing.T) {
 	}
 	if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "" {
 		t.Errorf("Allow-Origin stamped without Origin header: %q", got)
+	}
+	if got := rec.Header().Get("Vary"); got != "Origin" {
+		t.Errorf("Vary = %q, want Origin on the headerless pass-through", got)
 	}
 }
 
