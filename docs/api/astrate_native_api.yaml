@@ -187,76 +187,80 @@ paths:
       operationId: getAppEngineVersion
       summary: AppEngine API version
       description: |
-        Upstream-parity unauthenticated version endpoint. Returns the API
-        compatibility version of the AppEngine service; the Astarte Dashboard
-        reads one per service at startup.
+        Upstream-parity unauthenticated version endpoint. Returns the Astrate
+        build version serving the AppEngine service; the Astarte Dashboard
+        reads one per service at startup. The emulated upstream API level is
+        served by the realm-scoped /v1/{realm}/version endpoints.
       tags: [Compat Health]
       responses:
         "200":
-          description: API compatibility version.
+          description: Astrate build version.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/DataEnvelopeVersion"
               example:
-                data: "1.2.2"
+                data: "0.1.0-dev"
 
   /realmmanagement/version:
     get:
       operationId: getRealmManagementVersion
       summary: Realm Management API version
       description: |
-        Upstream-parity unauthenticated version endpoint. Returns the API
-        compatibility version of the Realm Management service; the Astarte
-        Dashboard reads one per service at startup.
+        Upstream-parity unauthenticated version endpoint. Returns the Astrate
+        build version serving the Realm Management service; the Astarte
+        Dashboard reads one per service at startup. The emulated upstream API
+        level is served by the realm-scoped /v1/{realm}/version endpoints.
       tags: [Compat Health]
       responses:
         "200":
-          description: API compatibility version.
+          description: Astrate build version.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/DataEnvelopeVersion"
               example:
-                data: "1.2.2"
+                data: "0.1.0-dev"
 
   /pairing/version:
     get:
       operationId: getPairingVersion
       summary: Pairing API version
       description: |
-        Upstream-parity unauthenticated version endpoint. Returns the API
-        compatibility version of the Pairing service; the Astarte Dashboard
-        reads one per service at startup.
+        Upstream-parity unauthenticated version endpoint. Returns the Astrate
+        build version serving the Pairing service; the Astarte Dashboard reads
+        one per service at startup. The emulated upstream API level is served
+        by the realm-scoped /v1/{realm}/version endpoints.
       tags: [Compat Health]
       responses:
         "200":
-          description: API compatibility version.
+          description: Astrate build version.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/DataEnvelopeVersion"
               example:
-                data: "1.2.2"
+                data: "0.1.0-dev"
 
   /housekeeping/version:
     get:
       operationId: getHousekeepingVersion
       summary: Housekeeping API version
       description: |
-        Upstream-parity unauthenticated version endpoint. Returns the API
-        compatibility version of the Housekeeping service; the Astarte
-        Dashboard reads one per service at startup.
+        Upstream-parity unauthenticated version endpoint. Returns the Astrate
+        build version serving the Housekeeping service; the Astarte Dashboard
+        reads one per service at startup. The emulated upstream API level is
+        served by the realm-scoped /v1/{realm}/version endpoints.
       tags: [Compat Health]
       responses:
         "200":
-          description: API compatibility version.
+          description: Astrate build version.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/DataEnvelopeVersion"
               example:
-                data: "1.2.2"
+                data: "0.1.0-dev"
 
   # ── Native WebSocket (live stream) ──────────────────────────────────
 
@@ -413,7 +417,7 @@ components:
       properties:
         data:
           type: string
-          description: The service's API compatibility version.
+          description: The Astrate build version.
 
     ErrorDetail:
       type: object
