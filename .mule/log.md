@@ -95,3 +95,4 @@ layer can actually do — read it before deciding whether a kind of task is wort
 | 2026-09-16 | observability-health-content-type-test | done | 250s | f6c27f5 |
 | 2026-09-17 | docs-sync-pairing-version-value | done | 1059s | c69a164 |
 | 2026-09-17 | docs-sync-native-version-value | done | 503s | 08048b3 |
+| 2026-09-17 | httpx-cors-vary-origin-passthrough | done | 143s | 986c100 |
