@@ -342,7 +342,30 @@ paths:
         "409":
           $ref: "#/components/responses/Conflict"
         "422":
-          $ref: "#/components/responses/ValidationError"
+          description: Unprocessable Entity — trigger definition failed validation.
+          content:
+            application/json; charset=utf-8:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/ErrorDetail"
+                  - $ref: "#/components/schemas/TriggerErrorsDetail"
+              examples:
+                flat_detail:
+                  summary: Plain validation error
+                  value:
+                    errors:
+                      detail: "trigger requires a name"
+                nested_changeset:
+                  summary: Trigger compile failed — upstream nested changeset envelope
+                  value:
+                    errors:
+                      action:
+                        http_url:
+                          - "invalid url"
+                      simple_triggers:
+                        - type:
+                            - "bad type"
+                        - {}
         "500":
           $ref: "#/components/responses/InternalServerError"
 
@@ -1050,6 +1073,31 @@ components:
           properties:
             detail:
               type: string
+
+    TriggerErrorsDetail:
+      type: object
+      required: [errors]
+      properties:
+        errors:
+          type: object
+          description: Upstream nested changeset envelope for a failed trigger compile.
+          properties:
+            action:
+              type: object
+              description: Per-field error messages on the trigger action (changeset shape).
+              additionalProperties:
+                type: array
+                items:
+                  type: string
+            simple_triggers:
+              type: array
+              description: Index-aligned per-condition errors; empty objects mark entries without errors.
+              items:
+                type: object
+                additionalProperties:
+                  type: array
+                  items:
+                    type: string
 
   responses:
     BadRequest:
