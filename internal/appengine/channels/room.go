@@ -1,6 +1,7 @@
 package channels
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"sync"
@@ -16,6 +17,14 @@ const DefaultMailbox = 64
 // Bus is the subset of *stream.Bus a room needs. *stream.Bus satisfies it.
 type Bus interface {
 	Subscribe(realm string, f stream.Filter, buffer int) (<-chan stream.Event, func())
+}
+
+// GroupMembers lists the devices that belong to a group, so a group watch
+// delivers only its members' events (a group-scoped token authorizes
+// WATCH::groups/<name>/…, not every device in the realm). A *store.Store
+// satisfies it; tests supply a fake.
+type GroupMembers interface {
+	ListGroupMembers(ctx context.Context, realm, group string) ([]string, error)
 }
 
 // WatchRequest is the watch payload DTO, exactly as the client sends it.
@@ -34,21 +43,27 @@ type WatchRequest struct {
 }
 
 type watchEntry struct {
-	name     string
-	deviceID string
-	tg       *triggers.Trigger
+	name      string
+	deviceID  string
+	groupName string
+	// members holds the group's device IDs as encoded strings, resolved at
+	// Watch time; nil for a device-scoped watch (no membership filter).
+	members map[string]struct{}
+	tg      *triggers.Trigger
 }
 
 // Registry is a topic→room map.
 type Registry struct {
-	bus   Bus
-	mu    sync.Mutex
-	rooms map[string]*Room
+	bus    Bus
+	groups GroupMembers
+	mu     sync.Mutex
+	rooms  map[string]*Room
 }
 
-// NewRegistry creates a new Registry.
-func NewRegistry(b Bus) *Registry {
-	return &Registry{bus: b, rooms: make(map[string]*Room)}
+// NewRegistry creates a new Registry. groups resolves group watches'
+// membership; nil makes a group watch fail at Watch time.
+func NewRegistry(bus Bus, groups GroupMembers) *Registry {
+	return &Registry{bus: bus, groups: groups, rooms: make(map[string]*Room)}
 }
 
 // Join returns the room for topic, creating it on first join.
@@ -61,6 +76,7 @@ func (r *Registry) Join(realm, topic string) *Room {
 	ch, cancel := r.bus.Subscribe(realm, stream.Filter{}, 0)
 	rm := &Room{
 		reg:      r,
+		realm:    realm,
 		topic:    topic,
 		members:  make(map[*Member]struct{}),
 		events:   ch,
@@ -81,6 +97,7 @@ func (r *Registry) Rooms() int {
 // Room is one Phoenix topic.
 type Room struct {
 	reg      *Registry
+	realm    string
 	topic    string
 	watches  map[string]watchEntry
 	watchMu  sync.Mutex
@@ -119,8 +136,13 @@ func (rm *Room) AddMember(buffer int) *Member {
 	return m
 }
 
-// Watch compiles and stores a watch.
-func (rm *Room) Watch(req WatchRequest) error {
+// Watch compiles and stores a watch. A group watch resolves its membership
+// now and keeps the member set in the entry, so dispatch filters deliveries by
+// it: without that, a token scoped to WATCH::groups/<name>/… would receive
+// every realm event matching the trigger's interface/path/on. The group must
+// resolve here — a missing group, or no resolver in the registry, refuses the
+// watch.
+func (rm *Room) Watch(ctx context.Context, req WatchRequest) error {
 	rm.watchMu.Lock()
 	defer rm.watchMu.Unlock()
 	if req.Name == "" {
@@ -133,15 +155,40 @@ func (rm *Room) Watch(req WatchRequest) error {
 	if err != nil {
 		return fmt.Errorf("CompileCondition: %w", err)
 	}
+	var members map[string]struct{}
+	if req.GroupName != "" {
+		members, err = rm.resolveMembers(ctx, req.GroupName)
+		if err != nil {
+			return err
+		}
+	}
 	if rm.watches == nil {
 		rm.watches = make(map[string]watchEntry)
 	}
 	rm.watches[req.Name] = watchEntry{
-		name:     req.Name,
-		deviceID: req.DeviceID,
-		tg:       tg,
+		name:      req.Name,
+		deviceID:  req.DeviceID,
+		groupName: req.GroupName,
+		members:   members,
+		tg:        tg,
 	}
 	return nil
+}
+
+// resolveMembers resolves one group's devices to a lookup set of encoded IDs.
+func (rm *Room) resolveMembers(ctx context.Context, group string) (map[string]struct{}, error) {
+	if rm.reg.groups == nil {
+		return nil, fmt.Errorf("group watch of %q: no group-membership resolver", group)
+	}
+	ids, err := rm.reg.groups.ListGroupMembers(ctx, rm.realm, group)
+	if err != nil {
+		return nil, fmt.Errorf("resolving group %q: %w", group, err)
+	}
+	set := make(map[string]struct{}, len(ids))
+	for _, id := range ids {
+		set[id] = struct{}{}
+	}
+	return set, nil
 }
 
 // Unwatch removes a watch, reporting whether one was there.
@@ -196,6 +243,14 @@ func (rm *Room) dispatch() {
 		for _, w := range watches {
 			if w.deviceID != "" && w.deviceID != ev.DeviceID {
 				continue
+			}
+			// A group watch is scoped to its members, resolved at Watch time;
+			// an event from outside the group is the leak a group-scoped
+			// token must not see.
+			if w.members != nil {
+				if _, ok := w.members[ev.DeviceID]; !ok {
+					continue
+				}
 			}
 
 			var matched bool

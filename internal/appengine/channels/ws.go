@@ -34,10 +34,10 @@ type API struct {
 	cache *auth.Cache
 }
 
-// NewAPI creates an API backed by the given bus and key source.
-func NewAPI(bus Bus, keys auth.KeySource) *API {
+// NewAPI creates an API backed by the given bus, key source and group resolver.
+func NewAPI(bus Bus, keys auth.KeySource, groups GroupMembers) *API {
 	return &API{
-		reg:   NewRegistry(bus),
+		reg:   NewRegistry(bus, groups),
 		keys:  keys,
 		cache: auth.NewCache(auth.DefaultCacheSize),
 	}
@@ -356,7 +356,7 @@ func (s *session) handleWatch(f Frame) {
 		return
 	}
 
-	if err := j.room.Watch(req); err != nil {
+	if err := j.room.Watch(s.ctx, req); err != nil {
 		s.sendErr(f, "invalid trigger")
 		return
 	}

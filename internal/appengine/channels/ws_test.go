@@ -51,7 +51,7 @@ func setupTestAPI(t *testing.T) (*API, *rsa.PrivateKey) {
 	pub := string(pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: der}))
 	realm := &store.Realm{Name: testRealmName, JWTPublicKeysPEM: []string{pub}}
 	bus := &fakeBus{ch: make(chan stream.Event)}
-	api := NewAPI(bus, fakeRealmKeys{realm})
+	api := NewAPI(bus, fakeRealmKeys{realm}, nil)
 	return api, key
 }
 
@@ -372,7 +372,7 @@ func setupTestAPIWithBus(t *testing.T) (*API, *rsa.PrivateKey, *fakeBus) {
 	pub := string(pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: der}))
 	realm := &store.Realm{Name: testRealmName, JWTPublicKeysPEM: []string{pub}}
 	bus := &fakeBus{ch: make(chan stream.Event, 16)}
-	api := NewAPI(bus, fakeRealmKeys{realm})
+	api := NewAPI(bus, fakeRealmKeys{realm}, nil)
 	return api, key, bus
 }
 

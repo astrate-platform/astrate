@@ -233,7 +233,7 @@ func TestChannelsLiveEvents(t *testing.T) {
 	dev := newDevice(t)
 
 	mux := http.NewServeMux()
-	channels.NewAPI(env.engine.Bus(), env.st).Mount(mux)
+	channels.NewAPI(env.engine.Bus(), env.st, env.st).Mount(mux)
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
 

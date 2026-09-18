@@ -1,6 +1,7 @@
 package channels
 
 import (
+	"context"
 	"encoding/json"
 	"strings"
 	"sync/atomic"
@@ -24,6 +25,16 @@ func (f *fakeBus) cancelCalled() bool {
 	return f.cancelCount.Load() > 0
 }
 
+// fakeGroups resolves group membership from a static map: group name → encoded
+// device IDs. It is the container-free stand-in for *store.Store.
+type fakeGroups struct {
+	byGroup map[string][]string
+}
+
+func (f *fakeGroups) ListGroupMembers(_ context.Context, _ string, group string) ([]string, error) {
+	return f.byGroup[group], nil
+}
+
 const (
 	validDeviceIDA = "f0VMRgIBAQAAAAAAAAAAAA"
 	validDeviceIDB = "f0VMRgIBAQAAAAAAAAAAAQ"
@@ -31,7 +42,7 @@ const (
 
 func TestDashboardFourWatches(t *testing.T) {
 	bus := &fakeBus{ch: make(chan stream.Event, 16)}
-	reg := NewRegistry(bus)
+	reg := NewRegistry(bus, nil)
 	rm := reg.Join("test", "rooms:test:devices")
 
 	connReq := WatchRequest{
@@ -56,7 +67,7 @@ func TestDashboardFourWatches(t *testing.T) {
 	}
 
 	for _, req := range []WatchRequest{connReq, discReq, errReq, dataReq} {
-		if err := rm.Watch(req); err != nil {
+		if err := rm.Watch(context.Background(), req); err != nil {
 			t.Fatalf("Watch(%s): %v", req.Name, err)
 		}
 	}
@@ -138,7 +149,7 @@ func TestDashboardFourWatches(t *testing.T) {
 
 func TestDeviceIDFilterIsAdditive(t *testing.T) {
 	bus := &fakeBus{ch: make(chan stream.Event, 16)}
-	reg := NewRegistry(bus)
+	reg := NewRegistry(bus, nil)
 	rm := reg.Join("test", "rooms:test:devices")
 
 	dataReq := WatchRequest{
@@ -146,7 +157,7 @@ func TestDeviceIDFilterIsAdditive(t *testing.T) {
 		DeviceID:      validDeviceIDA,
 		SimpleTrigger: json.RawMessage(`{"type":"data_trigger","on":"incoming_data","interface_name":"*","value_match_operator":"*","match_path":"/*"}`),
 	}
-	if err := rm.Watch(dataReq); err != nil {
+	if err := rm.Watch(context.Background(), dataReq); err != nil {
 		t.Fatalf("Watch: %v", err)
 	}
 
@@ -163,16 +174,67 @@ func TestDeviceIDFilterIsAdditive(t *testing.T) {
 	}
 }
 
+func TestGroupWatchDeliversMembersOnly(t *testing.T) {
+	bus := &fakeBus{ch: make(chan stream.Event, 16)}
+	resolver := &fakeGroups{byGroup: map[string][]string{
+		"probe": {validDeviceIDA},
+	}}
+	reg := NewRegistry(bus, resolver)
+	rm := reg.Join("test", "rooms:test:devices")
+
+	// A group watch: WATCH::groups/probe/... authorizes the watch, but
+	// delivery must be confined to the group's members — the boundary a
+	// group-scoped token is granted. The trigger itself carries no device or
+	// group scope (upstream keeps group_name off the trigger), so without the
+	// resolved membership this watch would receive every realm event.
+	req := WatchRequest{
+		Name:      "group-data",
+		GroupName: "probe",
+		SimpleTrigger: json.RawMessage(
+			`{"type":"data_trigger","on":"incoming_data","interface_name":"*","value_match_operator":"*","match_path":"/*"}`),
+	}
+	if err := rm.Watch(context.Background(), req); err != nil {
+		t.Fatalf("Watch: %v", err)
+	}
+
+	m := rm.AddMember(0)
+	defer m.Leave()
+
+	now := time.Now().UTC().Truncate(time.Millisecond)
+
+	// The non-member publishes first. A leak would deliver it; the filter must
+	// swallow it.
+	bus.ch <- stream.Event{Kind: stream.KindIncomingData, DeviceID: validDeviceIDB, Interface: "org.example.V1", Path: "/sensor/temp", Value: 1.0, InterfaceMajor: 1, Timestamp: now}
+	select {
+	case ev := <-m.Events():
+		t.Fatalf("non-member event leaked through group watch: %+v", ev)
+	case <-time.After(300 * time.Millisecond):
+	}
+
+	bus.ch <- stream.Event{Kind: stream.KindIncomingData, DeviceID: validDeviceIDA, Interface: "org.example.V1", Path: "/sensor/temp", Value: 2.0, InterfaceMajor: 1, Timestamp: now}
+	select {
+	case ev := <-m.Events():
+		if ev.DeviceID != validDeviceIDA {
+			t.Errorf("event device %q, want %q", ev.DeviceID, validDeviceIDA)
+		}
+		if body, ok := ev.Event.(triggers.IncomingDataEvent); !ok || body.Path != "/sensor/temp" {
+			t.Fatalf("unexpected event %#v", ev.Event)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timeout waiting for member's event")
+	}
+}
+
 func TestFullMailboxDropsNeverBlocks(t *testing.T) {
 	bus := &fakeBus{ch: make(chan stream.Event, 16)}
-	reg := NewRegistry(bus)
+	reg := NewRegistry(bus, nil)
 	rm := reg.Join("test", "rooms:test:devices")
 
 	dataReq := WatchRequest{
 		Name:          "datatrigger",
 		SimpleTrigger: json.RawMessage(`{"type":"data_trigger","on":"incoming_data","interface_name":"*","value_match_operator":"*","match_path":"/*"}`),
 	}
-	if err := rm.Watch(dataReq); err != nil {
+	if err := rm.Watch(context.Background(), dataReq); err != nil {
 		t.Fatalf("Watch: %v", err)
 	}
 
@@ -223,7 +285,7 @@ drain:
 
 func TestLastMemberTearsDown(t *testing.T) {
 	bus := &fakeBus{ch: make(chan stream.Event, 16)}
-	reg := NewRegistry(bus)
+	reg := NewRegistry(bus, nil)
 	rm := reg.Join("test", "rooms:test:devices")
 
 	m1 := rm.AddMember(0)
@@ -248,7 +310,7 @@ func TestLastMemberTearsDown(t *testing.T) {
 
 func TestDoubleLeaveNoPanic(_ *testing.T) {
 	bus := &fakeBus{ch: make(chan stream.Event, 16)}
-	reg := NewRegistry(bus)
+	reg := NewRegistry(bus, nil)
 	rm := reg.Join("test", "rooms:test:devices")
 
 	m := rm.AddMember(0)
@@ -258,7 +320,7 @@ func TestDoubleLeaveNoPanic(_ *testing.T) {
 
 func TestRejectedWatches(t *testing.T) {
 	bus := &fakeBus{ch: make(chan stream.Event, 16)}
-	reg := NewRegistry(bus)
+	reg := NewRegistry(bus, nil)
 	rm := reg.Join("test", "rooms:test:devices")
 
 	tests := []struct {
@@ -281,12 +343,20 @@ func TestRejectedWatches(t *testing.T) {
 			req:     WatchRequest{Name: "t", DeviceID: validDeviceIDA, SimpleTrigger: json.RawMessage(`{"type":"device_trigger","on":"not_a_real_event","device_id":"` + validDeviceIDA + `"}`)},
 			wantErr: "CompileCondition",
 		},
+		{
+			// A group watch with no resolver must refuse rather than accept
+			// and silently leak every realm event (the registry is wired nil
+			// in this reject-table).
+			name:    "group watch without a resolver",
+			req:     WatchRequest{Name: "t", GroupName: "probe", SimpleTrigger: json.RawMessage(`{"type":"data_trigger","on":"incoming_data","interface_name":"*","value_match_operator":"*","match_path":"/*"}`)},
+			wantErr: "resolver",
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			before := rm.Watches()
-			err := rm.Watch(tt.req)
+			err := rm.Watch(context.Background(), tt.req)
 			if err == nil {
 				t.Fatal("expected error, got nil")
 			}
@@ -302,7 +372,7 @@ func TestRejectedWatches(t *testing.T) {
 
 func TestBusCloseClosesMailboxes(t *testing.T) {
 	bus := &fakeBus{ch: make(chan stream.Event)}
-	reg := NewRegistry(bus)
+	reg := NewRegistry(bus, nil)
 	rm := reg.Join("test", "rooms:test:devices")
 
 	m := rm.AddMember(0)

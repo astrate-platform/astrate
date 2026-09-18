@@ -374,7 +374,7 @@ func mountAPIs(cfg config.Config, st *store.Store, e *engine.Engine, b *broker.B
 	apstream.NewAPI(e.Bus(), mw).Mount(mux)
 	// Phoenix Channels socket (phoenix.js V2), alongside the Astrate-native
 	// socket above: two protocols, one bus.
-	channels.NewAPI(e.Bus(), st).Mount(mux)
+	channels.NewAPI(e.Bus(), st, st).Mount(mux)
 	// Flow operator API: pipelines CRUD + start/stop/status (v2.0).
 	flowapi.NewAPI(flowSvc, mw).Mount(mux)
 

@@ -174,6 +174,30 @@ func (s *Store) ListGroupDevicesPage(ctx context.Context, groupID int64, offset,
 	return out, nil
 }
 
+// ListGroupMembers resolves the encoded IDs of every device in a named group
+// of a named realm — the shape the Channels socket's group-watch delivery
+// filter needs (channels.Room.Watch), which must not itself know a realm's id
+// or a group's id.
+func (s *Store) ListGroupMembers(ctx context.Context, realm, group string) ([]string, error) {
+	r, err := s.GetRealmByName(ctx, realm)
+	if err != nil {
+		return nil, err
+	}
+	g, err := s.GetGroupByName(ctx, r.ID, group)
+	if err != nil {
+		return nil, err
+	}
+	ids, err := s.ListGroupDevices(ctx, g.ID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]string, len(ids))
+	for i, id := range ids {
+		out[i] = id.String()
+	}
+	return out, nil
+}
+
 // ListDeviceGroups returns the names of every group the device belongs to.
 func (s *Store) ListDeviceGroups(ctx context.Context, realmID int16, deviceID deviceid.ID) ([]string, error) {
 	rows, err := s.pool.Query(ctx, `
