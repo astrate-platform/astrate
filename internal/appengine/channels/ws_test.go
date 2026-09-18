@@ -625,6 +625,78 @@ func TestWireSession_NewEvent(t *testing.T) {
 	}
 }
 
+// TestWireSession_RejoinTagsPushWithFreshRef pins that a second phx_join on the
+// same topic updates the session's joinRef (ws.go:284-291) and that subsequent
+// new_event pushes carry the fresh ref: the comment there says "server pushes
+// must be tagged with the current one" but no test drove a rejoin, so that
+// behaviour rotted unasserted. Every other TestWireSession_* joins once.
+func TestWireSession_RejoinTagsPushWithFreshRef(t *testing.T) {
+	api, key, bus := setupTestAPIWithBus(t)
+	token := mintToken(t, key, jwt.MapClaims{"a_ch": []string{"JOIN::.*", "WATCH::.*"}})
+	mux := http.NewServeMux()
+	api.Mount(mux)
+	conn, cancel := dialSession(t, mux, token)
+	defer cancel()
+	defer conn.CloseNow()
+
+	ctx := context.Background()
+	topic := "rooms:" + testRealmName + ":dashboard_1"
+
+	// First join with ref "1".
+	joinTopic(t, conn, topic, "1")
+	if _, _, err := conn.Read(ctx); err != nil {
+		t.Fatalf("read first join reply: %v", err)
+	}
+
+	// Rejoin the same topic with a fresh ref "2".
+	joinTopic(t, conn, topic, "2")
+	if _, _, err := conn.Read(ctx); err != nil {
+		t.Fatalf("read rejoin reply: %v", err)
+	}
+	if api.reg.Rooms() != 1 {
+		t.Fatalf("Rooms() = %d, want 1 (a rejoin must not create a second room)", api.reg.Rooms())
+	}
+
+	// Register a watch so the pushed event reaches the session.
+	watchPayload := `{"name":"connectiontrigger-D","device_id":"` + validDeviceIDA + `","simple_trigger":{"type":"device_trigger","on":"device_connected","device_id":"` + validDeviceIDA + `"}}`
+	watchMsg := `["2","3","` + topic + `","watch",` + watchPayload + `]`
+	if err := conn.Write(ctx, websocket.MessageText, []byte(watchMsg)); err != nil {
+		t.Fatalf("write watch: %v", err)
+	}
+	if _, _, err := conn.Read(ctx); err != nil {
+		t.Fatalf("read watch reply: %v", err)
+	}
+
+	// Push an event into the bus.
+	now := time.Now().UTC().Truncate(time.Millisecond)
+	bus.ch <- stream.Event{Kind: stream.KindDeviceConnected, DeviceID: validDeviceIDA, IP: "1.2.3.4", Timestamp: now}
+
+	_, raw, err := conn.Read(ctx)
+	if err != nil {
+		t.Fatalf("read new_event: %v", err)
+	}
+
+	var arr []json.RawMessage
+	if err := json.Unmarshal(raw, &arr); err != nil {
+		t.Fatalf("unmarshal raw: %v", err)
+	}
+	if len(arr) != 5 {
+		t.Fatalf("got %d elements, want 5", len(arr))
+	}
+
+	// Element 0: join_ref must carry the fresh ref from the rejoin.
+	if string(arr[0]) != `"2"` {
+		t.Errorf("join_ref = %s, want \"2\" (the rejoin's ref)", string(arr[0]))
+	}
+
+	if string(arr[1]) != "null" {
+		t.Errorf("ref = %s, want null", string(arr[1]))
+	}
+	if string(arr[3]) != `"new_event"` {
+		t.Errorf("event = %s, want \"new_event\"", string(arr[3]))
+	}
+}
+
 // TestWireSession_PumpRacesLeave drives bus events at a joined room while the
 // session leaves it, so the pump goroutine and the read loop touch s.rooms and
 // joinRef concurrently. The specced tests all push events with the room
