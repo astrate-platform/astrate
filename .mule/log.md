@@ -100,3 +100,4 @@ layer can actually do — read it before deciding whether a kind of task is wort
 | 2026-09-17 | docs-sync-rm-triggers-422-nested-envelope | done | 161s | 8bfedd6 |
 | 2026-09-18 | compat-note-v134 | done | 154s | bcd4383 |
 | 2026-09-18 | channels-group-watch-membership-scope | done | 677s | aeaeb47 |
+| 2026-09-18 | channels-rejoin-joinref-tagging-test | done | 208s | d48e17f |
