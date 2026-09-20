@@ -90,9 +90,9 @@ paths:
               schema:
                 type: string
               example: |
-                # HELP astrate_devices_total Total number of devices.
-                # TYPE astrate_devices_total gauge
-                astrate_devices_total{realm="test"} 42
+                # HELP astrate_broker_sessions Live authenticated MQTT device sessions.
+                # TYPE astrate_broker_sessions gauge
+                astrate_broker_sessions 0
 
   # ── Compat health (Astarte Dashboard) ───────────────────────────────
 
