@@ -102,3 +102,4 @@ layer can actually do — read it before deciding whether a kind of task is wort
 | 2026-09-18 | channels-group-watch-membership-scope | done | 677s | aeaeb47 |
 | 2026-09-18 | channels-rejoin-joinref-tagging-test | done | 208s | d48e17f |
 | 2026-09-19 | channels-rejoin-authz-mismatch | blocked | 179s | wrote nothing |
+| 2026-09-20 | errorname-missing-required-test | done | 135s | 739df67 |
