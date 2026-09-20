@@ -105,3 +105,4 @@ layer can actually do — read it before deciding whether a kind of task is wort
 | 2026-09-20 | errorname-missing-required-test | done | 135s | 739df67 |
 | 2026-09-20 | triggers-custom-action-policy-nodecide | done | 459s | 3c8b89a |
 | 2026-09-20 | compat-note-custom-action-policy-boundary | done | 97s | 8cd17a8 |
+| 2026-09-20 | docs-sync-native-metrics-example-fake-series | done | 93s | 43c4a8b |
