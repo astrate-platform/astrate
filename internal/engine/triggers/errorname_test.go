@@ -27,6 +27,7 @@ func TestUpstreamErrorNameMapping(t *testing.T) {
 		{"type_mismatch", "unexpected_value_type"},
 		{"value_too_large", "value_size_exceeded"},
 		{"bad_object", "unexpected_object_key"},
+		{"missing_required", "unexpected_object_key"},
 		{"unset_not_allowed", "unexpected_value_type"},
 	}
 	for _, tt := range tests {
@@ -66,6 +67,19 @@ func TestUpstreamErrorNameClosedSetInvariant(t *testing.T) {
 			if got != fallback {
 				t.Errorf("UpstreamErrorName(%q) = %q, want %q", input, got, fallback)
 			}
+		})
+	}
+}
+
+func TestAstrateToUpstreamValuesInClosedSet(t *testing.T) {
+	for key, value := range astrateToUpstream {
+		t.Run(key, func(t *testing.T) {
+			for _, n := range UpstreamErrorNames() {
+				if n == value {
+					return
+				}
+			}
+			t.Errorf("astrateToUpstream[%q] = %q is not in UpstreamErrorNames()", key, value)
 		})
 	}
 }
