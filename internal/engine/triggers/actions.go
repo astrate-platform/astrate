@@ -159,7 +159,10 @@ func parseAction(raw json.RawMessage) (*Action, []string, error) {
 // counts it as skipped, which is the designed behaviour, not a gap in this
 // code path.
 type Forwarder interface {
-	// Forward delivers one rendered event for a custom action.
+	// Forward delivers one rendered event for a custom action. It is a
+	// single-shot hand-off: Astrate never retries a returned error, and a
+	// trigger policy's retry/discard handlers do not apply to this seam
+	// (only maximum_capacity and event_ttl do — see forward).
 	Forward(ctx context.Context, realm, trigger string, action json.RawMessage, event []byte) error
 }
 
@@ -465,7 +468,15 @@ func renderMustache(template, realm string, event SimpleEvent) ([]byte, error) {
 	return []byte(rendered), nil
 }
 
-// forward hands a non-HTTP action to the Forwarder extension point.
+// forward hands a non-HTTP action to the Forwarder extension point. It is
+// single-shot by design: the Forwarder seam returns only an error, never an
+// HTTP status, so policy.Decide's retry/discard handlers (which decide on a
+// status code, and are what webhook deliveries retry on) cannot apply to
+// custom actions. The admission/staleness policy knobs do still apply to the
+// seam: Enqueue bounds maximum_capacity in-flight and deliver drops past
+// event_ttl, exactly as for webhooks. A forwarder failure counts as one
+// failed attempt, and when the trigger's policy carries a retry rule the log
+// says the retry was not applied instead of abandoning it silently.
 func (x *Executor) forward(d Delivery, body []byte) {
 	if x.cfg.Forwarder == nil {
 		x.outcomes.WithLabelValues(outcomeSkipped).Inc()
@@ -477,6 +488,14 @@ func (x *Executor) forward(d Delivery, body []byte) {
 	defer cancel()
 	if err := x.cfg.Forwarder.Forward(ctx, d.Realm, d.Trigger.Name, d.Trigger.Action.Custom, body); err != nil {
 		x.outcomes.WithLabelValues(outcomeFailed).Inc()
+		if pol := d.Trigger.Policy(); pol != nil && pol.RetryTimes > 0 {
+			// RetryTimes is nonzero iff some handler retries (CompilePolicy
+			// rejects retry_times without a retry handler): the operator
+			// expects a retry this path cannot give.
+			x.log.Warn("custom action delivery failed; forward path is single-shot and does not apply policy retry",
+				"realm", d.Realm, "trigger", d.Trigger.Name, "policy", pol.Name, "err", err)
+			return
+		}
 		x.log.Warn("custom trigger action failed",
 			"realm", d.Realm, "trigger", d.Trigger.Name, "err", err)
 		return

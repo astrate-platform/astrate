@@ -1,6 +1,7 @@
 package triggers
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -610,6 +611,70 @@ func TestForwarderError(t *testing.T) {
 	x := newTestExecutor(t, ExecutorConfig{Workers: 1, Forwarder: fwd})
 	x.Enqueue(testDelivery(&Action{Custom: json.RawMessage(`{"amqp_exchange":"e"}`)}))
 	eventually(t, 1, func() float64 { return outcome(x, outcomeFailed) })
+}
+
+// TestForwarderPolicySingleShot pins the designed boundary between delivery
+// policies and the custom-action (forward) path: the Forwarder seam returns
+// only an error, never an HTTP status, so policy.Decide's retry/discard
+// handlers cannot apply to it the way they do to webhook deliveries. Only the
+// admission/staleness knobs (maximum_capacity, event_ttl) reach custom
+// actions. A retry policy therefore still drives exactly one forward attempt,
+// counted as failed; routing forward through the Decide loop would break this
+// test by retrying. The failure is not silent: when the policy carries a
+// retry rule, the log states that the forward path is single-shot.
+func TestForwarderPolicySingleShot(t *testing.T) {
+	policy := mustCompilePolicy(t, `{
+		"name":"fwd-retry",
+		"error_handlers":[{"on":"any_error","strategy":"retry"}],
+		"retry_times":3,
+		"maximum_capacity":1
+	}`)
+
+	fwd := &recordingForwarder{err: io.ErrUnexpectedEOF}
+	var logBuf bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&logBuf, nil))
+	x := NewExecutor(ExecutorConfig{
+		Workers:      1,
+		BackoffStart: time.Millisecond,
+		BackoffCap:   5 * time.Millisecond,
+		Registerer:   prometheus.NewRegistry(),
+		Forwarder:    fwd,
+		Logger:       logger,
+	})
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := x.Close(ctx); err != nil {
+			t.Errorf("executor close: %v", err)
+		}
+	})
+
+	d := testDelivery(&Action{Custom: json.RawMessage(`{"nats_subject":"events"}`)})
+	d.Trigger.AttachPolicy(policy)
+	x.Enqueue(d)
+
+	eventually(t, 1, func() float64 { return outcome(x, outcomeFailed) })
+	if got := outcome(x, outcomeForwarded); got != 0 {
+		t.Errorf("forwarded = %v, want 0", got)
+	}
+	// A Decide-loop forwarder would retry (any_error=retry, retry_times=3):
+	// watch the attempt count across a window so any erroneous retry is seen.
+	deadline := time.Now().Add(100 * time.Millisecond)
+	for time.Now().Before(deadline) {
+		fwd.mu.Lock()
+		called := fwd.called
+		fwd.mu.Unlock()
+		if called != 1 {
+			t.Fatalf("forwarder called %d times, want 1 (forward path is single-shot)", called)
+		}
+		time.Sleep(time.Millisecond)
+	}
+	if got := promtest.ToFloat64(x.retries); got != 0 {
+		t.Errorf("retries = %v, want 0", got)
+	}
+	if !strings.Contains(logBuf.String(), "does not apply policy retry") {
+		t.Errorf("log %q missing the single-shot retry notice", logBuf.String())
+	}
 }
 
 // TestEnqueueAfterCloseDrops: enqueueing after Close drops with a metric and
