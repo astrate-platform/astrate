@@ -322,6 +322,10 @@ paths:
           description: "SSE stream started (when `Accept: text/event-stream`)."
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
 
   # ── Phoenix V2 compat WebSocket ─────────────────────────────────────
 
@@ -440,6 +444,16 @@ components:
           example:
             errors:
               detail: Unauthorized
+
+    Forbidden:
+      description: Forbidden — the JWT is valid but does not authorize this path.
+      content:
+        application/json; charset=utf-8:
+          schema:
+            $ref: "#/components/schemas/ErrorDetail"
+          example:
+            errors:
+              detail: Forbidden
 
     InternalServerError:
       description: Internal Server Error — unexpected failure.
