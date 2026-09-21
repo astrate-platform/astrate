@@ -2,6 +2,7 @@ package store
 
 import (
 	"errors"
+	"strings"
 	"testing"
 )
 
@@ -45,5 +46,33 @@ func TestValidatePipelineGraph_DuplicateBlockName(t *testing.T) {
 	err := validatePipelineGraph(def)
 	if err == nil || errors.Is(err, ErrPipelineCyclic) {
 		t.Errorf("validatePipelineGraph(duplicate name) = %v, want a non-cyclic error", err)
+	}
+}
+
+func TestValidatePipelineGraph_NoBlocks(t *testing.T) {
+	def := []byte(`{
+		"blocks": [],
+		"connections": []
+	}`)
+	err := validatePipelineGraph(def)
+	if err == nil || errors.Is(err, ErrPipelineCyclic) {
+		t.Errorf("validatePipelineGraph(no blocks) = %v, want a non-cyclic error", err)
+	}
+	if !strings.Contains(err.Error(), "pipeline has no blocks") {
+		t.Errorf("validatePipelineGraph(no blocks) = %v, want the no-blocks error", err)
+	}
+}
+
+func TestValidatePipelineGraph_EmptyBlockName(t *testing.T) {
+	def := []byte(`{
+		"blocks": [{"name": ""}],
+		"connections": []
+	}`)
+	err := validatePipelineGraph(def)
+	if err == nil || errors.Is(err, ErrPipelineCyclic) {
+		t.Errorf("validatePipelineGraph(empty name) = %v, want a non-cyclic error", err)
+	}
+	if !strings.Contains(err.Error(), "block with empty name") {
+		t.Errorf("validatePipelineGraph(empty name) = %v, want the empty-name error", err)
 	}
 }
