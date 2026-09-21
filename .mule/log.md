@@ -107,3 +107,4 @@ layer can actually do — read it before deciding whether a kind of task is wort
 | 2026-09-20 | compat-note-custom-action-policy-boundary | done | 97s | 8cd17a8 |
 | 2026-09-20 | docs-sync-native-metrics-example-fake-series | done | 93s | 43c4a8b |
 | 2026-09-20 | docs-sync-native-socket-missing-403-500 | done | 116s | f9d8b27 |
+| 2026-09-21 | store-pipelines-empty-name-zero-blocks-test | done | 91s | 82fc0a4 |
