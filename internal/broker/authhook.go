@@ -150,9 +150,10 @@ type deviceSession struct {
 	client   *mqtt.Client // pointer identity guards against takeover races
 	remote   netip.Addr
 
-	mu            sync.Mutex
-	ownership     map[string]interfaceschema.Ownership
-	lastIntroLoad time.Time
+	mu               sync.Mutex
+	ownership        map[string]interfaceschema.Ownership
+	lastIntroLoad    time.Time
+	lastFallbackLoad time.Time
 }
 
 // ownershipOf reports the ownership of an introspected interface name.
@@ -200,16 +201,31 @@ func (s *deviceSession) refreshIfStale(ctx context.Context, st Store, log *slog.
 	return true
 }
 
-// syncOwnershipOf resolves a single interface's ownership synchronously from
-// the store, bypassing the reload debounce — the cold-start fallback for an
-// interface introspected after connect. When the debounce skips refreshIfStale
-// the cache is still cold, and denying the packet against it would drop a
-// legitimate QoS0 publish (mochi's processPublish discards denied QoS0
-// silently). The resolved ownership is written back to the cache so the
-// per-interface store read happens once per introspection refresh cycle; an
-// interface the store does not know caches as denied, the same safe posture
-// as loadOwnership skipping unresolvable interfaces.
+// syncOwnershipOf resolves an unknown interface's ownership synchronously from
+// the store — the cold-start fallback for an interface introspected after
+// connect, reached when the refreshIfStale debounce skips its reload and the
+// cache is still cold (denying the packet would drop a legitimate QoS0
+// publish: mochi's processPublish discards denied QoS0 silently). It is gated
+// to one synchronous store read per session per introspectionReloadDebounce
+// window — the same budget refreshIfStale's full reload pays — so an
+// adversarial topic flood of distinct unknown interface names cannot turn each
+// name into a full-device store read; the extra names within the window are
+// denied until the debounced reload repopulates the cache (≤1s later). The
+// claim is stamped before the slow read, matching the claim-before-reload
+// pattern in refreshIfStale, so concurrent misses beat on the counter, not the
+// database. The resolved ownership is written back to the cache so repeat
+// publishes to the same name stay cheap; an interface the store does not know
+// caches as denied, the same safe posture as loadOwnership skipping
+// unresolvable interfaces.
 func (s *deviceSession) syncOwnershipOf(ctx context.Context, st Store, log *slog.Logger, iface string) (interfaceschema.Ownership, bool) {
+	s.mu.Lock()
+	if time.Since(s.lastFallbackLoad) < introspectionReloadDebounce {
+		s.mu.Unlock()
+		return 0, false
+	}
+	s.lastFallbackLoad = time.Now() // claim the slot before the slow read
+	s.mu.Unlock()
+
 	dev, err := st.GetDevice(ctx, s.realmID, s.identity.DeviceID)
 	if err != nil {
 		log.Debug("ACL cold-start interface resolution failed",
