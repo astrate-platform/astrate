@@ -21,6 +21,13 @@ const (
 	// introspection-derived read permissions are cached for offline-queue
 	// delivery checks.
 	offlineACLCacheTTL = 10 * time.Second
+
+	// offlineACLEvictTTL is how old a cached entry may grow before it is
+	// reaped on the next access. A multiple of offlineACLCacheTTL: an entry
+	// kept alive by a steady stream of offline deliveries is re-stamped on
+	// every miss and survives; one untouched past this is a device that has
+	// gone away, and reaping it keeps the map bounded across device churn.
+	offlineACLEvictTTL = 2 * offlineACLCacheTTL
 )
 
 // ownershipFn resolves an interface name from the device's introspection to
@@ -101,6 +108,7 @@ type offlineACL struct {
 	st    Store
 	pools *realmPools
 	log   *slog.Logger
+	now   func() time.Time
 
 	mu      sync.Mutex
 	entries map[string]*offlineEntry
@@ -112,23 +120,28 @@ type offlineEntry struct {
 }
 
 func newOfflineACL(st Store, pools *realmPools, log *slog.Logger) *offlineACL {
-	return &offlineACL{st: st, pools: pools, log: log, entries: map[string]*offlineEntry{}}
+	return &offlineACL{st: st, pools: pools, log: log, now: time.Now, entries: map[string]*offlineEntry{}}
 }
 
 // ownershipOf resolves iface ownership for the device identified by cn,
 // loading (and caching) its introspection from the store when needed.
 // Lookup failures cache as an empty map, which denies — the safe posture.
 func (o *offlineACL) ownershipOf(cn, iface string) (interfaceschema.Ownership, bool) {
+	now := o.now()
 	o.mu.Lock()
 	e := o.entries[cn]
-	if e != nil && time.Since(e.loadedAt) < offlineACLCacheTTL {
+	if e != nil && now.Sub(e.loadedAt) < offlineACLCacheTTL {
 		o.mu.Unlock()
 		own, ok := e.ownership[iface]
 		return own, ok
 	}
+	// Lazy eviction on the inserting access: drop entries untouched for
+	// offlineACLEvictTTL before claiming a slot, so a long-lived broker does
+	// not grow the map unboundedly across device churn.
+	o.evictStale(now)
 	// Claim the slot before the slow load so concurrent deliveries to the
 	// same device do not stampede the store.
-	e = &offlineEntry{ownership: map[string]interfaceschema.Ownership{}, loadedAt: time.Now()}
+	e = &offlineEntry{ownership: map[string]interfaceschema.Ownership{}, loadedAt: now}
 	o.entries[cn] = e
 	o.mu.Unlock()
 
@@ -140,6 +153,18 @@ func (o *offlineACL) ownershipOf(cn, iface string) (interfaceschema.Ownership, b
 
 	own, ok := ownership[iface]
 	return own, ok
+}
+
+// evictStale drops entries whose loadedAt predates offlineACLEvictTTL. The
+// caller holds o.mu. It is only invoked from ownershipOf on the miss path —
+// no background reaper — which keeps the map bounded without a per-access
+// scan on every hit.
+func (o *offlineACL) evictStale(now time.Time) {
+	for cn, e := range o.entries {
+		if e.loadedAt.Before(now.Add(-offlineACLEvictTTL)) {
+			delete(o.entries, cn)
+		}
+	}
 }
 
 func (o *offlineACL) load(cn string) map[string]interfaceschema.Ownership {

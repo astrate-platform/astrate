@@ -1,9 +1,12 @@
 package broker
 
 import (
+	"fmt"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/astrate-platform/astrate/pkg/deviceid"
 	"github.com/astrate-platform/astrate/pkg/interfaceschema"
 )
 
@@ -142,5 +145,51 @@ func TestCheckACLNoIntrospection(t *testing.T) {
 		if checkACL(base, tc.topic, tc.write, none) {
 			t.Errorf("checkACL(%q, write=%v) = true, want false", tc.topic, tc.write)
 		}
+	}
+}
+
+// TestOfflineACLStaleEntryEviction covers the lazy eviction of offline ACL
+// cache entries: entries untouched for offlineACLEvictTTL are reaped on the
+// next inserting access, so the map stays bounded across device churn
+// instead of growing one entry per device ever ACL-checked offline.
+func TestOfflineACLStaleEntryEviction(t *testing.T) {
+	st := newFakeStore()
+	pools := &realmPools{byName: map[string]*realmCA{"test": {id: 1, name: "test"}}}
+	acl := newOfflineACL(st, pools, discardLogger())
+
+	cn := func(i int) string {
+		// Deterministic distinct device IDs valid for ParseCN, so a seeded
+		// entry can also be resolved through the store path.
+		id := deviceid.FromNamespace(deviceid.ID{1}, fmt.Sprintf("dev-%d", i))
+		return Identity{Realm: "test", DeviceID: id}.CN()
+	}
+
+	const seeded = 1000
+	base := time.Unix(1_000_000, 0)
+	now := base
+	acl.now = func() time.Time { return now }
+	for i := 0; i < seeded; i++ {
+		acl.entries[cn(i)] = &offlineEntry{
+			ownership: map[string]interfaceschema.Ownership{
+				"com.ex.ServerData": interfaceschema.OwnershipServer,
+			},
+			loadedAt: base,
+		}
+	}
+
+	// Advance the clock well past several TTLs: every seeded entry is both
+	// TTL-stale and past the eviction age.
+	now = now.Add(5 * offlineACLCacheTTL)
+
+	// Accessing a device that was never cached must evict the stale seeds,
+	// leaving at most the freshly-inserted entry rather than 1001.
+	target := cn(seeded)
+	acl.ownershipOf(target, "com.ex.ServerData")
+
+	if got := len(acl.entries); got > 1 {
+		t.Errorf("offline ACL cache has %d entries after lazy eviction, want at most 1 (the accessed entry)", got)
+	}
+	if _, ok := acl.entries[target]; !ok {
+		t.Errorf("accessed entry %q missing from the cache after access", target)
 	}
 }
