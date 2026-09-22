@@ -110,3 +110,4 @@ layer can actually do — read it before deciding whether a kind of task is wort
 | 2026-09-21 | store-pipelines-empty-name-zero-blocks-test | done | 91s | 82fc0a4 |
 | 2026-09-21 | broker-acl-coldstart-fallback-flood | done | 218s | 0e5078f |
 | 2026-09-21 | broker-offlineacl-entry-eviction | done | 406s | 72b2686 |
+| 2026-09-22 | docs-sync-ae-read-query-params | blocked | 159s | wrote nothing |
