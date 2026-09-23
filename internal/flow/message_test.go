@@ -2,6 +2,7 @@ package flow
 
 import (
 	"encoding/json"
+	"math"
 	"testing"
 	"time"
 )
@@ -12,6 +13,24 @@ func TestFlowMessage_RoundTrip(t *testing.T) {
 		msg     Message
 		wantErr bool
 	}{
+		{
+			name: "integer max int64",
+			msg: Message{
+				Key:       "sensor/big",
+				Type:      TypeInteger,
+				Data:      int64(math.MaxInt64),
+				Timestamp: 1551884045074181,
+			},
+		},
+		{
+			name: "integer beyond 2^53 precision",
+			msg: Message{
+				Key:       "sensor/precise",
+				Type:      TypeInteger,
+				Data:      int64(1)<<53 + 1,
+				Timestamp: 1551884045074181,
+			},
+		},
 		{
 			name: "integer",
 			msg: Message{
@@ -227,6 +246,27 @@ func TestFlowMessage_UnmarshalRejectsUnknownSchema(t *testing.T) {
 	var msg Message
 	if err := json.Unmarshal([]byte(raw), &msg); err == nil {
 		t.Fatal("expected error for unknown schema")
+	}
+}
+
+func TestFlowMessage_IntegerWireRejectsFractionAndOverflow(t *testing.T) {
+	for _, data := range []string{"3.7", "1e300", "9223372036854775808"} {
+		t.Run(data, func(t *testing.T) {
+			raw := `{"schema":"` + WireSchema + `","key":"k","type":"integer","timestamp_us":0,"data":` + data + `}`
+			var msg Message
+			if err := json.Unmarshal([]byte(raw), &msg); err == nil {
+				t.Fatalf("unmarshal integer data %s: expected error, got %v", data, msg.Data)
+			}
+		})
+	}
+}
+
+func TestSetDataFromWire_IntegerRejectsFractionalFloat64(t *testing.T) {
+	for _, v := range []float64{3.7, 1e300} {
+		var msg Message
+		if err := msg.setDataFromWire(TypeInteger, v); err == nil {
+			t.Fatalf("setDataFromWire(%v): expected error, got %v", v, msg.Data)
+		}
 	}
 }
 

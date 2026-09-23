@@ -5,9 +5,11 @@
 package flow
 
 import (
+	"bytes"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"math"
 	"time"
 )
 
@@ -140,7 +142,12 @@ func (m *Message) MarshalJSON() ([]byte, error) {
 // UnmarshalJSON deserialises a Message from the upstream JSON wire format.
 func (m *Message) UnmarshalJSON(b []byte) error {
 	var w wireMessage
-	if err := json.Unmarshal(b, &w); err != nil {
+	// Decode with UseNumber so numeric tokens survive as json.Number instead
+	// of being pre-rounded to float64 (which would lose integer precision
+	// beyond 2^53 before setDataFromWire ever sees them).
+	dec := json.NewDecoder(bytes.NewReader(b))
+	dec.UseNumber()
+	if err := dec.Decode(&w); err != nil {
 		return fmt.Errorf("flow: unmarshal message: %w", err)
 	}
 
@@ -262,31 +269,17 @@ func (m *Message) fieldSubtypesWire() map[string]string {
 func (m *Message) setDataFromWire(dt DataType, raw any) error {
 	switch dt {
 	case TypeInteger:
-		switch v := raw.(type) {
-		case float64:
-			m.Data = int64(v)
-		case json.Number:
-			n, err := v.Int64()
-			if err != nil {
-				return fmt.Errorf("flow: integer data: %w", err)
-			}
-			m.Data = n
-		default:
-			return fmt.Errorf("flow: integer data: expected number, got %T", raw)
+		n, err := integerWireValue(raw)
+		if err != nil {
+			return fmt.Errorf("flow: integer data: %w", err)
 		}
+		m.Data = n
 	case TypeReal:
-		switch v := raw.(type) {
-		case float64:
-			m.Data = v
-		case json.Number:
-			f, err := v.Float64()
-			if err != nil {
-				return fmt.Errorf("flow: real data: %w", err)
-			}
-			m.Data = f
-		default:
-			return fmt.Errorf("flow: real data: expected number, got %T", raw)
+		f, err := realWireValue(raw)
+		if err != nil {
+			return fmt.Errorf("flow: real data: %w", err)
 		}
+		m.Data = f
 	case TypeBoolean:
 		b, ok := raw.(bool)
 		if !ok {
@@ -356,9 +349,56 @@ func (m *Message) setDataFromWireMap(raw any) error {
 			}
 			out[k] = t
 		default:
-			out[k] = v
+			switch dt {
+			case TypeInteger:
+				n, err := integerWireValue(v)
+				if err != nil {
+					return fmt.Errorf("flow: map field %q: %w", k, err)
+				}
+				out[k] = n
+			case TypeReal:
+				f, err := realWireValue(v)
+				if err != nil {
+					return fmt.Errorf("flow: map field %q: %w", k, err)
+				}
+				out[k] = f
+			default:
+				out[k] = v
+			}
 		}
 	}
 	m.Data = out
 	return nil
+}
+
+// integerWireValue coerces a wire value for an integer field to int64,
+// rejecting fraction and out-of-range forms that a float64 round-trip would
+// silently truncate or wrap (3.7 → 3, 1e300 → garbage). Wire decoding
+// delivers json.Number (the decoder runs with UseNumber), which is judged
+// exactly against the token; a bare float64 (programmatic data) is accepted
+// only when it is an exact in-range integer.
+func integerWireValue(v any) (int64, error) {
+	switch n := v.(type) {
+	case json.Number:
+		return n.Int64()
+	case float64:
+		if n != math.Trunc(n) || n < float64(math.MinInt64) || n >= float64(math.MaxInt64) {
+			return 0, fmt.Errorf("%v does not coerce to an integer exactly", n)
+		}
+		return int64(n), nil
+	default:
+		return 0, fmt.Errorf("expected number, got %T", v)
+	}
+}
+
+// realWireValue coerces a wire value for a real field to float64.
+func realWireValue(v any) (float64, error) {
+	switch n := v.(type) {
+	case json.Number:
+		return n.Float64()
+	case float64:
+		return n, nil
+	default:
+		return 0, fmt.Errorf("expected number, got %T", v)
+	}
 }
