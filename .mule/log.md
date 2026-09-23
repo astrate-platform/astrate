@@ -115,3 +115,4 @@ layer can actually do — read it before deciding whether a kind of task is wort
 | 2026-09-23 | flow-mqtt-source-reconnect-recovery | blocked | 84s | wrote nothing |
 | 2026-09-23 | flow-msg-json-integer-precision | done | 612s | 4df3f6b |
 | 2026-09-23 | flow-sort-bounded-buffer | done | 634s | 9bf0ab7 |
+| 2026-09-23 | flow-randomsource-span-overflow | blocked | 288s | lint failed: internal/flow/blocks/randomsource.go:113:40: G115: integer overflow conversion int64 -> uint64 (gosec) |
