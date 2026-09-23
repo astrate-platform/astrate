@@ -228,6 +228,8 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
         "422":
           $ref: "#/components/responses/ValidationError"
         "500":
@@ -1141,14 +1143,27 @@ components:
               detail: Device not found
 
     Conflict:
-      description: Conflict — resource already exists.
+      description: Conflict — resource already exists or the submitted data disagrees with the resource.
       content:
         application/json; charset=utf-8:
           schema:
             $ref: "#/components/schemas/ErrorDetail"
-          example:
-            errors:
-              detail: Already exists
+          examples:
+            alreadyExists:
+              summary: The resource already exists.
+              value:
+                errors:
+                  detail: Already exists
+            nameMismatch:
+              summary: The interface name in the body does not match the one in the URL.
+              value:
+                errors:
+                  detail: Interface name doesn't match the one in the interface json
+            majorMismatch:
+              summary: The interface major version in the body does not match the one in the URL.
+              value:
+                errors:
+                  detail: Interface major version doesn't match the one in the interface json
 
     ValidationError:
       description: Unprocessable Entity — request body failed validation.
