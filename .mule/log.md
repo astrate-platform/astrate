@@ -112,3 +112,4 @@ layer can actually do — read it before deciding whether a kind of task is wort
 | 2026-09-21 | broker-offlineacl-entry-eviction | done | 406s | 72b2686 |
 | 2026-09-22 | docs-sync-ae-read-query-params | blocked | 159s | wrote nothing |
 | 2026-09-23 | examples-echo-container-contract-test | done | 251s | f35af21 |
+| 2026-09-23 | flow-mqtt-source-reconnect-recovery | blocked | 84s | wrote nothing |
