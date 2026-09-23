@@ -153,3 +153,38 @@ func TestSort_EqualTimestampsKeepArrivalOrder(t *testing.T) {
 		t.Errorf("equal-ts order broken: %v", out)
 	}
 }
+
+func TestSort_CapWithSameTimestamps(t *testing.T) {
+	b := sortBlock(t, map[string]any{"window_ms": 10, "max_buffered": 3, "overflow_policy": "drop_oldest"})
+	const ts = 100_000
+	// Feed 5 messages with same timestamp; with drop_oldest and max_buffered=3,
+	// after inserting all, the buffer should hold the last 3 (or be handled per policy)
+	for i := 0; i < 5; i++ {
+		m := intMsg("k", ts)
+		m.Data = int64(i)
+		if _, err := b.Process(m); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Flush - all have same timestamp, so window condition buf[0].ts <= newest-windowUs
+	// means 100000 <= (newest which is also 100000) - 10000 = 90000, false.
+	// But with overflow and drop_oldest, buffer should contain last 3 messages.
+	// When we flush by sending a later message, all buffered should be flushed (in order)
+	out, err := b.Process(intMsg("k", ts+1_000_000))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(out) != 3 {
+		t.Fatalf("flushed %d messages, want 3", len(out))
+	}
+	// With drop_oldest, oldest 2 dropped; remaining should be messages i=2,3,4 in order
+	if v, ok := out[0].Data.(int64); !ok || v != 2 {
+		t.Errorf("out[0].Data = %v, want 2", out[0].Data)
+	}
+	if v, ok := out[1].Data.(int64); !ok || v != 3 {
+		t.Errorf("out[1].Data = %v, want 3", out[1].Data)
+	}
+	if v, ok := out[2].Data.(int64); !ok || v != 4 {
+		t.Errorf("out[2].Data = %v, want 4", out[2].Data)
+	}
+}

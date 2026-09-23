@@ -77,7 +77,7 @@ var builtinInfo = map[string]Info{
 		Type:    TypeSort,
 		Role:    RoleTransform,
 		Summary: "Buffer messages and release them in ascending timestamp order behind a window",
-		Config:  "window_ms (default 1000, must be ≥ 0), dedup (bool, default false)",
+		Config:  "window_ms (default 1000, must be ≥ 0), dedup (bool, default false), max_buffered (default 0), overflow_policy (default drop_oldest)",
 	},
 	TypeJSONPathMap: {
 		Type:    TypeJSONPathMap,
