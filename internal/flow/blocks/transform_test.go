@@ -55,6 +55,53 @@ func TestFilter_KeyPrefixAndMetadata(t *testing.T) {
 	}
 }
 
+func TestFilter_KeyContains(t *testing.T) {
+	b, err := blocks.Filter("f", map[string]any{"key_contains": "sensor"}, flow.Deps{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Substring present: message passes through.
+	out, err := b.Process(&flow.Message{Key: "acme/sensor-valves", Type: flow.TypeString, Data: "x"})
+	if err != nil || len(out) != 1 || out[0].Key != "acme/sensor-valves" {
+		t.Fatalf("match: out=%v err=%v", out, err)
+	}
+
+	// Substring absent: message dropped.
+	out, err = b.Process(&flow.Message{Key: "acme/actuator", Type: flow.TypeString, Data: "x"})
+	if err != nil || len(out) != 0 {
+		t.Fatalf("no match: out=%v err=%v", out, err)
+	}
+}
+
+func TestFilter_PrefixAndContains(t *testing.T) {
+	b, err := blocks.Filter("f", map[string]any{
+		"key_prefix":   "acme/",
+		"key_contains": "sensor",
+	}, flow.Deps{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Both conditions satisfied: passes through.
+	out, err := b.Process(&flow.Message{Key: "acme/dev-sensor-1", Type: flow.TypeString, Data: "x"})
+	if err != nil || len(out) != 1 {
+		t.Fatalf("both: out=%v err=%v", out, err)
+	}
+
+	// Prefix yes, substring no: dropped.
+	out, err = b.Process(&flow.Message{Key: "acme/actuator", Type: flow.TypeString, Data: "x"})
+	if err != nil || len(out) != 0 {
+		t.Fatalf("prefix only: out=%v err=%v", out, err)
+	}
+
+	// Substring yes, prefix no: dropped.
+	out, err = b.Process(&flow.Message{Key: "other-sensor-valve", Type: flow.TypeString, Data: "x"})
+	if err != nil || len(out) != 0 {
+		t.Fatalf("contains only: out=%v err=%v", out, err)
+	}
+}
+
 func TestFilter_Type(t *testing.T) {
 	b, err := blocks.Filter("f", map[string]any{"type": "integer"}, flow.Deps{})
 	if err != nil {
