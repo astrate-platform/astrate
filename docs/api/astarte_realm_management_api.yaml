@@ -1266,7 +1266,7 @@ components:
             $ref: "#/components/schemas/ErrorDetail"
           example:
             errors:
-              detail: "realm: validation failed: interface definition is invalid"
+              detail: "invalid interface: missing \"interface_name\""
 
     InternalServerError:
       description: Internal Server Error — unexpected failure.
