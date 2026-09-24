@@ -120,3 +120,4 @@ layer can actually do — read it before deciding whether a kind of task is wort
 | 2026-09-23 | docs-sync-rm-put-interface-409 | done | 356s | 7256af9 |
 | 2026-09-24 | docs-sync-rm-interface-422-shapes | done | 490s | 93e784e |
 | 2026-09-24 | docs-sync-rm-validation-example-prefix | done | 238s | 02e269b |
+| 2026-09-24 | docs-sync-rm-auth-403 | done | 668s | 9c05370 |
