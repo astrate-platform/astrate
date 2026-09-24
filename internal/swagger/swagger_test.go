@@ -1,6 +1,7 @@
 package swagger
 
 import (
+	"embed"
 	"io"
 	"io/fs"
 	"net/http"
@@ -62,6 +63,28 @@ func TestMount(t *testing.T) {
 			}
 		}
 	})
+}
+
+// emptyEmbed simulates the day the docs embed layout drops the swagger-ui/ or
+// api/ tree: an embed.FS declared without a //go:embed directive is empty, and
+// rising fs.Sub over it silently yields an empty tree, exactly what Mount must
+// fail fast on instead of serving 404s at /swagger/ and /api/.
+var emptyEmbed embed.FS
+
+// TestMountSubPanicsOnBrokenFS guards the fail-fast contract: Mount must panic
+// when a docs embed sub-tree is absent rather than silently serve an empty
+// tree that 404s at /swagger/ and /api/.
+func TestMountSubPanicsOnBrokenFS(t *testing.T) {
+	for _, name := range []string{"swagger-ui", "api"} {
+		func() {
+			defer func() {
+				if r := recover(); r == nil {
+					t.Errorf("mustSub(%q): got no panic on a broken embed, want panic", name)
+				}
+			}()
+			mustSub(emptyEmbed, name)
+		}()
+	}
 }
 
 func TestSpecs(t *testing.T) {
