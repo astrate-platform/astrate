@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"regexp"
 	"sort"
 	"strings"
 	"testing"
@@ -89,6 +90,69 @@ func TestSpecs(t *testing.T) {
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("Specs() = %v, want %v", got, want)
 	}
+}
+
+// TestRealmManagement403 guards the contract that every realm-management
+// operation guarded by a_rma documents a 403 Forbidden response, not just
+// 401: RequireRealm answers 403 for a verified realm JWT whose a_rma grants
+// do not authorize the method+path (internal/auth/middleware.go). Matches the
+// upstream-parity the housekeeping and pairing specs already document.
+func TestRealmManagement403(t *testing.T) {
+	b, err := docs.APIYAML.ReadFile("api/astarte_realm_management_api.yaml")
+	if err != nil {
+		t.Fatalf("reading astarte_realm_management_api.yaml: %v", err)
+	}
+	lines := strings.Split(string(b), "\n")
+
+	pathIdx, compIdx := -1, -1
+	for i, l := range lines {
+		if l == "paths:" {
+			pathIdx = i
+		}
+		if l == "components:" {
+			compIdx = i
+		}
+		if pathIdx >= 0 && compIdx >= 0 {
+			break
+		}
+	}
+	if pathIdx < 0 || compIdx < pathIdx {
+		t.Fatal("cannot locate the paths and components sections")
+	}
+
+	methodRe := regexp.MustCompile(`^    (get|post|put|delete):$`)
+	var ops []int
+	for i, l := range lines[pathIdx:compIdx] {
+		if methodRe.MatchString(l) {
+			ops = append(ops, pathIdx+i)
+		}
+	}
+	if len(ops) == 0 {
+		t.Fatal("found no operation blocks in the spec")
+	}
+
+	for i, start := range ops {
+		end := compIdx
+		if i+1 < len(ops) {
+			end = ops[i+1]
+		}
+		if !containsLine(lines[start:end], `        "403":`) {
+			t.Errorf("operation starting at line %d documents no 403 response", start+1)
+		}
+	}
+
+	if !containsLine(lines[compIdx:], `    Forbidden:`) {
+		t.Error("components.responses defines no Forbidden response")
+	}
+}
+
+func containsLine(lines []string, want string) bool {
+	for _, l := range lines {
+		if l == want {
+			return true
+		}
+	}
+	return false
 }
 
 func embeddedYAMLFilenames() ([]string, error) {
