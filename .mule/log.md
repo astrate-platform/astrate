@@ -128,3 +128,4 @@ layer can actually do — read it before deciding whether a kind of task is wort
 | 2026-09-25 | cmd-loadsealer-masterkeyfile-test | done | 221s | a6711f9 |
 | 2026-09-25 | docs-sync-hk-async-operation-param | done | 248s | ed1cd72 |
 | 2026-09-25 | docs-sync-hk-retention-zero-is-unset | done | 325s | c2ad442 |
+| 2026-09-25 | docs-sync-rm-async-operation-param | done | 425s | 3f0eca8 |
