@@ -57,6 +57,8 @@ paths:
       tags: [Housekeeping]
       security:
         - a_ha: []
+      parameters:
+        - $ref: "#/components/parameters/AsyncOperation"
       requestBody:
         required: true
         content:
@@ -193,6 +195,7 @@ paths:
         - a_ha: []
       parameters:
         - $ref: "#/components/parameters/RealmName"
+        - $ref: "#/components/parameters/AsyncOperation"
       responses:
         "204":
           description: Realm deleted successfully. No body returned.
@@ -227,6 +230,20 @@ components:
       description: The realm name.
       schema:
         type: string
+
+    AsyncOperation:
+      name: async_operation
+      in: query
+      required: false
+      description: |
+        Accepted and ignored on either value. Upstream 1.4 runs this operation in
+        the background and lets the caller opt into synchronous execution with
+        `async_operation=false`; Astrate always works synchronously and answers
+        only once the work is done, so the value changes nothing and the
+        response is identical either way (deviation 17 in COMPATIBILITY.md).
+      schema:
+        type: boolean
+        default: false
 
   schemas:
     # ── Envelope variants ──

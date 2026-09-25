@@ -169,6 +169,95 @@ func TestRealmManagement403(t *testing.T) {
 	}
 }
 
+// TestHousekeepingAsyncOperationParamDocumented guards that the housekeeping
+// spec tells clients the `?async_operation` parameter exists. Astrate accepts
+// and ignores it on realm create and delete (deviation 17,
+// docs/COMPATIBILITY.md), so an upstream client keeps working — but a client
+// generated from the spec has to learn the parameter from the spec. This is
+// the documentation half of the behaviour pinned by
+// TestHousekeepingAsyncOperationParam in internal/housekeeping.
+func TestHousekeepingAsyncOperationParamDocumented(t *testing.T) {
+	b, err := docs.APIYAML.ReadFile("api/astarte_housekeeping_api.yaml")
+	if err != nil {
+		t.Fatalf("reading astarte_housekeeping_api.yaml: %v", err)
+	}
+	lines := strings.Split(string(b), "\n")
+
+	const ref = `        - $ref: "#/components/parameters/AsyncOperation"`
+	for _, op := range []string{"createRealm", "deleteRealm"} {
+		block := operationBlock(t, lines, op)
+		if !containsLine(block, ref) {
+			t.Errorf("operation %s does not $ref the AsyncOperation parameter", op)
+		}
+	}
+
+	comp := componentBlock(t, lines, "    AsyncOperation:")
+	for _, want := range []string{
+		"      name: async_operation",
+		"      in: query",
+		"      required: false",
+		"      schema:",
+		"        type: boolean",
+		"        default: false",
+	} {
+		if !containsLine(comp, want) {
+			t.Errorf("components parameter AsyncOperation is missing line %q", want)
+		}
+	}
+	if !strings.Contains(strings.Join(comp, "\n"), "Accepted and ignored") {
+		t.Error("components parameter AsyncOperation does not say the value is accepted and ignored")
+	}
+}
+
+// operationBlock returns the lines of the operation with the given operationId,
+// up to the next operation, path, or the components section.
+func operationBlock(t *testing.T, lines []string, operationID string) []string {
+	t.Helper()
+	marker := "      operationId: " + operationID
+	start := -1
+	for i, l := range lines {
+		if l == marker {
+			start = i
+			break
+		}
+	}
+	if start < 0 {
+		t.Fatalf("spec declares no operation %q", operationID)
+	}
+	endRe := regexp.MustCompile(`^      operationId: |^  \S|^components:`)
+	for i := start + 1; i < len(lines); i++ {
+		if endRe.MatchString(lines[i]) {
+			return lines[start+1 : i]
+		}
+	}
+	return lines[start+1:]
+}
+
+// componentBlock returns the lines of the components entry starting with the
+// given key line, up to the next entry at the same or shallower indentation.
+func componentBlock(t *testing.T, lines []string, key string) []string {
+	t.Helper()
+	start := -1
+	for i, l := range lines {
+		if l == key {
+			start = i
+			break
+		}
+	}
+	if start < 0 {
+		t.Fatalf("spec declares no components entry %q", key)
+	}
+	for i := start + 1; i < len(lines); i++ {
+		if strings.TrimSpace(lines[i]) == "" {
+			continue
+		}
+		if !strings.HasPrefix(lines[i], "      ") {
+			return lines[start+1 : i]
+		}
+	}
+	return lines[start+1:]
+}
+
 func containsLine(lines []string, want string) bool {
 	for _, l := range lines {
 		if l == want {
