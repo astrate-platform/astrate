@@ -362,3 +362,23 @@ When v3.0 is marked DONE, the v4.0 section of `.mule/milestones.md` should be
 drafted with this investigation as its first item (issue #78 has the full
 verified context).
 - **The mule has been idle 17h.** Filed by the dead-man's switch; see journalctl on the Pi.
+
+## 2026-09-25 — the `-tags nats` half of the tree is compiled by no gate
+
+`cmd/astrate/newnats_nats.go`, `internal/engine/forward/nats.go` and
+`internal/engine/forward/nats_test.go` are all behind `//go:build nats`, and nothing
+builds or tests that tag: not `make build`/`make test`/`make test-integration`/
+`make test-e2e` (Makefile:23, 38, 42, 46), not the mule gate, not the lint target.
+So the whole NATS trigger-forwarding path is invisible to CI — while
+`config.validate` accepts `triggers.forward.kind = "nats"` (internal/config/config.go:339-343)
+and the untagged binary then fails at boot with the build-tag message
+(cmd/astrate/newnats_default.go). I measured it today: `go build -tags nats ./cmd/...`
+and `go vet -tags nats ./cmd/...` both exit 0, so there is nothing broken — just nothing
+keeping it unbroken. Worth a `make build-nats` (and the NATS test tier, which needs a
+container, so it would be a `[legion]` line) in the gate; not a queue line because the
+only test I can imagine for it shells out to `go build`, and the mule's own check strips
+the implementation and the guard together, so it would never fail.
+Not queued for the same reason: `IdleTimeout` is missing on the HTTP server
+(cmd/astrate/main.go:221) and `-healthcheck` ignores the config file
+(cmd/astrate/main.go:531) — both real, both yours to call, neither has a test worth
+writing. See `.mule/reviews/cmd-astrate-2026-09-25.md`.
