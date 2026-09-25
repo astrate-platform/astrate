@@ -52,8 +52,11 @@ import (
 // -ldflags "-X main.version=vX.Y.Z").
 var version = "0.1.0-dev"
 
-// shutdownTimeout bounds the whole graceful drain (docs/DESIGN.md §5.3).
-const shutdownTimeout = 30 * time.Second
+// shutdownTimeout bounds each stage of the graceful drain
+// (docs/DESIGN.md §5.3). It is a var so tests can shrink it; a stage that
+// blows its budget (a slow in-flight HTTP request, say) must not take the
+// stages after it down with an already-expired context.
+var shutdownTimeout = 30 * time.Second
 
 func main() {
 	configPath := flag.String("config", "", "path to the TOML config file (env-only when empty)")
@@ -474,16 +477,12 @@ func autoProvisionRealm(ctx context.Context, st *store.Store, hk *housekeeping.S
 
 // shutdown drains the stack in the §5.3 order. srv may be nil on a startup
 // error before the HTTP server began serving. flowSvc may be nil when Flow
-// was never wired (should not happen in run).
+// was never wired (should not happen in run). Every stage gets its own
+// shutdownTimeout budget, so one slow stage only delays itself.
 func shutdown(srv *http.Server, b *broker.Broker, flowSvc *flowapi.Service, e *engine.Engine, log *slog.Logger) {
-	sctx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
-	defer cancel()
-
 	if srv != nil {
 		log.Info("draining http listener")
-		if err := srv.Shutdown(sctx); err != nil {
-			log.Warn("http shutdown", "error", err)
-		}
+		stage("http shutdown", log, srv.Shutdown)
 	}
 	log.Info("stopping broker")
 	if err := b.Close(); err != nil {
@@ -491,22 +490,31 @@ func shutdown(srv *http.Server, b *broker.Broker, flowSvc *flowapi.Service, e *e
 	}
 	if flowSvc != nil {
 		log.Info("stopping flows")
-		if err := flowSvc.Manager().Shutdown(sctx); err != nil {
-			log.Warn("flow shutdown", "error", err)
-		}
-		flowSvc.MarkRunningFlowsStopped(sctx)
+		mgr := flowSvc.Manager()
+		stage("flow shutdown", log, mgr.Shutdown)
+		stage("flows marked stopped", log, func(ctx context.Context) error {
+			flowSvc.MarkRunningFlowsStopped(ctx)
+			return nil
+		})
 	}
 	drainEngine(e, log)
 	log.Info("shutdown complete")
 }
 
-func drainEngine(e *engine.Engine, log *slog.Logger) {
-	dctx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+// stage runs one drain stage under a fresh shutdownTimeout context and logs
+// whatever it returns, so an exhausted stage never leaves the next one with a
+// dead context.
+func stage(label string, log *slog.Logger, fn func(context.Context) error) {
+	sctx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 	defer cancel()
-	log.Info("draining engine")
-	if err := e.Drain(dctx); err != nil {
-		log.Warn("engine drain", "error", err)
+	if err := fn(sctx); err != nil {
+		log.Warn(label, "error", err)
 	}
+}
+
+func drainEngine(e *engine.Engine, log *slog.Logger) {
+	log.Info("draining engine")
+	stage("engine drain", log, e.Drain)
 }
 
 // loadSealer builds the CA-key sealer: the configured master-key file feeds the
