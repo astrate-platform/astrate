@@ -3,19 +3,23 @@
 package realm
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"testing"
+
+	"github.com/astrate-platform/astrate/pkg/deviceid"
 )
 
 // TestRealmManagementAsyncOperationParam pins deviation 17
-// (docs/COMPATIBILITY.md): upstream 1.4 runs interface install/update/delete
-// and policy delete asynchronously unless the caller opts out with
-// `?async_operation=false`. Astrate is always synchronous, so the parameter is
-// accepted and ignored on either value — sending it must never draw a 4xx, and
-// the effect must be visible on the very next read.
+// (docs/COMPATIBILITY.md): upstream 1.4 runs interface install/update/delete,
+// device deletion and policy delete asynchronously unless the caller opts out
+// with `?async_operation=false`. Astrate is always synchronous, so the
+// parameter is accepted and ignored on either value — sending it must never
+// draw a 4xx, and the effect must be visible on the very next read.
 func TestRealmManagementAsyncOperationParam(t *testing.T) {
 	r := newRig(t)
+	ctx := context.Background()
 
 	for i, q := range []string{"?async_operation=false", "?async_operation=true"} {
 		name := fmt.Sprintf("com.ex.M7a.Async%d", i)
@@ -63,6 +67,23 @@ func TestRealmManagementAsyncOperationParam(t *testing.T) {
 		}
 		if rec := r.req(t, http.MethodGet, "/policies/"+policyName, "", r.rmaToken); rec.Code != http.StatusNotFound {
 			t.Errorf("get policy after delete %s: got %d, want 404", q, rec.Code)
+		}
+
+		// Device delete carries the parameter upstream too: the dashboard's
+		// Delete button, which upstream answers before the data is gone.
+		dev, err := deviceid.Random()
+		if err != nil {
+			t.Fatalf("random device id: %v", err)
+		}
+		if err := r.st.RegisterDevice(ctx, r.realmID, dev, "h"); err != nil {
+			t.Fatalf("register device %s: %v", dev, err)
+		}
+		if rec := r.req(t, http.MethodDelete, "/devices/"+dev.String()+q, "", r.rmaToken); rec.Code != http.StatusNoContent {
+			t.Fatalf("delete device %s: got %d, want 204 (%s)", q, rec.Code, rec.Body)
+		}
+		// Synchronous means gone by the time the 204 is written, on both values.
+		if _, err := r.st.GetDevice(ctx, r.realmID, dev); err == nil {
+			t.Errorf("device row survived the delete %s", q)
 		}
 	}
 }

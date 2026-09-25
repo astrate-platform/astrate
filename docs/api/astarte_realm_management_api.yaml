@@ -694,6 +694,7 @@ paths:
       parameters:
         - $ref: "#/components/parameters/RealmName"
         - $ref: "#/components/parameters/DeviceID"
+        - $ref: "#/components/parameters/AsyncOperation"
       responses:
         "204":
           description: Device deleted. No body returned.
@@ -905,11 +906,12 @@ components:
       required: false
       description: |
         Accepted and ignored on either value. Upstream 1.4 runs interface
-        install/update/delete and trigger-delivery-policy delete in the
-        background and lets the caller opt into synchronous execution with
-        `async_operation=false`; Astrate always works synchronously and answers
-        only once the work is done, so the value changes nothing and the
-        response is identical either way (deviation 17 in COMPATIBILITY.md).
+        install/update/delete, device deletion and trigger-delivery-policy
+        delete in the background and lets the caller opt into synchronous
+        execution with `async_operation=false`; Astrate always works
+        synchronously and answers only once the work is done, so the value
+        changes nothing and the response is identical either way
+        (deviation 17 in COMPATIBILITY.md).
       schema:
         type: boolean
         default: false

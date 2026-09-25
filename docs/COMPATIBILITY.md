@@ -334,14 +334,15 @@ All additive or strictly-safer; none affect unmodified device SDKs.
 
 17. **Always synchronous where upstream 1.4 defaults to asynchronous** —
     upstream 1.4 runs realm create/delete (Housekeeping), interface
-    install/update/delete (Realm Management) and trigger-delivery-policy
-    delete in the background, answering immediately and letting the caller opt
-    into synchronous execution with `?async_operation=false`. Astrate performs
-    every one of these synchronously and answers only once the work is done —
-    a strictly stronger guarantee, so a client written against upstream never
-    observes a regression. The parameter is accepted and ignored on either
-    value, on every one of those endpoints, so upstream clients that send it
-    keep working unchanged; pinned by
+    install/update/delete and device deletion (Realm Management) and
+    trigger-delivery-policy delete in the background, answering immediately
+    and letting the caller opt into synchronous execution with
+    `?async_operation=false`. Astrate performs every one of these
+    synchronously and answers only once the work is done — a strictly
+    stronger guarantee, so a client written against upstream never observes a
+    regression. The parameter is accepted and ignored on either value, on
+    every one of those endpoints, so upstream clients that send it keep
+    working unchanged; pinned by
     `TestRealmManagementAsyncOperationParam` and
     `TestHousekeepingAsyncOperationParam`. Tracked in
     `docs/UPSTREAM-EXPERIMENTAL.md` (#68) until upstream 1.4 is final.

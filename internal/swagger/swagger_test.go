@@ -211,13 +211,13 @@ func TestHousekeepingAsyncOperationParamDocumented(t *testing.T) {
 
 // TestRealmManagementAsyncOperationParamDocumented guards that the realm
 // management spec tells clients the `?async_operation` parameter exists on the
-// four operations upstream 1.4 runs in the background: interface
-// install/update/delete and trigger-delivery-policy delete. Astrate accepts and
-// ignores it there (deviation 17, docs/COMPATIBILITY.md) — none of the four
-// handlers reads the query string, which is the whole of the acceptance — so an
-// upstream client keeps working, but a client generated from the spec has to
-// learn the parameter from the spec. This is the documentation half of the
-// behaviour pinned by TestRealmManagementAsyncOperationParam in
+// five operations upstream 1.4 runs in the background: interface
+// install/update/delete, device deletion and trigger-delivery-policy delete.
+// Astrate accepts and ignores it there (deviation 17, docs/COMPATIBILITY.md) —
+// none of the five handlers reads the query string, which is the whole of the
+// acceptance — so an upstream client keeps working, but a client generated from
+// the spec has to learn the parameter from the spec. This is the documentation
+// half of the behaviour pinned by TestRealmManagementAsyncOperationParam in
 // internal/realm.
 func TestRealmManagementAsyncOperationParamDocumented(t *testing.T) {
 	b, err := docs.APIYAML.ReadFile("api/astarte_realm_management_api.yaml")
@@ -227,7 +227,10 @@ func TestRealmManagementAsyncOperationParamDocumented(t *testing.T) {
 	lines := strings.Split(string(b), "\n")
 
 	const ref = `        - $ref: "#/components/parameters/AsyncOperation"`
-	for _, op := range []string{"installInterface", "updateInterface", "deleteInterface", "deletePolicy"} {
+	for _, op := range []string{
+		"installInterface", "updateInterface", "deleteInterface",
+		"deleteDevice", "deletePolicy",
+	} {
 		block := operationBlock(t, lines, op)
 		if !containsLine(block, ref) {
 			t.Errorf("operation %s does not $ref the AsyncOperation parameter", op)
