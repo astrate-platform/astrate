@@ -124,3 +124,4 @@ layer can actually do — read it before deciding whether a kind of task is wort
 | 2026-09-24 | swagger-sub-failfast | done | 371s | 1d321ea |
 | 2026-09-25 | drain-per-stage-budget | done | 265s | 84a050e |
 | 2026-09-25 | cmd-devcert-fields-test | done | 357s | f1434eb |
+| 2026-09-25 | cmd-healthcheck-contract-test | blocked | 199s | tests failed: --- FAIL: TestRunHealthcheckProbesReadiness (0.01s) |
