@@ -130,3 +130,4 @@ layer can actually do — read it before deciding whether a kind of task is wort
 | 2026-09-25 | docs-sync-hk-retention-zero-is-unset | done | 325s | c2ad442 |
 | 2026-09-25 | docs-sync-rm-async-operation-param | done | 425s | 3f0eca8 |
 | 2026-09-25 | docs-sync-rm-delete-device-async-operation-param | done | 903s | f965f39 |
+| 2026-09-25 | docs-sync-rm-delete-device-async-operation-param | blocked | 177s | wrote nothing |
