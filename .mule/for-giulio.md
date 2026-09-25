@@ -10,6 +10,70 @@ line once you have dealt with it — this file is a queue, not a log.
 
 ---
 
+## 2026-09-25 — docs-sync run, surface: **housekeeping** (the least-covered of the five)
+
+Nothing filed, no `gh issue create` in this recipe. Two `docs/api/` proposals appended to
+`.mule/todo.md` (`docs-sync-hk-async-operation-param`, `docs-sync-hk-retention-zero-is-unset`);
+the three items below are escalations, because they are your prose.
+
+**The path list is clean.** All five routes in code (`internal/housekeeping/http.go:37-41`) are
+documented and the documented status codes now match the handler on all five ops — the four
+earlier housekeeping tasks (PATCH route, retention field, DELETE 405/422, the 422 example)
+closed the real gaps. What is left is description-level, not path-level.
+
+- **`docs/site/configuration-reference.md` `[housekeeping]` lists 2 of the 4 keys it has, and
+  shows `—` in the env-override column for both it does list.** The table (lines 78-83) carries
+  only `jwt_public_keys` and `jwt_public_key_files`. `HousekeepingConfig`
+  (`internal/config/config.go:111-124`) also has
+  `default_datastream_maximum_storage_retention` (`*int64`, #73) and `realm_deletion_disabled`
+  (`bool`, #75), and **both have working env overrides**:
+  `ASTRATE_HOUSEKEEPING_DEFAULT_DATASTREAM_MAXIMUM_STORAGE_RETENTION` (config.go:277-292, which
+  also accepts the bare upstream name `HOUSEKEEPING_DEFAULT_DATASTREAM_MAXIMUM_STORAGE_RETENTION`
+  and lets it win when both are set) and `ASTRATE_HOUSEKEEPING_REALM_DELETION_DISABLED`
+  (config.go:297-305, fail-loud: only `1|true|TRUE|True|0|false|""` load, anything else refuses
+  to boot). Neither appears anywhere in the file. The keys that gate a destructive operation
+  (`realm_deletion_disabled` makes `DELETE /housekeeping/v1/realms/{realm}` answer 405) and the
+  one that sets a fleet-wide retention ceiling are both invisible to an operator reading the
+  reference. Cross-checked with the recipe's sweep — `rg -o '\bASTRATE_[A-Z_]+' -N internal/ |
+  sort -u` vs the file: the only other misses are `ASTRATE_FLOW_CONFIG` and the test-only
+  `ASTRATE_TEST_DSN`; no key is documented that the code does not have.
+- **`docs/site/housekeeping-api.md` has no PATCH section.** The page enumerates Create / List /
+  Get / Delete (lines 10-50) and stops, while the route exists (`internal/housekeeping/http.go:40`,
+  handler `patchRealm` 163-230) and is fully specified in the OpenAPI file
+  (`docs/api/astarte_housekeeping_api.yaml:140-185`). Related, in the same page: the create
+  body example (line 18) lists only `realm_name` / `jwt_public_key_pem` /
+  `device_registration_limit` and omits `datastream_maximum_storage_retention`, which is on the
+  wire (`realmBody`, http.go:50) and in `RealmCreate` (yaml:287-291). The two nullable integer
+  fields are the ones operators most often need to set.
+- **"Generate (or import) the per-realm CA key + certificate" (`housekeeping-api.md:25`) — there
+  is no import path.** `CreateRealm` calls `ca.Generate(name, 0)` unconditionally
+  (`internal/housekeeping/service.go:161`); the `ca` package's only other constructor is
+  `ca.Load` (`internal/pairing/ca/ca.go:121`), whose sole caller is pairing loading the realm
+  CA that housekeeping already stored (`internal/pairing/service.go:419`) — nothing anywhere
+  imports an existing realm CA at create time. If "import" is a roadmap item rather than a
+  description of today, say so; if it is aspirational, the page reads as a capability a client
+  can use. Smaller, same paragraph: "in a single transaction" lists generate-then-seal before
+  the row insert, but the code generates and seals the CA *first* (service.go:161-168) and only
+  then calls `store.CreateRealm` (170) — the DB work is one transaction, the CA work is not
+  part of it.
+
+Non-findings worth recording so a later run does not re-chase them: the realm cascade really is
+complete (the page's "removes all interfaces, devices, properties, datastreams, groups, and
+triggers" holds — every table reaches `realms` by `ON DELETE CASCADE` directly or through
+`devices`, and `individual_datastreams`/`object_datastreams` are deleted explicitly first,
+`internal/store/realms.go:227-234`); `view` returning only `JWTPublicKeysPEM[0]`
+(service.go:277-281) loses nothing, because `store.CreateRealm` stores a one-element slice and
+`store.UpdateRealm` *replaces* the array rather than appending (realms.go:164-166); `403` is
+genuinely reachable on every housekeeping op (`RequireStatic` → `authorize` writes
+`WriteForbidden` when a valid `a_ha` grant does not match, `internal/auth/middleware.go:110-117`);
+and the PATCH op correctly documents **no** 405 or connected-devices 422, since `UpdateRealm`
+has no deletion-gating path. Spec parses clean today
+(`yaml.Unmarshal`, 2 paths) — `mkdocs` is not installed on this box, so `make -C docs build`
+could not be run here; both proposed tasks carry it as their own verification step, as every
+earlier docs-sync line does.
+
+---
+
 - **github-issues triage run, 2026-09-25: still nothing proposable — the mule-alarm pile is 18 issues (#94–#111), and two corrections to what earlier runs inferred about it.** Twenty-two open issues, same set as every run since 2026-09-05: **#111–#94** are the daily `mule-alarm` noise (zero comments, telemetry not code), **#93** aclhook comment (mule-review, `8c61268` already pushed, its own recipe path), **#92** keyAgreement (parked on a stable upstream v1.4.0 per the waiting-on row), **#78** FDO (milestone-4.0, already escalated), **#1** untouched per standing instruction. New since the 2026-09-24 run: **#111** (today, 09-25 11:01:07Z, "nothing has landed in 16h"). Still zero machine-checkable code-fix candidates, so **no .mule/todo.md task lines added**. **Proposal, extending the 2026-09-24 one: close #94–#110**; leave #111 (live today) to self-expire. Two corrections, both from reading `tools/mule.sh` rather than the issue titles: **(1) the "missed days" in earlier entries (09-15, 09-20, 09-23) are evidence of activity, not its absence** — I previously called them timer gaps; the alarm is gated on a `.alarmed` sentinel that `beat` deletes on every land (`mule.sh:737,748-749`), so a day with no new issue is a day something landed, not a day the timer slept. **(2) the alarm body's closing line is wrong**: "Close it — the mule reopens a new one if the silence continues" (`mule.sh:764`) implies issue state drives the alarm; it does not. Nothing reads or reconciles the 18 open issues, so the pile can only grow and closing the old ones is safe but inert — and `cmd_refill` commits `mule: refill the queue` (mule.sh:719-720) **without calling `beat`**, so a doc-only refill never counts as landing work. The titles' ages also imply a beat roughly every day around 19:00–21:00Z (#111 filed 09-25 11:01Z at 16h → last beat ≈ 09-24 19:01Z; #110 filed 09-24 10:54Z at 15h → ≈ 09-23 19:54Z) while the ~11:00Z daily check has never once found under the 8h threshold — **what calls `beat` at that time is unverified**, and one command on the Pi settles it (`grep -E 'landed|checked:' /root/astrate-mule/.mule/log | tail -20`). The queue has still landed nothing since ~2026-09-04/05; if that idle streak is not intentional, the wedge is on the Pi and a queue review is the fix.
 
 ---
