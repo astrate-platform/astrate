@@ -209,6 +209,49 @@ func TestHousekeepingAsyncOperationParamDocumented(t *testing.T) {
 	}
 }
 
+// TestRealmManagementAsyncOperationParamDocumented guards that the realm
+// management spec tells clients the `?async_operation` parameter exists on the
+// four operations upstream 1.4 runs in the background: interface
+// install/update/delete and trigger-delivery-policy delete. Astrate accepts and
+// ignores it there (deviation 17, docs/COMPATIBILITY.md) — none of the four
+// handlers reads the query string, which is the whole of the acceptance — so an
+// upstream client keeps working, but a client generated from the spec has to
+// learn the parameter from the spec. This is the documentation half of the
+// behaviour pinned by TestRealmManagementAsyncOperationParam in
+// internal/realm.
+func TestRealmManagementAsyncOperationParamDocumented(t *testing.T) {
+	b, err := docs.APIYAML.ReadFile("api/astarte_realm_management_api.yaml")
+	if err != nil {
+		t.Fatalf("reading astarte_realm_management_api.yaml: %v", err)
+	}
+	lines := strings.Split(string(b), "\n")
+
+	const ref = `        - $ref: "#/components/parameters/AsyncOperation"`
+	for _, op := range []string{"installInterface", "updateInterface", "deleteInterface", "deletePolicy"} {
+		block := operationBlock(t, lines, op)
+		if !containsLine(block, ref) {
+			t.Errorf("operation %s does not $ref the AsyncOperation parameter", op)
+		}
+	}
+
+	comp := componentBlock(t, lines, "    AsyncOperation:")
+	for _, want := range []string{
+		"      name: async_operation",
+		"      in: query",
+		"      required: false",
+		"      schema:",
+		"        type: boolean",
+		"        default: false",
+	} {
+		if !containsLine(comp, want) {
+			t.Errorf("components parameter AsyncOperation is missing line %q", want)
+		}
+	}
+	if !strings.Contains(strings.Join(comp, "\n"), "Accepted and ignored") {
+		t.Error("components parameter AsyncOperation does not say the value is accepted and ignored")
+	}
+}
+
 // propertyBlock returns the lines of the schema property with the given name
 // inside a components.schemas entry, up to the next property or the end of the
 // entry.
