@@ -122,3 +122,4 @@ layer can actually do — read it before deciding whether a kind of task is wort
 | 2026-09-24 | docs-sync-rm-validation-example-prefix | done | 238s | 02e269b |
 | 2026-09-24 | docs-sync-rm-auth-403 | done | 668s | 9c05370 |
 | 2026-09-24 | swagger-sub-failfast | done | 371s | 1d321ea |
+| 2026-09-25 | drain-per-stage-budget | done | 265s | 84a050e |
