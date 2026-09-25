@@ -146,7 +146,12 @@ paths:
         Updates one or more fields of an existing realm. Anything not named here
         is rejected with `invalid_update_parameters`. A null
         `device_registration_limit` or `datastream_maximum_storage_retention`
-        clears that field. Returns 200 with an empty body on success.
+        clears that field. For `datastream_maximum_storage_retention`, an
+        explicit `0` clears it too: 0 is folded to unset, so it cannot ask for
+        a literal zero-second retention, and the realm is left unlimited
+        (upstream parity, measured on Astarte v1.2.0). `device_registration_limit`
+        has no such fold — `0` there is stored as the literal limit `0`, and
+        only `null` clears it. Returns 200 with an empty body on success.
       tags: [Housekeeping]
       security:
         - a_ha: []
@@ -300,12 +305,20 @@ components:
           type: integer
           format: int32
           nullable: true
-          description: Maximum number of devices allowed in this realm. Null means unlimited.
+          description: |
+            Maximum number of devices allowed in this realm. Null means unlimited.
+            An explicit `0` is kept literally and is not the same as null: the
+            limit is then reached before the first device, so nothing can
+            register. Only `null` clears the limit.
         datastream_maximum_storage_retention:
           type: integer
           format: int64
           nullable: true
-          description: Maximum datastream storage retention in seconds. Null means unlimited.
+          description: |
+            Maximum datastream storage retention in seconds. Null means unlimited.
+            An explicit `0` is folded to unset and means unlimited, not a literal
+            zero-second retention; unlike omitting the field it does not pick up
+            the deployment's configured default retention.
 
     RealmPatch:
       type: object
@@ -318,12 +331,19 @@ components:
           type: integer
           format: int32
           nullable: true
-          description: Maximum number of devices allowed in this realm. Null clears the limit (unlimited).
+          description: |
+            Maximum number of devices allowed in this realm. Null means unlimited.
+            An explicit `0` is stored literally and admits no device, so it is
+            not the same as null: only `null` means unlimited.
         datastream_maximum_storage_retention:
           type: integer
           format: int64
           nullable: true
-          description: Maximum datastream storage retention in seconds. Null clears the retention.
+          description: |
+            Maximum datastream storage retention in seconds. Null clears the
+            retention. `0` clears it as well: 0 is folded to unset, so it cannot
+            ask for a literal zero-second retention and the realm is left
+            unlimited (upstream parity, measured on Astarte v1.2.0).
 
     # ── Error envelopes ──
 

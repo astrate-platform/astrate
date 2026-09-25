@@ -209,6 +209,94 @@ func TestHousekeepingAsyncOperationParamDocumented(t *testing.T) {
 	}
 }
 
+// propertyBlock returns the lines of the schema property with the given name
+// inside a components.schemas entry, up to the next property or the end of the
+// entry.
+func propertyBlock(t *testing.T, lines []string, name string) []string {
+	t.Helper()
+	key := "        " + name + ":"
+	start := -1
+	for i, l := range lines {
+		if l == key {
+			start = i
+			break
+		}
+	}
+	if start < 0 {
+		t.Fatalf("schema declares no property %q", name)
+	}
+	for i := start + 1; i < len(lines); i++ {
+		if strings.TrimSpace(lines[i]) == "" {
+			continue
+		}
+		if !strings.HasPrefix(lines[i], "          ") {
+			return lines[start+1 : i]
+		}
+	}
+	return lines[start+1:]
+}
+
+// TestHousekeepingRetentionZeroFoldDocumented guards that the housekeeping spec
+// tells clients that `datastream_maximum_storage_retention: 0` means unset, not
+// a literal zero-second retention. The wire folds it on both paths: PATCH maps
+// `null || val == 0` to ClearRetention (internal/housekeeping/http.go) and
+// create folds 0 to nil before injecting the configured default
+// (internal/housekeeping/service.go) — upstream parity measured on v1.2.0. A
+// client that follows the spec without this note sends 0 and silently gets
+// unlimited instead. `device_registration_limit` has no such fold, so the same
+// 0 is stored literally there; the asymmetry is documented on both fields so
+// the two do not read as interchangeable. This is the documentation half of the
+// behaviour pinned by ZeroRetentionUnsets and TestHousekeepingRetentionDefault
+// in internal/housekeeping.
+func TestHousekeepingRetentionZeroFoldDocumented(t *testing.T) {
+	b, err := docs.APIYAML.ReadFile("api/astarte_housekeeping_api.yaml")
+	if err != nil {
+		t.Fatalf("reading astarte_housekeeping_api.yaml: %v", err)
+	}
+	lines := strings.Split(string(b), "\n")
+
+	patch := strings.Join(operationBlock(t, lines, "patchRealm"), "\n")
+	for _, want := range []string{
+		"explicit `0` clears it too",
+		"0 is folded to unset",
+		"has no such fold",
+		"stored as the literal limit `0`",
+	} {
+		if !strings.Contains(patch, want) {
+			t.Errorf("patchRealm description does not say %q", want)
+		}
+	}
+
+	for _, schema := range []string{"    RealmCreate:", "    RealmPatch:"} {
+		block := componentBlock(t, lines, schema)
+
+		retention := strings.Join(propertyBlock(t, block, "datastream_maximum_storage_retention"), "\n")
+		if !strings.Contains(retention, "0") || !strings.Contains(retention, "unlimited") {
+			t.Errorf("%s retention does not say what 0 means", schema)
+		}
+		if !strings.Contains(retention, "unset") {
+			t.Errorf("%s retention does not say 0 is folded to unset", schema)
+		}
+
+		limit := strings.Join(propertyBlock(t, block, "device_registration_limit"), "\n")
+		if !strings.Contains(limit, "`0`") {
+			t.Errorf("%s device_registration_limit does not record what 0 means", schema)
+		}
+		if strings.Contains(limit, "folded") {
+			t.Errorf("%s device_registration_limit claims a 0 fold that the wire does not have", schema)
+		}
+		if !strings.Contains(limit, "null") {
+			t.Errorf("%s device_registration_limit does not say null clears the limit", schema)
+		}
+	}
+
+	create := strings.Join(propertyBlock(t,
+		componentBlock(t, lines, "    RealmCreate:"), "datastream_maximum_storage_retention"), "\n")
+	if !strings.Contains(create, "configured default retention") {
+		t.Error("RealmCreate retention does not say 0 skips the configured default retention")
+	}
+}
+
 // operationBlock returns the lines of the operation with the given operationId,
 // up to the next operation, path, or the components section.
 func operationBlock(t *testing.T, lines []string, operationID string) []string {
