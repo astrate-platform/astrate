@@ -264,6 +264,65 @@ func TestStatusTable(t *testing.T) {
 // marshals to nothing and would corrupt the whole envelope. Removing the
 // len() guards leaves TestNilActionAndEvent green, so this is the row that
 // actually binds the rule.
+// TestStatusErrorCarriesBody pins the half of a failed delivery an operator
+// needs. A bare "forward: status 500" survives the bus's own explanation
+// nowhere — the drain at the end of Forward throws the body away — so a 500
+// from the bus is unactionable. This is the row that breaks if the body prefix
+// is dropped from the error: TestStatusTable only pins that the status code is
+// mentioned, and it writes no body.
+func TestStatusErrorCarriesBody(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(`{"error":"boom"}`))
+	}))
+	defer srv.Close()
+
+	f, err := New(Config{URL: srv.URL})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	err = f.Forward(context.Background(), "r", "t", json.RawMessage(`{}`), []byte(`{}`))
+	if err == nil {
+		t.Fatal("expected non-nil error for status 500")
+	}
+	if !strings.Contains(err.Error(), "500") {
+		t.Errorf("error %q does not mention the status", err.Error())
+	}
+	if !strings.Contains(err.Error(), "boom") {
+		t.Errorf("error %q does not mention the response body", err.Error())
+	}
+}
+
+// TestStatusErrorBodyBounded covers the other half: the body quoted into the
+// error is capped, so a peer that answers 500 with a megabyte of text cannot
+// turn one log line into a megabyte. Without the cap this test still passes on
+// content, so it asserts the bound itself.
+func TestStatusErrorBodyBounded(t *testing.T) {
+	const filler = "0123456789"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(strings.Repeat(filler, 4096)))
+	}))
+	defer srv.Close()
+
+	f, err := New(Config{URL: srv.URL})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	err = f.Forward(context.Background(), "r", "t", json.RawMessage(`{}`), []byte(`{}`))
+	if err == nil {
+		t.Fatal("expected non-nil error for status 500")
+	}
+	// One "forward: status 500: " prefix plus the 512-byte cap, the trailing
+	// ellipsis marking the cut, and slack for the numbers in the prefix.
+	if n := len(err.Error()); n > 600 {
+		t.Errorf("error is %d bytes, want the body prefix bounded to ~512", n)
+	}
+	if !strings.Contains(err.Error(), "…") {
+		t.Errorf("error %q does not mark the body as truncated", err.Error())
+	}
+}
+
 func TestEmptyNonNilActionAndEvent(t *testing.T) {
 	var body []byte
 	srv := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {

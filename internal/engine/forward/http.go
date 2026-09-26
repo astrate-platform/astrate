@@ -11,6 +11,17 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
+)
+
+const (
+	// maxErrorBody is how much of a non-2xx response body is quoted back in
+	// the error. Enough for a JSON error document from a bus, small enough
+	// that a hostile or broken endpoint cannot flood the logs.
+	maxErrorBody = 512
+	// maxDrain caps the body read purely to make the connection reusable,
+	// matching the webhook path in internal/engine/triggers/actions.go.
+	maxDrain = 1 << 20
 )
 
 // Config is the HTTP bus forwarder's configuration.
@@ -145,11 +156,39 @@ func (h *HTTP) Forward(ctx context.Context, realm, trigger string, action json.R
 		return fmt.Errorf("forward: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
-	if _, err := io.Copy(io.Discard, resp.Body); err != nil {
+
+	ok := resp.StatusCode >= 200 && resp.StatusCode <= 299
+	// A non-2xx needs its body. "forward: status 500" tells an operator
+	// nothing they can act on, and the bus's own explanation ("{"error":
+	// "unknown realm"}") is the whole difference between a fixable failure and
+	// a mystery — so read a bounded prefix of it for the error, in the same
+	// shape as the container http bridge (blocks/container/httpbridge.go).
+	// Bounded because the endpoint is not us: an unbounded read would pull an
+	// arbitrarily large body into memory and into a log line.
+	var snippet string
+	if !ok {
+		// The read error is deliberately dropped: a truncated or unreadable
+		// body still has to surface as a status error, not as a read error
+		// that hides the status.
+		b, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorBody))
+		snippet = strings.TrimSpace(string(b))
+		if snippet != "" && len(b) == maxErrorBody {
+			snippet += "…"
+		}
+	}
+	// Drain so the connection is reusable. Bounded for the same reason, and to
+	// match the sibling request path in this codebase, which caps its drain at
+	// the same 1 MiB (triggers/actions.go): two near-identical request paths
+	// should not drift on the line that decides how much of a peer's body we
+	// are willing to hold.
+	if _, err := io.Copy(io.Discard, io.LimitReader(resp.Body, maxDrain)); err != nil {
 		return fmt.Errorf("forward: drain: %w", err)
 	}
-	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		return fmt.Errorf("forward: status %d", resp.StatusCode)
+	if !ok {
+		if snippet == "" {
+			return fmt.Errorf("forward: status %d", resp.StatusCode)
+		}
+		return fmt.Errorf("forward: status %d: %s", resp.StatusCode, snippet)
 	}
 	return nil
 }
