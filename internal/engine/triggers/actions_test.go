@@ -402,6 +402,66 @@ func TestWebhookDelivered(t *testing.T) {
 	}
 }
 
+// TestWebhookStaticHeadersOverrideFixed pins the precedence rule attempt
+// implements on the webhook path: the fixed Content-Type and Astarte-Realm are
+// set first and a.StaticHeaders second, so an action's http_static_headers wins
+// on a colliding name. TestWebhookDelivered only covers the non-colliding X-Foo
+// case, so hoisting the static loop above the two fixed Set calls — or filtering
+// the two names out of the map — would leave the suite green while inverting
+// what the endpoint receives.
+//
+// "Static wins" is the deliberate parity call, for the reasons the bus
+// forwarder already settled on (TestStaticHeadersOverrideFixed): the fixed
+// Content-Type is only a default for the JSON envelope, and upstream's own
+// blocklist (blockedHeaderNames) rejects content-length, host and the
+// hop-by-hop set but deliberately not content-type or astarte-realm, so naming
+// them in a trigger definition is allowed and upstream would deliver the
+// value. The action is built here by parseAction, so the test also pins that
+// the collision survives validation instead of relying on a hand-built Action.
+//
+// The header names are lowercase on purpose: that is what a trigger
+// definition carries, and Header.Set canonicalises them into a collision with
+// the fixed names.
+func TestWebhookStaticHeadersOverrideFixed(t *testing.T) {
+	const wantRealm = "spoofed"
+	var gotCT, gotRealm string
+	var gotRealmValues []string
+
+	done := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotCT = r.Header.Get("Content-Type")
+		gotRealm = r.Header.Get("Astarte-Realm")
+		gotRealmValues = r.Header.Values("Astarte-Realm")
+		w.WriteHeader(http.StatusNoContent)
+		close(done)
+	}))
+	defer srv.Close()
+
+	a, _, err := parseAction([]byte(`{"http_url":"` + srv.URL +
+		`","http_method":"post","http_static_headers":{"content-type":"application/x-ndjson","astarte-realm":"spoofed"}}`))
+	if err != nil {
+		t.Fatalf("parseAction rejected a colliding header: %v", err)
+	}
+	x := newTestExecutor(t, ExecutorConfig{Workers: 1})
+	x.Enqueue(testDelivery(a))
+
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("webhook never received")
+	}
+
+	if gotRealm != wantRealm {
+		t.Errorf("Astarte-Realm = %q, want the static value %q", gotRealm, wantRealm)
+	}
+	if len(gotRealmValues) != 1 {
+		t.Errorf("Astarte-Realm sent %d time(s) (%q), want a single Set value", len(gotRealmValues), gotRealmValues)
+	}
+	if gotCT != "application/x-ndjson" {
+		t.Errorf("Content-Type = %q, want the static value", gotCT)
+	}
+}
+
 // TestWebhookMustacheTemplateRendered: a mustache action renders the body
 // from realm/device/trigger/event fields instead of the default envelope.
 func TestWebhookMustacheTemplateRendered(t *testing.T) {
