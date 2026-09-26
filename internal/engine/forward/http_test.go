@@ -117,6 +117,61 @@ func TestStaticHeaders(t *testing.T) {
 	}
 }
 
+// TestStaticHeadersOverrideFixed pins the precedence rule the Config comment
+// states ("applied after the fixed ones") and Forward implements: a static
+// header whose name collides with one of the three fixed headers wins, because
+// the static loop runs last. TestStaticHeaders only covers the non-colliding
+// case, so hoisting the loop above the three fixed Set calls — or filtering the
+// fixed names out of h.static — would leave the suite green while inverting
+// what the bus receives.
+//
+// The keys are lowercase on purpose: Header.Set canonicalises, so a TOML
+// operator writing `astarte-realm` collides with the fixed Astarte-Realm even
+// though the strings differ. The realm header is the interesting one — a bus
+// filters and routes on it, so "spoofed" is the value that arrives.
+func TestStaticHeadersOverrideFixed(t *testing.T) {
+	const want = "spoofed"
+	var gotContentType, gotRealm, gotTrigger string
+	var gotRealmValues []string
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotContentType = r.Header.Get("Content-Type")
+		gotRealm = r.Header.Get("Astarte-Realm")
+		gotRealmValues = r.Header.Values("Astarte-Realm")
+		gotTrigger = r.Header.Get("Astrate-Trigger-Name")
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	f, err := New(Config{
+		URL: srv.URL,
+		StaticHeaders: map[string]string{
+			"content-type":         "application/x-ndjson",
+			"astarte-realm":        want,
+			"astrate-trigger-name": "other-trigger",
+		},
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if err := f.Forward(context.Background(), "r", "t", json.RawMessage(`{}`), []byte(`{}`)); err != nil {
+		t.Fatalf("Forward: %v", err)
+	}
+
+	if gotRealm != want {
+		t.Errorf("Astarte-Realm = %q, want the static value %q", gotRealm, want)
+	}
+	if len(gotRealmValues) != 1 {
+		t.Errorf("Astarte-Realm sent %d time(s) (%q), want a single Set value", len(gotRealmValues), gotRealmValues)
+	}
+	if gotContentType != "application/x-ndjson" {
+		t.Errorf("Content-Type = %q, want the static value", gotContentType)
+	}
+	if gotTrigger != "other-trigger" {
+		t.Errorf("Astrate-Trigger-Name = %q, want the static value", gotTrigger)
+	}
+}
+
 func TestMethodHonoured(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPut {
