@@ -121,9 +121,28 @@ func TestSpecs(t *testing.T) {
 // do not authorize the method+path (internal/auth/middleware.go). Matches the
 // upstream-parity the housekeeping and pairing specs already document.
 func TestRealmManagement403(t *testing.T) {
-	b, err := docs.APIYAML.ReadFile("api/astarte_realm_management_api.yaml")
+	specDocuments403(t, "astarte_realm_management_api.yaml")
+}
+
+// TestAppEngine403 is the AppEngine half of the same contract: every route is
+// wrapped by RequireRealm(auth.ClaimAppEngine) (internal/appengine/http.go),
+// so a verified a_aea JWT whose grants do not authorize the method+path gets
+// 403 Forbidden, not 401 (astarteapi.WriteForbidden,
+// internal/auth/middleware.go) — the behaviour pinned by
+// internal/appengine/http_test.go. Documenting only 401 would teach a
+// generated client that 403 cannot happen.
+func TestAppEngine403(t *testing.T) {
+	specDocuments403(t, "astarte_appengine_api.yaml")
+}
+
+// specDocuments403 checks that every operation in the given spec documents a
+// 403 response and that components.responses defines the Forbidden response
+// they reference.
+func specDocuments403(t *testing.T, filename string) {
+	t.Helper()
+	b, err := docs.APIYAML.ReadFile("api/" + filename)
 	if err != nil {
-		t.Fatalf("reading astarte_realm_management_api.yaml: %v", err)
+		t.Fatalf("reading %s: %v", filename, err)
 	}
 	lines := strings.Split(string(b), "\n")
 
@@ -143,7 +162,7 @@ func TestRealmManagement403(t *testing.T) {
 		t.Fatal("cannot locate the paths and components sections")
 	}
 
-	methodRe := regexp.MustCompile(`^    (get|post|put|delete):$`)
+	methodRe := regexp.MustCompile(`^    (get|post|put|delete|patch):$`)
 	var ops []int
 	for i, l := range lines[pathIdx:compIdx] {
 		if methodRe.MatchString(l) {
