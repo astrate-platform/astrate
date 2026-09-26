@@ -133,3 +133,4 @@ layer can actually do — read it before deciding whether a kind of task is wort
 | 2026-09-25 | docs-sync-rm-delete-device-async-operation-param | blocked | 177s | wrote nothing |
 | 2026-09-26 | forward-static-header-validation | done | 874s | 1cbebd5 |
 | 2026-09-26 | forward-static-headers-override-test | done | 263s | 3a0f153 |
+| 2026-09-26 | forward-status-error-body | done | 209s | 915c260 |
