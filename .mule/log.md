@@ -136,3 +136,4 @@ layer can actually do — read it before deciding whether a kind of task is wort
 | 2026-09-26 | forward-status-error-body | done | 209s | 915c260 |
 | 2026-09-26 | forward-envelope-bytes-test | done | 213s | ed869b6 |
 | 2026-09-26 | webhook-static-headers-override-test | done | 178s | f9db0a6 |
+| 2026-09-26 | docs-sync-ae-forbidden-403 | done | 1037s | 6a29ac7 |
