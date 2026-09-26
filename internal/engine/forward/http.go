@@ -34,7 +34,9 @@ type HTTP struct {
 }
 
 // New builds an HTTP bus forwarder. It returns an error when URL is empty or
-// does not parse, or when Method is not a valid HTTP method token.
+// does not parse, when Method is not a valid HTTP method token, or when a
+// StaticHeaders name is not a header field name or a value is not a legal
+// field value.
 func New(cfg Config) (*HTTP, error) {
 	if cfg.URL == "" {
 		return nil, fmt.Errorf("forward: URL must not be empty")
@@ -54,8 +56,20 @@ func New(cfg Config) (*HTTP, error) {
 	if m == "" {
 		m = http.MethodPost
 	} else {
-		if !validMethod(m) {
+		if !validToken(m) {
 			return nil, fmt.Errorf("forward: invalid method %q", m)
+		}
+	}
+	// Static headers are applied with Header.Set per delivery, and net/http
+	// only checks field names and values when it writes the request — so a
+	// typo in triggers.forward.static_headers would boot clean and then fail
+	// every custom action. Same rule as the URL above: reject it here.
+	for k, v := range cfg.StaticHeaders {
+		if !validToken(k) {
+			return nil, fmt.Errorf("forward: invalid static header name %q", k)
+		}
+		if !validHeaderValue(v) {
+			return nil, fmt.Errorf("forward: invalid value for static header %q: %q", k, v)
 		}
 	}
 	c := cfg.Client
@@ -70,11 +84,12 @@ func New(cfg Config) (*HTTP, error) {
 	}, nil
 }
 
-// validMethod returns true when s is a token per RFC 7230 §3.2.6 that
-// is also a recognised HTTP method. We accept any single-token string
-// so that user-configured methods like PUT or PATCH are allowed without
-// a whitelist.
-func validMethod(s string) bool {
+// validToken returns true when s is a non-empty token per RFC 7230 §3.2.6.
+// That is the grammar of the method (RFC 7230 §4.1) and, identically, of the
+// header field name (RFC 7230 §3.2), so both are checked with this one
+// predicate. We accept any single-token string so that user-configured
+// methods like PUT or PATCH are allowed without a whitelist.
+func validToken(s string) bool {
 	if s == "" {
 		return false
 	}
@@ -88,6 +103,21 @@ func validMethod(s string) bool {
 			c == '`', c == '|', c == '~':
 			continue
 		default:
+			return false
+		}
+	}
+	return true
+}
+
+// validHeaderValue reports whether v can be written as a header field value.
+// It mirrors net/http's own write-time check (httpguts.ValidHeaderFieldValue),
+// measured rather than assumed: SP, HTAB, obs-text and the empty string are
+// accepted by a real request, while CR, LF and the other control bytes are
+// refused with `net/http: invalid header field value`.
+func validHeaderValue(v string) bool {
+	for i := 0; i < len(v); i++ {
+		c := v[i]
+		if (c < 0x20 && c != '\t') || c == 0x7f {
 			return false
 		}
 	}

@@ -289,6 +289,14 @@ func TestNewRejectsBadConfig(t *testing.T) {
 		{"no host", Config{URL: "http://"}},
 		{"non-http scheme", Config{URL: "ftp://bus.example/x"}},
 		{"bad method", Config{URL: srv.URL, Method: "GET NOPE"}},
+		// A static header is applied per delivery, and net/http validates
+		// names and values only at write time, so these are exactly the typos
+		// that would boot clean and then fail every delivery. A space in a
+		// value is legal, so the value cases must be about control bytes.
+		{"bad static header name", Config{URL: srv.URL, StaticHeaders: map[string]string{"X Bad Name": "v"}}},
+		{"static header name with colon", Config{URL: srv.URL, StaticHeaders: map[string]string{"X:Foo": "v"}}},
+		{"static header value with newline", Config{URL: srv.URL, StaticHeaders: map[string]string{"X-Foo": "a\nb"}}},
+		{"static header value with carriage return", Config{URL: srv.URL, StaticHeaders: map[string]string{"X-Foo": "a\rb"}}},
 	}
 	for _, b := range bad {
 		t.Run(b.name, func(t *testing.T) {
@@ -298,13 +306,19 @@ func TestNewRejectsBadConfig(t *testing.T) {
 			}
 		})
 	}
+	if n := errCount.Load(); n != 0 {
+		t.Errorf("%d request(s) reached the endpoint for rejected configs, want 0", n)
+	}
 
 	// A valid config with the same URL must be accepted.
-	f, err := New(Config{URL: srv.URL})
+	f, err := New(Config{URL: srv.URL, StaticHeaders: map[string]string{"Authorization": "Bearer tok"}})
 	if err != nil {
 		t.Fatalf("New with valid config: %v", err)
 	}
 	if err := f.Forward(context.Background(), "r", "t", json.RawMessage(`{}`), []byte(`{}`)); err != nil {
 		t.Fatalf("Forward: %v", err)
+	}
+	if n := errCount.Load(); n != 1 {
+		t.Errorf("%d request(s) reached the endpoint after one Forward, want 1", n)
 	}
 }
