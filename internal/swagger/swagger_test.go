@@ -362,6 +362,50 @@ func TestHousekeepingRetentionZeroFoldDocumented(t *testing.T) {
 	}
 }
 
+// TestAppEngineAddGroupDevice422Documented guards that adding a device to a
+// group documents its 422, which is a different failure from the 400: a
+// well-formed body whose device_id does not parse is rejected as a field error
+// (FieldErrors{"device_id": ...}, internal/appengine/service.go) and answered
+// 422 with the changeset-shaped FieldErrorsDetail body
+// (astarteapi.WriteFieldErrors, internal/appengine/http.go), while the
+// documented 400 only covers a body DecodeData cannot parse. So the 422 must
+// $ref the ValidationErrors response — pointing it at BadRequest would teach a
+// generated client the wrong body shape for the common case. This is the
+// documentation half of the behaviour pinned by TestAddGroupDeviceErrors in
+// internal/appengine.
+func TestAppEngineAddGroupDevice422Documented(t *testing.T) {
+	b, err := docs.APIYAML.ReadFile("api/astarte_appengine_api.yaml")
+	if err != nil {
+		t.Fatalf("reading astarte_appengine_api.yaml: %v", err)
+	}
+	lines := strings.Split(string(b), "\n")
+
+	const (
+		key = `        "422":`
+		ref = `          $ref: "#/components/responses/ValidationErrors"`
+	)
+
+	block := operationBlock(t, lines, "addGroupDevice")
+	idx := -1
+	for i, l := range block {
+		if l == key {
+			idx = i
+			break
+		}
+	}
+	if idx < 0 {
+		t.Fatal("addGroupDevice documents no 422 response")
+	}
+	if idx+1 >= len(block) || block[idx+1] != ref {
+		t.Errorf("addGroupDevice 422 is followed by %q, want the ValidationErrors $ref", block[idx+1])
+	}
+
+	comp := strings.Join(componentBlock(t, lines, "    ValidationErrors:"), "\n")
+	if !strings.Contains(comp, `#/components/schemas/FieldErrorsDetail`) {
+		t.Error("components.responses.ValidationErrors does not carry the FieldErrorsDetail body")
+	}
+}
+
 // operationBlock returns the lines of the operation with the given operationId,
 // up to the next operation, path, or the components section.
 func operationBlock(t *testing.T, lines []string, operationID string) []string {

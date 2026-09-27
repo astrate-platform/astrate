@@ -1023,6 +1023,8 @@ paths:
           $ref: "#/components/responses/NotFound"
         "409":
           $ref: "#/components/responses/ConflictDeviceAlreadyInGroup"
+        "422":
+          $ref: "#/components/responses/ValidationErrors"
         "500":
           $ref: "#/components/responses/InternalServerError"
 
