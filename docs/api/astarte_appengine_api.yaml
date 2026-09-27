@@ -296,6 +296,8 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/DeviceNotFound"
+        "409":
+          $ref: "#/components/responses/ConflictAliasInUse"
         "422":
           $ref: "#/components/responses/UnprocessableEntity"
         "500":
