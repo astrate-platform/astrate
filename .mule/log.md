@@ -138,3 +138,4 @@ layer can actually do — read it before deciding whether a kind of task is wort
 | 2026-09-26 | webhook-static-headers-override-test | done | 178s | f9db0a6 |
 | 2026-09-26 | docs-sync-ae-forbidden-403 | done | 1037s | 6a29ac7 |
 | 2026-09-27 | docs-sync-ae-patch-by-alias-409 | done | 119s | d1af059 |
+| 2026-09-27 | docs-sync-ae-add-group-device-422 | done | 274s | dff3be8 |
