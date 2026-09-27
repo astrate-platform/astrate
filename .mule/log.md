@@ -140,3 +140,4 @@ layer can actually do — read it before deciding whether a kind of task is wort
 | 2026-09-27 | docs-sync-ae-patch-by-alias-409 | done | 119s | d1af059 |
 | 2026-09-27 | docs-sync-ae-add-group-device-422 | done | 274s | dff3be8 |
 | 2026-09-27 | docs-sync-ae-delete-data-400 | done | 330s | 66bc366 |
+| 2026-09-27 | docs-sync-ae-list-devices-422 | transient | 344s |  > build · big-pickle  Error: Error from provider (Console): Rate limit exceeded. Please try again later.  |
