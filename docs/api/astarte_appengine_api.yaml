@@ -545,7 +545,8 @@ paths:
       summary: Delete data at path by alias
       description: |
         Unsets the property at a specific path (properties interface only),
-        looked up by alias. Returns 204 on success.
+        looked up by alias. Returns 204 on success. A path matching no
+        endpoint mapping is a 400, not a 404.
       tags: [AppEngine - Data]
       security:
         - a_aea: []
@@ -567,6 +568,8 @@ paths:
       responses:
         "204":
           description: Data deleted. No body returned.
+        "400":
+          $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
@@ -794,7 +797,8 @@ paths:
       summary: Delete data at path
       description: |
         Unsets the property at a specific path (properties interface only).
-        Returns 204 on success.
+        Returns 204 on success. A path matching no endpoint mapping is a 400,
+        not a 404.
       tags: [AppEngine - Data]
       security:
         - a_aea: []
@@ -811,6 +815,8 @@ paths:
       responses:
         "204":
           description: Data deleted. No body returned.
+        "400":
+          $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
@@ -1353,7 +1359,8 @@ paths:
       summary: Delete data at path in group
       description: |
         Unsets the property at a specific path (properties interface only),
-        within a group. Returns 204 on success.
+        within a group. Returns 204 on success. A path matching no endpoint
+        mapping is a 400, not a 404.
       tags: [AppEngine - Groups]
       security:
         - a_aea: []
@@ -1371,6 +1378,8 @@ paths:
       responses:
         "204":
           description: Data deleted. No body returned.
+        "400":
+          $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":

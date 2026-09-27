@@ -406,6 +406,52 @@ func TestAppEngineAddGroupDevice422Documented(t *testing.T) {
 	}
 }
 
+// TestAppEngineDataDelete400Documented guards that the three data DELETE
+// operations document their 400: unsetting a path that matches no endpoint
+// mapping makes the trie lookup fail with engine.ErrPathNotFound
+// (UnsetServerProperty, internal/engine/serverdata.go), which writeError
+// answers as 400 "Endpoint not found" (internal/appengine/http.go) — the same
+// 400 the PUT/POST twins already document, because it is the same sentinel on
+// the same write path. Documenting only 404 would teach a generated client
+// that an unmatched path is a missing resource; the read path does use 404 for
+// that (appengine.ErrPathNotFound), and the two are deliberately distinct. This
+// is the documentation half of the behaviour pinned by
+// TestWriteErrorTaxonomy in internal/appengine.
+func TestAppEngineDataDelete400Documented(t *testing.T) {
+	b, err := docs.APIYAML.ReadFile("api/astarte_appengine_api.yaml")
+	if err != nil {
+		t.Fatalf("reading astarte_appengine_api.yaml: %v", err)
+	}
+	lines := strings.Split(string(b), "\n")
+
+	const (
+		key = `        "400":`
+		ref = `          $ref: "#/components/responses/BadRequest"`
+	)
+
+	for _, op := range []string{"deleteDataByAlias", "deleteData", "deleteDataInGroup"} {
+		block := operationBlock(t, lines, op)
+		idx := -1
+		for i, l := range block {
+			if l == key {
+				idx = i
+				break
+			}
+		}
+		if idx < 0 {
+			t.Errorf("operation %s documents no 400 response", op)
+			continue
+		}
+		if idx+1 >= len(block) || block[idx+1] != ref {
+			t.Errorf("operation %s 400 is followed by %q, want the BadRequest $ref", op, block[idx+1])
+		}
+	}
+
+	if !containsLine(lines, "    BadRequest:") {
+		t.Error("components.responses defines no BadRequest response")
+	}
+}
+
 // operationBlock returns the lines of the operation with the given operationId,
 // up to the next operation, path, or the components section.
 func operationBlock(t *testing.T, lines []string, operationID string) []string {
