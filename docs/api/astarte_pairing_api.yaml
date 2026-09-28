@@ -387,7 +387,12 @@ components:
             body.
         initial_payload_format:
           type: string
-          description: Optional Astrate extension specifying the device's initial payload format.
+          enum: [bson, json]
+          description: |
+            Optional Astrate extension specifying the device's initial payload
+            format. Any other value is rejected with 422 and the
+            `{"errors":{"initial_payload_format":["is invalid"]}}` body.
+            Omit the field, or send it empty, to leave the format unset.
 
     CredentialsRequest:
       type: object
@@ -630,6 +635,24 @@ components:
                 errors:
                   hw_id:
                     - "is not a valid base64 encoded 128 bits id"
+            invalid_payload_format:
+              summary: Unsupported initial_payload_format
+              value:
+                errors:
+                  initial_payload_format:
+                    - "is invalid"
+            blank_csr:
+              summary: Blank csr
+              value:
+                errors:
+                  csr:
+                    - "can't be blank"
+            blank_client_crt:
+              summary: Blank client_crt
+              value:
+                errors:
+                  client_crt:
+                    - "can't be blank"
 
     TooManyRequests:
       description: Too Many Requests — rate limit exceeded.
