@@ -145,3 +145,4 @@ layer can actually do — read it before deciding whether a kind of task is wort
 | 2026-09-27 | docs-sync-ae-list-devices-422 | blocked | 1200s | TIMEOUT after 1200s — task too big, split it |
 | 2026-09-28 | docs-sync-pairing-error-example-capitalisation | done | 166s | 7ed78cb |
 | 2026-09-28 | docs-sync-pairing-info-version-example | done | 333s | d9ec98f |
+| 2026-09-28 | docs-sync-pairing-deviceid-base64url | done | 480s | 32693cf |
