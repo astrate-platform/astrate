@@ -249,7 +249,7 @@ paths:
                       broker_url: "mqtts://broker.test.example:8883"
                       ca_crt: "-----BEGIN CERTIFICATE-----\nMIID...\n-----END CERTIFICATE-----"
                   status: confirmed
-                  version: "0.1.0-test"
+                  version: "0.1.0-dev"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "500":
