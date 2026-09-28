@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	docs "github.com/astrate-platform/astrate/docs"
+	"github.com/astrate-platform/astrate/pkg/astarteapi"
 )
 
 func TestMount(t *testing.T) {
@@ -449,6 +450,55 @@ func TestAppEngineDataDelete400Documented(t *testing.T) {
 
 	if !containsLine(lines, "    BadRequest:") {
 		t.Error("components.responses defines no BadRequest response")
+	}
+}
+
+// TestPairingErrorDetailExamples pins the error-detail examples in the pairing
+// spec's components.responses to the frozen canonical strings the wire emits
+// (astarteapi/envelope.go), so a generated client that copies an example does
+// not learn a detail that never goes over the wire. Phoenix renders "Bad
+// request" and "Internal server error" — the capital-R/capital-S spellings the
+// spec used to carry were reconstructed, not measured on upstream 1.2.0, and a
+// startectl/SDK error path matching on the canonical string would miss them.
+// The 404 detail is deliberately absent here: pairing answers an unmatched
+// path with DetailPageNotFound while DetailNotFound is the generic form, and
+// the spec's own DeviceNotFound example is the one that carries a constant.
+func TestPairingErrorDetailExamples(t *testing.T) {
+	b, err := docs.APIYAML.ReadFile("api/astarte_pairing_api.yaml")
+	if err != nil {
+		t.Fatalf("reading astarte_pairing_api.yaml: %v", err)
+	}
+	lines := strings.Split(string(b), "\n")
+
+	const detailPrefix = "              detail: "
+
+	for _, tc := range []struct {
+		response string
+		want     string
+	}{
+		{"    BadRequest:", astarteapi.DetailBadRequest},
+		{"    Unauthorized:", astarteapi.DetailUnauthorized},
+		{"    Forbidden:", astarteapi.DetailForbidden},
+		{"    DeviceNotFound:", astarteapi.DetailDeviceNotFound},
+		{"    InternalServerError:", astarteapi.DetailInternalServerError},
+	} {
+		block := componentBlock(t, lines, tc.response)
+
+		got := ""
+		for _, l := range block {
+			if strings.HasPrefix(l, detailPrefix) {
+				got = strings.TrimPrefix(l, detailPrefix)
+				break
+			}
+		}
+		if got == "" {
+			t.Errorf("response %q carries no %q example", tc.response, "detail")
+			continue
+		}
+		if got != tc.want {
+			t.Errorf("response %q example detail = %q, want the canonical %q",
+				strings.TrimSpace(tc.response), got, tc.want)
+		}
 	}
 }
 
