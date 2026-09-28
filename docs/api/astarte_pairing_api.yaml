@@ -150,7 +150,18 @@ paths:
     delete:
       operationId: unregisterDevice
       summary: Unregister a device
-      description: Removes a device from the realm. Returns 204 on success.
+      description: |
+        Makes a device registrable again. This is not a deletion: the device
+        row survives together with everything stored for it — its interfaces,
+        its datastream data and its group memberships. Only the credential
+        trail is cleared (credentials secret, first-credentials-request
+        timestamp and client certificate) and `status` goes back to
+        `registered`, so the device has to be paired again to obtain a
+        credentials secret or a certificate.
+
+        Returns 204 on success. Because the row is still there, unregistering
+        an already-unregistered device is also a 204 no-op; 404 is returned
+        only for a device that does not exist in the realm.
       tags: [Pairing]
       security:
         - a_pa: []

@@ -583,6 +583,67 @@ func TestPairingDeviceIDEncodingDocumented(t *testing.T) {
 	}
 }
 
+// TestPairingUnregisterDeviceSemanticsDocumented guards that the pairing spec
+// describes `unregisterDevice` for what it does. "Removes a device from the
+// realm" reads as a device-and-data deletion; store.UnregisterDevice clears the
+// credential trail and flips status back to 'registered' and touches nothing
+// else (internal/store/devices.go), so the row, its interfaces, its datastream
+// data and its group memberships all survive, and a second DELETE still matches
+// the row — a 204 no-op, not the 404 a deletion would have produced.
+func TestPairingUnregisterDeviceSemanticsDocumented(t *testing.T) {
+	b, err := docs.APIYAML.ReadFile("api/astarte_pairing_api.yaml")
+	if err != nil {
+		t.Fatalf("reading astarte_pairing_api.yaml: %v", err)
+	}
+	lines := strings.Split(string(b), "\n")
+
+	desc := operationDescription(t, operationBlock(t, lines, "unregisterDevice"))
+	for _, want := range []string{
+		"not a deletion",
+		"registrable again",
+		"interfaces",
+		"datastream data",
+		"group memberships",
+		"credential",
+		"204 no-op",
+		"404 is returned only for a device that does not exist",
+	} {
+		if !strings.Contains(desc, want) {
+			t.Errorf("unregisterDevice description does not say %q", want)
+		}
+	}
+	if strings.Contains(desc, "Removes a device from the realm") {
+		t.Error("unregisterDevice description still claims the device is removed from the realm")
+	}
+}
+
+// operationDescription returns the text of the operation block's description,
+// block-scalar or single-line, with the wrapping flattened so assertions do not
+// depend on it.
+func operationDescription(t *testing.T, block []string) string {
+	t.Helper()
+	var text []string
+	for i, l := range block {
+		if l == "      description: |" {
+			for _, b := range block[i+1:] {
+				if strings.TrimSpace(b) == "" {
+					continue
+				}
+				if !strings.HasPrefix(b, "        ") {
+					break
+				}
+				text = append(text, strings.TrimSpace(b))
+			}
+			return strings.Join(text, " ")
+		}
+		if v, ok := strings.CutPrefix(l, "      description: "); ok {
+			return strings.Trim(strings.TrimSpace(v), `"'`)
+		}
+	}
+	t.Fatal("operation declares no description")
+	return ""
+}
+
 // operationBlock returns the lines of the operation with the given operationId,
 // up to the next operation, path, or the components section.
 func operationBlock(t *testing.T, lines []string, operationID string) []string {
