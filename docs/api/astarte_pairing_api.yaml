@@ -357,7 +357,11 @@ components:
       name: deviceID
       in: path
       required: true
-      description: The device hardware ID (base64-encoded 128-bit).
+      description: |
+        The device hardware ID: a 128-bit value in the 22-character unpadded
+        base64url wire form — the alphabet is `A-Z`, `a-z`, `0-9`, `-` and `_`,
+        with no `=` padding. The standard-alphabet characters `+` and `/`, and
+        a padded 23-character spelling of the same value, are not accepted.
       schema:
         type: string
 
@@ -370,7 +374,17 @@ components:
       properties:
         hw_id:
           type: string
-          description: Device hardware ID (base64-encoded 128-bit).
+          minLength: 22
+          maxLength: 22
+          pattern: '^[A-Za-z0-9_-]{22}$'
+          description: |
+            Device hardware ID: a 128-bit value in the 22-character unpadded
+            base64url wire form — the alphabet is `A-Z`, `a-z`, `0-9`, `-` and
+            `_`, with no `=` padding. The standard-alphabet characters `+` and
+            `/`, and a padded 23-character spelling of the same value, are
+            rejected with 422 and the
+            `{"errors":{"hw_id":["is not a valid base64 encoded 128 bits id"]}}`
+            body.
         initial_payload_format:
           type: string
           description: Optional Astrate extension specifying the device's initial payload format.

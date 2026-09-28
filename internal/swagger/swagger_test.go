@@ -2,6 +2,7 @@ package swagger
 
 import (
 	"embed"
+	"fmt"
 	"io"
 	"io/fs"
 	"net/http"
@@ -9,11 +10,13 @@ import (
 	"reflect"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 
 	docs "github.com/astrate-platform/astrate/docs"
 	"github.com/astrate-platform/astrate/pkg/astarteapi"
+	"github.com/astrate-platform/astrate/pkg/deviceid"
 )
 
 func TestMount(t *testing.T) {
@@ -498,6 +501,84 @@ func TestPairingErrorDetailExamples(t *testing.T) {
 		if got != tc.want {
 			t.Errorf("response %q example detail = %q, want the canonical %q",
 				strings.TrimSpace(tc.response), got, tc.want)
+		}
+	}
+}
+
+// TestPairingDeviceIDEncodingDocumented guards that the pairing spec states the
+// exact wire form of a device identifier — the 22-character unpadded base64url
+// string deviceid.Parse accepts — instead of the "base64-encoded 128-bit"
+// wording, which read as standard base64 and let a generated client send a
+// well-formed `+`/`/` identifier or a padded 23-character spelling and collect
+// a 422 `{"errors":{"hw_id":["is not a valid base64 encoded 128 bits id"]}}`
+// (internal/pairing/http.go). The shipped pattern is compiled here and held to
+// the same spellings the parser is, so the two cannot drift apart: the bounds
+// and the description wording are derived from deviceid.EncodedLen rather than
+// written out, so a change to the accepted length fails this test too.
+func TestPairingDeviceIDEncodingDocumented(t *testing.T) {
+	b, err := docs.APIYAML.ReadFile("api/astarte_pairing_api.yaml")
+	if err != nil {
+		t.Fatalf("reading astarte_pairing_api.yaml: %v", err)
+	}
+	lines := strings.Split(string(b), "\n")
+
+	wantLen := strconv.Itoa(deviceid.EncodedLen)
+	wantDesc := fmt.Sprintf("%s-character unpadded", wantLen)
+
+	param := strings.Join(componentBlock(t, lines, "    DeviceID:"), "\n")
+	for _, want := range []string{wantDesc, "base64url"} {
+		if !strings.Contains(param, want) {
+			t.Errorf("DeviceID parameter description does not say %q", want)
+		}
+	}
+	if strings.Contains(param, "(base64-encoded 128-bit)") {
+		t.Error("DeviceID parameter still describes the ID as plain base64")
+	}
+
+	block := propertyBlock(t, lines, "hw_id")
+	hwID := strings.Join(block, "\n")
+	for _, want := range []string{wantDesc, "base64url"} {
+		if !strings.Contains(hwID, want) {
+			t.Errorf("RegisterRequest.hw_id description does not say %q", want)
+		}
+	}
+	for _, want := range []string{
+		"          minLength: " + wantLen,
+		"          maxLength: " + wantLen,
+	} {
+		if !containsLine(block, want) {
+			t.Errorf("RegisterRequest.hw_id is missing line %q", want)
+		}
+	}
+
+	pattern := ""
+	for _, l := range block {
+		if v, ok := strings.CutPrefix(l, "          pattern: "); ok {
+			pattern = strings.Trim(v, `'"`)
+			break
+		}
+	}
+	if pattern == "" {
+		t.Fatal("RegisterRequest.hw_id carries no pattern")
+	}
+	re, err := regexp.Compile(pattern)
+	if err != nil {
+		t.Fatalf("hw_id pattern %q does not compile: %v", pattern, err)
+	}
+
+	if !re.MatchString("dT6hS2W9TT6LEnP25ks_lg") {
+		t.Errorf("hw_id pattern %q rejects the spec's own example dT6hS2W9TT6LEnP25ks_lg", pattern)
+	}
+	for _, spelling := range []string{
+		"dT6hS2W9TT6LEnP25ks+lg",  // standard-alphabet '+'
+		"dT6hS2W9TT6LEnP25ks/lg",  // standard-alphabet '/'
+		"dT6hS2W9TT6LEnP25ks_lg=", // padded
+	} {
+		if _, err := deviceid.Parse(spelling); err == nil {
+			t.Errorf("deviceid.Parse accepts %q; this test's premise no longer holds", spelling)
+		}
+		if re.MatchString(spelling) {
+			t.Errorf("hw_id pattern %q accepts %q, which deviceid.Parse rejects", pattern, spelling)
 		}
 	}
 }
