@@ -470,3 +470,4 @@ Not queued for the same reason: `IdleTimeout` is missing on the HTTP server
 (cmd/astrate/main.go:221) and `-healthcheck` ignores the config file
 (cmd/astrate/main.go:531) — both real, both yours to call, neither has a test worth
 writing. See `.mule/reviews/cmd-astrate-2026-09-25.md`.
+- **The mule has been idle 16h.** Filed by the dead-man's switch; see journalctl on the Pi.
