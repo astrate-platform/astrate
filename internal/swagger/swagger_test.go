@@ -15,6 +15,7 @@ import (
 	"testing"
 
 	docs "github.com/astrate-platform/astrate/docs"
+	"github.com/astrate-platform/astrate/internal/engine/triggers"
 	"github.com/astrate-platform/astrate/pkg/astarteapi"
 	"github.com/astrate-platform/astrate/pkg/deviceid"
 )
@@ -513,8 +514,10 @@ func TestPairingErrorDetailExamples(t *testing.T) {
 // never renders and no handler emits: every 400 on this surface goes through
 // astarteapi.WriteBadRequest and every 500 through WriteInternalServerError
 // (internal/realm/http.go), and the SDK/astartectl error paths match on the
-// canonical strings. The Conflict and ValidationError examples are
-// endpoint-specific details with no constant behind them, so they stay free-form.
+// canonical strings. The Conflict example is an endpoint-specific detail with no
+// constant behind it, so it stays free-form; the three 422s that used to share
+// one ValidationError component are pinned by
+// TestRealmManagement422ValidationDetails.
 func TestRealmManagementErrorDetailExamples(t *testing.T) {
 	b, err := docs.APIYAML.ReadFile("api/astarte_realm_management_api.yaml")
 	if err != nil {
@@ -553,6 +556,90 @@ func TestRealmManagementErrorDetailExamples(t *testing.T) {
 				strings.TrimSpace(tc.response), got, tc.want)
 		}
 	}
+}
+
+// TestRealmManagement422ValidationDetails pins the 422 examples the three
+// non-interface realm-management operations carry to the details the wire
+// actually emits, so a generated client that copies one does not learn a
+// message no handler can produce.
+//
+// The three operations used to share components.responses.ValidationError, whose
+// single example read `invalid interface: missing "interface_name"`. That string
+// is wrong for all three: it names an interface, and none of them installs or
+// updates one. Each now carries its own inline 422, the pattern
+// installInterface and updateInterface already use for their own details.
+//
+// The createPolicy examples are derived from the compiler here instead of being
+// written out, so a change to the message fails here instead of drifting the
+// spec — the coupling TestPairingDeviceIDEncodingDocumented gets from
+// deviceid. The putAuthConfig and deletePolicy details have no exported
+// constant behind them (Service.SetAuthKey and Service.DeletePolicy,
+// internal/realm/service.go), so they are spelled out and cited here.
+func TestRealmManagement422ValidationDetails(t *testing.T) {
+	b, err := docs.APIYAML.ReadFile("api/astarte_realm_management_api.yaml")
+	if err != nil {
+		t.Fatalf("reading astarte_realm_management_api.yaml: %v", err)
+	}
+	lines := strings.Split(string(b), "\n")
+
+	if strings.Contains(string(b), "#/components/responses/ValidationError") {
+		t.Error("spec still $refs a shared ValidationError response; one example cannot be right for every surface that refs it")
+	}
+	if containsLine(lines, "    ValidationError:") {
+		t.Error("spec still defines components.responses.ValidationError")
+	}
+
+	_, noHandlers := triggers.CompilePolicy([]byte(`{"name":"p","error_handlers":[]}`))
+	if noHandlers == nil {
+		t.Fatal("triggers.CompilePolicy accepted a policy with no error handler; this test's premise no longer holds")
+	}
+	_, badName := triggers.CompilePolicy(
+		[]byte(`{"name":"","error_handlers":[{"on":"any_error","strategy":"discard"}]}`))
+	if badName == nil {
+		t.Fatal("triggers.CompilePolicy accepted an empty policy name; this test's premise no longer holds")
+	}
+
+	for _, tc := range []struct {
+		op   string
+		want []string
+	}{
+		{"putAuthConfig", []string{`jwt_public_key_pem can't be blank`}},
+		{"createPolicy", []string{noHandlers.Error(), badName.Error()}},
+		{"deletePolicy", []string{`policy "audit" is still used by trigger "on_audit_failure"`}},
+	} {
+		block := strings.Join(responseBlock(t, operationBlock(t, lines, tc.op), "422"), "\n")
+		for _, want := range tc.want {
+			if !strings.Contains(block, want) {
+				t.Errorf("%s 422 carries no example with detail %q", tc.op, want)
+			}
+		}
+		if strings.Contains(block, "#/components/responses/") {
+			t.Errorf("%s 422 still $refs a response component instead of carrying its own example", tc.op)
+		}
+	}
+}
+
+// responseBlock returns the lines of the operation's response with the given
+// status code, up to the next status code or the end of the operation block.
+func responseBlock(t *testing.T, block []string, status string) []string {
+	t.Helper()
+	key := `        "` + status + `":`
+	start := -1
+	for i, l := range block {
+		if l == key {
+			start = i
+			break
+		}
+	}
+	if start < 0 {
+		t.Fatalf("operation block declares no %s response", status)
+	}
+	for i := start + 1; i < len(block); i++ {
+		if strings.HasPrefix(block[i], `        "`) {
+			return block[start+1 : i]
+		}
+	}
+	return block[start+1:]
 }
 
 // TestPairingDeviceIDEncodingDocumented guards that the pairing spec states the

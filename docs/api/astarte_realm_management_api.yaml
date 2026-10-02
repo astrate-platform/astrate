@@ -571,7 +571,18 @@ paths:
         "403":
           $ref: "#/components/responses/Forbidden"
         "422":
-          $ref: "#/components/responses/ValidationError"
+          description: |
+            Unprocessable Entity — the auth configuration failed validation.
+            A body with an empty `jwt_public_key_pem` is answered 422, not 400:
+            it parses, and SetAuthKey rejects a blank key (Service.SetAuthKey,
+            internal/realm/service.go) as an ErrValidation detail.
+          content:
+            application/json; charset=utf-8:
+              schema:
+                $ref: "#/components/schemas/ErrorDetail"
+              example:
+                errors:
+                  detail: "jwt_public_key_pem can't be blank"
         "500":
           $ref: "#/components/responses/InternalServerError"
 
@@ -779,7 +790,27 @@ paths:
         "409":
           $ref: "#/components/responses/Conflict"
         "422":
-          $ref: "#/components/responses/ValidationError"
+          description: |
+            Unprocessable Entity — the policy definition failed validation.
+            The detail is the trigger compiler's own message with the
+            `realm: validation failed: ` prefix stripped, so it names the
+            policy constraint that was broken (triggers.CompilePolicy via
+            realm.validatePolicy).
+          content:
+            application/json; charset=utf-8:
+              schema:
+                $ref: "#/components/schemas/ErrorDetail"
+              examples:
+                no_error_handlers:
+                  summary: The policy declares no error handler.
+                  value:
+                    errors:
+                      detail: "triggers: policy must have at least one error handler"
+                bad_name:
+                  summary: The policy name is empty or holds characters outside [a-zA-Z0-9_.~-].
+                  value:
+                    errors:
+                      detail: "triggers: policy name must be 1-128 characters of [a-zA-Z0-9_.~-]"
         "500":
           $ref: "#/components/responses/InternalServerError"
 
@@ -836,7 +867,18 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
         "422":
-          $ref: "#/components/responses/ValidationError"
+          description: |
+            Unprocessable Entity — the policy is still referenced by a trigger.
+            Deletion is refused while any trigger in the realm names this
+            policy; the detail names both (Service.DeletePolicy,
+            internal/realm/service.go).
+          content:
+            application/json; charset=utf-8:
+              schema:
+                $ref: "#/components/schemas/ErrorDetail"
+              example:
+                errors:
+                  detail: 'policy "audit" is still used by trigger "on_audit_failure"'
         "500":
           $ref: "#/components/responses/InternalServerError"
 
@@ -1326,16 +1368,6 @@ components:
               value:
                 errors:
                   detail: Interface major version doesn't match the one in the interface json
-
-    ValidationError:
-      description: Unprocessable Entity — request body failed validation.
-      content:
-        application/json; charset=utf-8:
-          schema:
-            $ref: "#/components/schemas/ErrorDetail"
-          example:
-            errors:
-              detail: "invalid interface: missing \"interface_name\""
 
     InternalServerError:
       description: Internal Server Error — unexpected failure.
