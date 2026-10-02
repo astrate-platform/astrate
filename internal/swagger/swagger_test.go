@@ -720,6 +720,77 @@ func TestPairingDeviceIDEncodingDocumented(t *testing.T) {
 	}
 }
 
+// TestRealmManagementDeviceIDEncodingDocumented is the realm-management twin of
+// TestPairingDeviceIDEncodingDocumented: the `DeviceID` path parameter of
+// deleteDevice must state the same wire form, and constrain itself to it. The
+// parameter used to be a bare `type: string` described only as "The device
+// hardware ID", which read as any string and let a client send a well-formed
+// standard-base64 or padded 23-character ID. Service.DeleteDevice folds every
+// deviceid.Parse failure into store.ErrNotFound (internal/realm/service.go), so
+// such a client is answered 404 Device not found rather than told its ID is
+// malformed — the description has to name that consequence, and the pattern has
+// to reject the spellings the parser rejects. The bounds and the description
+// wording are derived from deviceid.EncodedLen, and the shipped pattern is
+// compiled and held against deviceid.Parse here, so the spec cannot drift from
+// the parser. The strict trailing-bits rule is deliberately not encoded in the
+// pattern: whether recording it is worth it is still open.
+func TestRealmManagementDeviceIDEncodingDocumented(t *testing.T) {
+	b, err := docs.APIYAML.ReadFile("api/astarte_realm_management_api.yaml")
+	if err != nil {
+		t.Fatalf("reading astarte_realm_management_api.yaml: %v", err)
+	}
+	lines := strings.Split(string(b), "\n")
+
+	wantLen := strconv.Itoa(deviceid.EncodedLen)
+	wantDesc := fmt.Sprintf("%s-character unpadded", wantLen)
+
+	param := componentBlock(t, lines, "    DeviceID:")
+	for _, want := range []string{wantDesc, "base64url", astarteapi.DetailDeviceNotFound} {
+		if !strings.Contains(strings.Join(param, "\n"), want) {
+			t.Errorf("DeviceID parameter does not say %q", want)
+		}
+	}
+	for _, want := range []string{
+		"        minLength: " + wantLen,
+		"        maxLength: " + wantLen,
+	} {
+		if !containsLine(param, want) {
+			t.Errorf("DeviceID parameter is missing line %q", want)
+		}
+	}
+
+	pattern := ""
+	for _, l := range param {
+		if v, ok := strings.CutPrefix(l, "        pattern: "); ok {
+			pattern = strings.Trim(v, `'"`)
+			break
+		}
+	}
+	if pattern == "" {
+		t.Fatal("DeviceID parameter carries no pattern")
+	}
+	re, err := regexp.Compile(pattern)
+	if err != nil {
+		t.Fatalf("DeviceID pattern %q does not compile: %v", pattern, err)
+	}
+
+	if !re.MatchString("dT6hS2W9TT6LEnP25ks_lg") {
+		t.Errorf("DeviceID pattern %q rejects the canonical ID dT6hS2W9TT6LEnP25ks_lg", pattern)
+	}
+	for _, spelling := range []string{
+		"dT6hS2W9TT6LEnP25ks+lg",  // standard-alphabet '+'
+		"dT6hS2W9TT6LEnP25ks/lg",  // standard-alphabet '/'
+		"dT6hS2W9TT6LEnP25ks_lg=", // padded
+	} {
+		if _, err := deviceid.Parse(spelling); err == nil {
+			t.Errorf("deviceid.Parse accepts %q; this test's premise no longer holds", spelling)
+		}
+		if re.MatchString(spelling) {
+			t.Errorf("DeviceID pattern %q accepts %q, which deviceid.Parse rejects", pattern, spelling)
+		}
+	}
+}
+
 // TestPairingUnregisterDeviceSemanticsDocumented guards that the pairing spec
 // describes `unregisterDevice` for what it does. "Removes a device from the
 // realm" reads as a device-and-data deletion; store.UnregisterDevice clears the

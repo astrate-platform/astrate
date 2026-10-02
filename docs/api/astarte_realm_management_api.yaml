@@ -930,9 +930,19 @@ components:
       name: device
       in: path
       required: true
-      description: The device hardware ID.
+      description: |
+        The device hardware ID: a 128-bit value in the 22-character unpadded
+        base64url wire form — the alphabet is `A-Z`, `a-z`, `0-9`, `-` and `_`,
+        with no `=` padding. The standard-alphabet characters `+` and `/`, and
+        a padded 23-character spelling of the same value, are not accepted —
+        and a malformed ID is not reported as malformed: it is answered with
+        the same `404` and `{"errors":{"detail":"Device not found"}}` body as an
+        unknown device.
       schema:
         type: string
+        minLength: 22
+        maxLength: 22
+        pattern: '^[A-Za-z0-9_-]{22}$'
 
     PolicyName:
       name: name
