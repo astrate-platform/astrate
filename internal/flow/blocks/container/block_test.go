@@ -299,6 +299,122 @@ func TestCLIRunner_RunFailure(t *testing.T) {
 	}
 }
 
+func TestCLIRunner_StopBoundsDeadlineLessContext(t *testing.T) {
+	type rmCall struct {
+		args        []string
+		hasDeadline bool
+		within      time.Duration
+	}
+	var rm []rmCall
+	r := &container.CLIRunner{
+		Run: func(ctx context.Context, _ string, args ...string) (string, string, error) {
+			if len(args) > 0 && args[0] == "run" {
+				return "abc123deadbeef\n", "", nil
+			}
+			if len(args) > 0 && args[0] == "port" {
+				return "127.0.0.1:34567\n", "", nil
+			}
+			if len(args) > 0 && args[0] == "rm" {
+				d, ok := ctx.Deadline()
+				c := rmCall{args: args, hasDeadline: ok}
+				if ok {
+					c.within = time.Until(d)
+				}
+				rm = append(rm, c)
+				return "", "", nil
+			}
+			return "", "unexpected", fmt.Errorf("bad")
+		},
+	}
+	inst, err := r.Start(context.Background(), container.Spec{Image: "img:tag"})
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	// Both cleanup callers (docker.go Start, block.go New) pass
+	// context.Background(), so Stop must bound the `docker rm -f` itself.
+	if err := inst.Stop(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(rm) != 1 {
+		t.Fatalf("rm calls = %#v, want 1", rm)
+	}
+	if !rm[0].hasDeadline {
+		t.Fatalf("Stop(context.Background()) reached Run with no deadline: %#v", rm[0])
+	}
+	if rm[0].within <= 0 || rm[0].within > 15*time.Second {
+		t.Errorf("Stop deadline within %v, want (0, 15s]", rm[0].within)
+	}
+	if got := strings.Join(rm[0].args, " "); got != "rm -f abc123deadbeef" {
+		t.Errorf("rm args = %q", got)
+	}
+}
+
+func TestCLIRunner_StopKeepsShorterCallerDeadline(t *testing.T) {
+	var within time.Duration
+	var seen bool
+	r := &container.CLIRunner{
+		Run: func(ctx context.Context, _ string, args ...string) (string, string, error) {
+			if len(args) > 0 && args[0] == "run" {
+				return "abc123deadbeef\n", "", nil
+			}
+			if len(args) > 0 && args[0] == "port" {
+				return "127.0.0.1:34567\n", "", nil
+			}
+			if len(args) > 0 && args[0] == "rm" {
+				d, ok := ctx.Deadline()
+				seen = true
+				if ok {
+					within = time.Until(d)
+				}
+				return "", "", nil
+			}
+			return "", "unexpected", fmt.Errorf("bad")
+		},
+	}
+	inst, err := r.Start(context.Background(), container.Spec{Image: "img:tag"})
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	// A deadline the caller set must win: Stop must not widen it to 15s.
+	caller, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	if err := inst.Stop(caller); err != nil {
+		t.Fatal(err)
+	}
+	if !seen {
+		t.Fatal("Stop did not reach Run")
+	}
+	if within <= 0 || within > 100*time.Millisecond {
+		t.Errorf("Stop deadline within %v, want (0, 100ms]", within)
+	}
+}
+
+func TestCLIRunner_StartCleansUpOnPortFailure(t *testing.T) {
+	var calls [][]string
+	r := &container.CLIRunner{
+		Run: func(_ context.Context, name string, args ...string) (string, string, error) {
+			calls = append(calls, append([]string{name}, args...))
+			if len(args) > 0 && args[0] == "run" {
+				return "abc123deadbeef\n", "", nil
+			}
+			if len(args) > 0 && args[0] == "port" {
+				return "", "Error: No public port '8080/tcp' published", fmt.Errorf("exit 1")
+			}
+			if len(args) > 0 && args[0] == "rm" {
+				return "", "", nil
+			}
+			return "", "unexpected", fmt.Errorf("bad")
+		},
+	}
+	if _, err := r.Start(context.Background(), container.Spec{Image: "img:tag"}); err == nil {
+		t.Fatal("Start succeeded despite docker port failure")
+	}
+	// Best-effort cleanup so we do not leave orphans on mapping failure.
+	if got := strings.Join(calls[len(calls)-1], " "); got != "docker rm -f abc123deadbeef" {
+		t.Fatalf("last call = %q, want docker rm -f abc123deadbeef (all %#v)", got, calls)
+	}
+}
+
 func TestDefaultRegistry_HasContainer(t *testing.T) {
 	reg := blocks.DefaultRegistry()
 	if !reg.Has(blocks.TypeContainer) {

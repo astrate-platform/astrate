@@ -30,7 +30,9 @@ type Instance interface {
 	BaseURL() string
 	// ID is the docker container id (or a test fake id).
 	ID() string
-	// Stop stops and removes the container (best-effort).
+	// Stop stops and removes the container (best-effort). The ctx is bounded
+	// by stopTimeout unless the caller already gave it a deadline, so a wedged
+	// docker daemon cannot hold the caller forever.
 	Stop(ctx context.Context) error
 }
 
@@ -38,6 +40,10 @@ type Instance interface {
 type Runner interface {
 	Start(ctx context.Context, spec Spec) (Instance, error)
 }
+
+// stopTimeout bounds the `docker rm -f` issued by cliInstance.Stop when the
+// caller's context carries no deadline of its own.
+const stopTimeout = 15 * time.Second
 
 // Waiter is implemented by Instances that can block until their container
 // exits. The block's exit watcher uses it to detect unexpected death (#45).
@@ -169,8 +175,14 @@ func (c *cliInstance) Stop(ctx context.Context) error {
 		return nil
 	}
 	if ctx == nil {
+		ctx = context.Background()
+	}
+	// Both cleanup callers pass context.Background(), so a deadline-less ctx
+	// is the common case: bound `docker rm -f` ourselves instead of letting a
+	// wedged daemon hold flow instantiation (or Block.Stop) open indefinitely.
+	if _, ok := ctx.Deadline(); !ok {
 		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(context.Background(), 15*time.Second)
+		ctx, cancel = context.WithTimeout(ctx, stopTimeout)
 		defer cancel()
 	}
 	_, stderr, err := c.runner.run(ctx, "rm", "-f", c.id)
