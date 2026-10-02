@@ -153,3 +153,4 @@ layer can actually do — read it before deciding whether a kind of task is wort
 | 2026-10-02 | container-stop-deadline | done | 410s | f9af73b |
 | 2026-10-02 | container-timeout-bounds | blocked | 1201s | TIMEOUT after 1201s — task too big, split it |
 | 2026-10-02 | container-parseconfig-rules-test | done | 274s | 32c85af |
+| 2026-10-02 | container-response-cap-test | blocked | 271s | lint failed: internal/flow/blocks/container/block_test.go:500:2: redefines-builtin-id: redefinition of the built-in function cap (rev |
