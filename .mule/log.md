@@ -149,3 +149,4 @@ layer can actually do — read it before deciding whether a kind of task is wort
 | 2026-09-28 | docs-sync-pairing-initial-payload-format-enum | done | 95s | 1f6a6c2 |
 | 2026-09-28 | docs-sync-pairing-unregister-description | done | 261s | 8ffb39e |
 | 2026-10-01 | fdo-rc6-scope-delta-for-giulio | done | 479s | 41af3c4 |
+| 2026-10-02 | compat-note-v14-rc6 | done | 398s | 0215f97 |
