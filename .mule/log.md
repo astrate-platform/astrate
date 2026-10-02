@@ -156,3 +156,4 @@ layer can actually do — read it before deciding whether a kind of task is wort
 | 2026-10-02 | container-response-cap-test | blocked | 271s | lint failed: internal/flow/blocks/container/block_test.go:500:2: redefines-builtin-id: redefinition of the built-in function cap (rev |
 | 2026-10-02 | docs-sync-rm-error-example-capitalisation | done | 751s | 1d1e6f4 |
 | 2026-10-02 | docs-sync-rm-legacy-alias-fields | blocked | 329s | wrote nothing |
+| 2026-10-02 | docs-sync-rm-validationerror-example | done | 732s | 8a09a1a |
