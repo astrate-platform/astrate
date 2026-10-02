@@ -157,3 +157,4 @@ layer can actually do — read it before deciding whether a kind of task is wort
 | 2026-10-02 | docs-sync-rm-error-example-capitalisation | done | 751s | 1d1e6f4 |
 | 2026-10-02 | docs-sync-rm-legacy-alias-fields | blocked | 329s | wrote nothing |
 | 2026-10-02 | docs-sync-rm-validationerror-example | done | 732s | 8a09a1a |
+| 2026-10-02 | docs-sync-rm-deviceid-param | done | 303s | 2d1a1c1 |
