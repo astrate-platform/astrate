@@ -505,6 +505,56 @@ func TestPairingErrorDetailExamples(t *testing.T) {
 	}
 }
 
+// TestRealmManagementErrorDetailExamples pins the error-detail examples in the
+// realm management spec's components.responses to the frozen canonical strings
+// the wire emits (astarteapi/envelope.go), the same guard the pairing spec gets
+// from TestPairingErrorDetailExamples. The BadRequest and InternalServerError
+// examples carried the capital-R/capital-S spellings, which upstream Phoenix
+// never renders and no handler emits: every 400 on this surface goes through
+// astarteapi.WriteBadRequest and every 500 through WriteInternalServerError
+// (internal/realm/http.go), and the SDK/astartectl error paths match on the
+// canonical strings. The Conflict and ValidationError examples are
+// endpoint-specific details with no constant behind them, so they stay free-form.
+func TestRealmManagementErrorDetailExamples(t *testing.T) {
+	b, err := docs.APIYAML.ReadFile("api/astarte_realm_management_api.yaml")
+	if err != nil {
+		t.Fatalf("reading astarte_realm_management_api.yaml: %v", err)
+	}
+	lines := strings.Split(string(b), "\n")
+
+	const detailPrefix = "              detail: "
+
+	for _, tc := range []struct {
+		response string
+		want     string
+	}{
+		{"    BadRequest:", astarteapi.DetailBadRequest},
+		{"    Unauthorized:", astarteapi.DetailUnauthorized},
+		{"    Forbidden:", astarteapi.DetailForbidden},
+		{"    NotFound:", astarteapi.DetailNotFound},
+		{"    DeviceNotFound:", astarteapi.DetailDeviceNotFound},
+		{"    InternalServerError:", astarteapi.DetailInternalServerError},
+	} {
+		block := componentBlock(t, lines, tc.response)
+
+		got := ""
+		for _, l := range block {
+			if strings.HasPrefix(l, detailPrefix) {
+				got = strings.TrimPrefix(l, detailPrefix)
+				break
+			}
+		}
+		if got == "" {
+			t.Errorf("response %q carries no %q example", tc.response, "detail")
+			continue
+		}
+		if got != tc.want {
+			t.Errorf("response %q example detail = %q, want the canonical %q",
+				strings.TrimSpace(tc.response), got, tc.want)
+		}
+	}
+}
+
 // TestPairingDeviceIDEncodingDocumented guards that the pairing spec states the
 // exact wire form of a device identifier — the 22-character unpadded base64url
 // string deviceid.Parse accepts — instead of the "base64-encoded 128-bit"
