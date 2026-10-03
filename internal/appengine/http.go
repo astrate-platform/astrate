@@ -13,6 +13,7 @@ import (
 	"github.com/astrate-platform/astrate/internal/engine"
 	"github.com/astrate-platform/astrate/internal/store"
 	"github.com/astrate-platform/astrate/pkg/astarteapi"
+	"github.com/astrate-platform/astrate/pkg/payload"
 )
 
 // maxBodyBytes caps AppEngine request bodies.
@@ -680,9 +681,40 @@ func (a *API) writeError(w http.ResponseWriter, err error) {
 		_ = astarteapi.WriteError(w, http.StatusBadRequest, "Endpoint not found")
 	case errors.Is(err, store.ErrNotFound):
 		_ = astarteapi.WriteDeviceNotFound(w)
+	case payload.ReasonOf(err) == payload.ReasonBadObject:
+		// Object-shape rejection. Upstream answers 400 naming the offending
+		// keys (master b6d46ad4, #2237); before that commit the shape was
+		// still a 400, so this is a detail fix, not a status change. Placed
+		// after the sentinels because a payload rejection carries none of
+		// them, and last because every other reason stays unmapped (report
+		// only — see .mule/todo.md).
+		a.writeBadObjectError(w, err)
 	default:
 		_ = astarteapi.WriteInternalServerError(w)
 	}
+}
+
+// detailUnexpectedObjectKey is upstream's 400 detail for an object-aggregated
+// write carrying undeclared keys (master b6d46ad4, #2237). Frozen string:
+// astartectl and the SDKs match on it.
+const detailUnexpectedObjectKey = "Unexpected object key"
+
+// writeBadObjectError renders the object-shape rejection in the measured
+// upstream envelope: {"errors": {"detail": "Unexpected object key",
+// "unexpected_keys": [...]}}. The other object-shape failures — not a
+// document, an empty document, a duplicate key — carry no key list and answer
+// the canonical 400, which is where upstream's fallback controller still
+// routes them (fallback_controller.ex:201-206).
+func (a *API) writeBadObjectError(w http.ResponseWriter, err error) {
+	var re *payload.RejectError
+	if !errors.As(err, &re) || len(re.UnexpectedKeys) == 0 {
+		_ = astarteapi.WriteBadRequest(w)
+		return
+	}
+	_ = astarteapi.WriteRawErrors(w, http.StatusBadRequest, struct {
+		Detail string   `json:"detail"`
+		Keys   []string `json:"unexpected_keys"`
+	}{Detail: detailUnexpectedObjectKey, Keys: re.UnexpectedKeys})
 }
 
 // validationDetail strips the ErrValidation prefix for the response detail.

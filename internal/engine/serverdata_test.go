@@ -312,6 +312,50 @@ func TestServerObjectAggregate(t *testing.T) {
 	}
 }
 
+// TestServerObjectUnexpectedKey: an object-aggregated write carrying a
+// declared and an undeclared key is rejected naming the undeclared one, which
+// is what the AppEngine surface renders as the upstream 400 envelope
+// (master b6d46ad4, #2237). Nothing is persisted or published.
+func TestServerObjectUnexpectedKey(t *testing.T) {
+	rig, fs, port := newWiredRig(t, Config{})
+	const iface = "com.astrate.test.ServerObject"
+	const def = `{
+		"interface_name": "com.astrate.test.ServerObject",
+		"version_major": 1, "version_minor": 0,
+		"type": "datastream", "ownership": "server", "aggregation": "object",
+		"mappings": [
+			{"endpoint": "/setpoints/heating", "type": "double"},
+			{"endpoint": "/setpoints/cooling", "type": "double"}
+		]
+	}`
+	fs.addInterface(realmAlphaID, storedInterface(t, realmAlphaID, 19, []byte(def)))
+	if err := rig.e.RefreshInterfaces(context.Background(), realmAlphaID); err != nil {
+		t.Fatalf("RefreshInterfaces: %v", err)
+	}
+
+	err := rig.e.PublishServerValue(context.Background(), realmAlpha, devAlpha, iface,
+		"/setpoints", json.RawMessage(`{"heating": 21.5, "ghost": 1.0}`), nil)
+	if payload.ReasonOf(err) != payload.ReasonBadObject {
+		t.Fatalf("reason = %v (err %v); want bad_object", payload.ReasonOf(err), err)
+	}
+	var re *payload.RejectError
+	if !errors.As(err, &re) {
+		t.Fatalf("err = %v; want a *payload.RejectError", err)
+	}
+	if len(re.UnexpectedKeys) != 1 || re.UnexpectedKeys[0] != "ghost" {
+		t.Errorf("UnexpectedKeys = %v; want [ghost]", re.UnexpectedKeys)
+	}
+
+	rows := fs.objectRows()
+	fs.mu.Lock()
+	upserts := len(fs.upserts)
+	fs.mu.Unlock()
+	if len(rows) != 0 || upserts != 0 || len(port.published()) != 0 {
+		t.Errorf("rejected write left traces: %d object rows, %d upserts, %d publishes",
+			len(rows), upserts, len(port.published()))
+	}
+}
+
 // nextBusEvent returns the next live bus event, failing the test if none
 // arrives within the timeout.
 func nextBusEvent(t *testing.T, events <-chan stream.Event) stream.Event {

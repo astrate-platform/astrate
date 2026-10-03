@@ -16,6 +16,8 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"sort"
+	"strings"
 	"time"
 	"unicode/utf8"
 
@@ -182,6 +184,12 @@ type RejectError struct {
 	Reason RejectReason
 	// Detail is a human-readable explanation for logs and trigger events.
 	Detail string
+	// UnexpectedKeys carries, sorted, the object-aggregation keys that
+	// resolve to no declared leaf (ReasonBadObject only; nil otherwise).
+	// Upstream reports the whole set as `unexpected_keys` beside the error
+	// detail (master b6d46ad4, #2237), so the HTTP surfaces name the keys
+	// instead of collapsing them into one log line.
+	UnexpectedKeys []string
 }
 
 // Error implements the error interface.
@@ -192,6 +200,28 @@ func (e *RejectError) Error() string {
 // rejectf builds a *RejectError with a formatted detail message.
 func rejectf(reason RejectReason, format string, args ...any) error {
 	return &RejectError{Reason: reason, Detail: fmt.Sprintf(format, args...)}
+}
+
+// rejectUnexpectedKeys builds the object-shape rejection for the given
+// undeclared keys, reporting them sorted so the answer does not depend on map
+// or document order. Every offending key is named, not just the first one
+// found (master b6d46ad4, #2237).
+func rejectUnexpectedKeys(keys []string) error {
+	sorted := append([]string(nil), keys...)
+	sort.Strings(sorted)
+	return &RejectError{
+		Reason:         ReasonBadObject,
+		Detail:         fmt.Sprintf("object keys %s match no declared object leaf", clipKeys(sorted)),
+		UnexpectedKeys: sorted,
+	}
+}
+
+// clipKeys renders a key list for the Detail line, bounded like clip.
+func clipKeys(keys []string) string {
+	if len(keys) <= 8 {
+		return "[" + strings.Join(keys, " ") + "]"
+	}
+	return fmt.Sprintf("[%s ... +%d more]", strings.Join(keys[:8], " "), len(keys)-8)
 }
 
 // ReasonOf extracts the RejectReason from err, or ReasonNone if err is nil

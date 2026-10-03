@@ -209,13 +209,18 @@ func decodeJSONObject(raw json.RawMessage, leaves map[string]*interfaceschema.Co
 	if len(obj) == 0 {
 		return nil, rejectf(ReasonBadObject, "object-aggregation document is empty")
 	}
+	var unexpected []string
+	for key := range obj {
+		if leaf, ok := leaves[key]; !ok || leaf == nil {
+			unexpected = append(unexpected, key)
+		}
+	}
+	if len(unexpected) > 0 {
+		return nil, rejectUnexpectedKeys(unexpected)
+	}
 	out := make(map[string]Value, len(obj))
 	for key, eraw := range obj {
-		leaf, ok := leaves[key]
-		if !ok || leaf == nil {
-			return nil, rejectf(ReasonBadObject, "key %q matches no declared object leaf", key)
-		}
-		val, err := decodeJSONValue(eraw, leaf.ValueType)
+		val, err := decodeJSONValue(eraw, leaves[key].ValueType)
 		if err != nil {
 			return nil, annotate(err, "key %q", key)
 		}

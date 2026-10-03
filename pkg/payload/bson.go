@@ -146,16 +146,25 @@ func decodeBSONObject(rv bson.RawValue, leaves map[string]*interfaceschema.Compi
 	if len(elems) == 0 {
 		return nil, rejectf(ReasonBadObject, "object-aggregation document is empty")
 	}
-	out := make(map[string]Value, len(elems))
-	for _, el := range elems {
+	var unexpected []string
+	keys := make([]string, len(elems))
+	for i, el := range elems {
 		key, err := el.KeyErr()
 		if err != nil {
 			return nil, rejectf(ReasonMalformed, "invalid BSON object element: %v", err)
 		}
-		leaf, ok := leaves[key]
-		if !ok || leaf == nil {
-			return nil, rejectf(ReasonBadObject, "key %q matches no declared object leaf", key)
+		keys[i] = key
+		if leaf, ok := leaves[key]; !ok || leaf == nil {
+			unexpected = append(unexpected, key)
 		}
+	}
+	if len(unexpected) > 0 {
+		return nil, rejectUnexpectedKeys(unexpected)
+	}
+	out := make(map[string]Value, len(elems))
+	for i, el := range elems {
+		key := keys[i]
+		leaf := leaves[key]
 		if _, dup := out[key]; dup {
 			return nil, rejectf(ReasonBadObject, "duplicate object key %q", key)
 		}

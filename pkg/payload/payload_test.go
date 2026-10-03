@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"encoding/hex"
+	"errors"
 	"math"
 	"os"
 	"path/filepath"
@@ -552,6 +553,69 @@ func TestBSONCoercion(t *testing.T) {
 	)))
 	if _, err := DecodeObject(dup, objectLeaves(false)); ReasonOf(err) != ReasonBadObject {
 		t.Errorf("duplicate object key reason = %v; want bad_object", ReasonOf(err))
+	}
+}
+
+// TestUnexpectedObjectKeysSorted pins the object-shape rejection's key list:
+// every undeclared key is named, sorted, on both wire formats (upstream
+// `unexpected_keys`, master b6d46ad4, #2237). JSON map iteration is random, so
+// an unsorted list would make the reported body nondeterministic.
+func TestUnexpectedObjectKeysSorted(t *testing.T) {
+	leaves := objectLeaves(false)
+	cases := []struct {
+		name  string
+		in    []byte
+		want  []string
+		plain bool
+	}{
+		{name: "json one declared one undeclared",
+			in:   []byte(`{"v":{"lat":1.0,"nope":2.0}}`),
+			want: []string{"nope"}},
+		{name: "json several undeclared keys sorted",
+			in:   []byte(`{"v":{"zeta":1.0,"lat":2.0,"alpha":3.0,"mu":4.0}}`),
+			want: []string{"alpha", "mu", "zeta"}},
+		{name: "bson one declared one undeclared",
+			in: rawBSONDoc(t, rawBSONElem(byte(bson.TypeEmbeddedDocument), "v", rawBSONDoc(t,
+				rawBSONElem(byte(bson.TypeDouble), "lat", []byte{0, 0, 0, 0, 0, 0, 240, 63}),
+				rawBSONElem(byte(bson.TypeDouble), "nope", []byte{0, 0, 0, 0, 0, 0, 0, 0}),
+			))),
+			want: []string{"nope"}},
+		{name: "bson several undeclared keys sorted",
+			in: rawBSONDoc(t, rawBSONElem(byte(bson.TypeEmbeddedDocument), "v", rawBSONDoc(t,
+				rawBSONElem(byte(bson.TypeDouble), "zeta", []byte{0, 0, 0, 0, 0, 0, 0, 0}),
+				rawBSONElem(byte(bson.TypeDouble), "lat", []byte{0, 0, 0, 0, 0, 0, 240, 63}),
+				rawBSONElem(byte(bson.TypeDouble), "alpha", []byte{0, 0, 0, 0, 0, 0, 0, 0}),
+			))),
+			want: []string{"alpha", "zeta"}},
+		{name: "json empty document carries no key list",
+			in:    []byte(`{"v":{}}`),
+			plain: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := DecodeObject(tc.in, leaves)
+			if ReasonOf(err) != ReasonBadObject {
+				t.Fatalf("reason = %v (err %v); want bad_object", ReasonOf(err), err)
+			}
+			var re *RejectError
+			if !errors.As(err, &re) {
+				t.Fatalf("err = %v; want a *RejectError", err)
+			}
+			if tc.plain {
+				if len(re.UnexpectedKeys) != 0 {
+					t.Fatalf("UnexpectedKeys = %v; want none", re.UnexpectedKeys)
+				}
+				return
+			}
+			if len(re.UnexpectedKeys) != len(tc.want) {
+				t.Fatalf("UnexpectedKeys = %v; want %v", re.UnexpectedKeys, tc.want)
+			}
+			for i, k := range tc.want {
+				if re.UnexpectedKeys[i] != k {
+					t.Errorf("UnexpectedKeys[%d] = %q; want %q", i, re.UnexpectedKeys[i], k)
+				}
+			}
+		})
 	}
 }
 
