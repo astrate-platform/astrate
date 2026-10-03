@@ -689,6 +689,17 @@ func (a *API) writeError(w http.ResponseWriter, err error) {
 		// them, and last because every other reason stays unmapped (report
 		// only — see .mule/todo.md).
 		a.writeBadObjectError(w, err)
+	case payload.ReasonOf(err) == payload.ReasonMissingRequired:
+		// A distinct upstream failure from the object shape above, and the
+		// only other mapped payload reason: 422, because the document parsed
+		// and every key is declared — one of them the mapping declares
+		// required and the document omits (master b6d46ad4,
+		// Device.validate_required_mappings/2 answers
+		// :missing_required_mapping, the AppEngine fallback controller puts
+		// :unprocessable_entity for it, ErrorView renders the detail alone).
+		// Placed after bad_object because that one names the offending keys
+		// and answers 400; both precede default: so neither falls to the 500.
+		_ = astarteapi.WriteError(w, http.StatusUnprocessableEntity, detailMissingRequiredMapping)
 	default:
 		_ = astarteapi.WriteInternalServerError(w)
 	}
@@ -698,6 +709,15 @@ func (a *API) writeError(w http.ResponseWriter, err error) {
 // write carrying undeclared keys (master b6d46ad4, #2237). Frozen string:
 // astartectl and the SDKs match on it.
 const detailUnexpectedObjectKey = "Unexpected object key"
+
+// detailMissingRequiredMapping is upstream's 422 detail for an
+// object-aggregated write whose document omits a key the mapping declares
+// required (master b6d46ad4, ErrorView "422_missing_required_mapping.json"
+// renders `%{errors: %{detail: "Missing required mapping key"}}`). Frozen
+// string; unlike the undeclared-key case the body carries no key list —
+// upstream logs the offending key (device.ex:498-502) and renders the detail
+// alone.
+const detailMissingRequiredMapping = "Missing required mapping key"
 
 // writeBadObjectError renders the object-shape rejection in the measured
 // upstream envelope: {"errors": {"detail": "Unexpected object key",

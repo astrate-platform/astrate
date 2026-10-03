@@ -44,6 +44,10 @@ func TestWriteErrorTaxonomy(t *testing.T) {
 		{"object write with no key list stays the canonical 400",
 			&payload.RejectError{Reason: payload.ReasonBadObject, Detail: "object-aggregation document is empty"},
 			http.StatusBadRequest, "Bad request", nil},
+		{"object write omitting a required key answers 422",
+			&payload.RejectError{Reason: payload.ReasonMissingRequired,
+				Detail: "object-aggregation document is missing required key(s) lat"},
+			http.StatusUnprocessableEntity, "Missing required mapping key", nil},
 		{"unknown cause stays 500", errors.New("boom"),
 			http.StatusInternalServerError, "Internal server error", nil},
 	}
