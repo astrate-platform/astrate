@@ -463,4 +463,4 @@ components:
             $ref: "#/components/schemas/ErrorDetail"
           example:
             errors:
-              detail: Internal Server Error
+              detail: Internal server error
