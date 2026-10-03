@@ -166,3 +166,4 @@ layer can actually do — read it before deciding whether a kind of task is wort
 | 2026-10-03 | device-empty-cache-received-trigger | blocked | 202s | wrote nothing |
 | 2026-10-03 | appengine-unexpected-object-key | done | 956s | f7d60af |
 | 2026-10-03 | appengine-payload-reason-status-map | blocked | 1200s | TIMEOUT after 1200s — task too big, split it |
+| 2026-10-03 | appengine-missing-required-422 | done | 584s | f84bbb5 |
