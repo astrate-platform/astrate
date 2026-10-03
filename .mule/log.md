@@ -162,3 +162,4 @@ layer can actually do — read it before deciding whether a kind of task is wort
 | 2026-10-03 | docs-sync-ae-error-example-capitalisation | done | 298s | f3bcc6d |
 | 2026-10-03 | docs-sync-hk-error-example-capitalisation | blocked | 1200s | TIMEOUT after 1200s — task too big, split it |
 | 2026-10-03 | docs-sync-native-error-example-capitalisation | done | 284s | 7cc237f |
+| 2026-10-03 | docs-sync-hk-error-detail-examples-split | done | 114s | 23006d4 |
