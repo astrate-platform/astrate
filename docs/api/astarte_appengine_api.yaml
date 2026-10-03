@@ -1729,7 +1729,7 @@ components:
             $ref: "#/components/schemas/ErrorDetail"
           example:
             errors:
-              detail: Bad Request
+              detail: Bad request
 
     Unauthorized:
       description: Unauthorized — missing or invalid JWT.
@@ -1789,7 +1789,7 @@ components:
             $ref: "#/components/schemas/ErrorDetail"
           example:
             errors:
-              detail: Internal Server Error
+              detail: Internal server error
 
     ValidationErrors:
       description: Validation Error — one or more fields failed validation.

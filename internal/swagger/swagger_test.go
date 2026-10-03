@@ -558,6 +558,58 @@ func TestRealmManagementErrorDetailExamples(t *testing.T) {
 	}
 }
 
+// TestAppEngineErrorDetailExamples pins the error-detail examples in the app
+// engine spec's components.responses to the frozen canonical strings the wire
+// emits (astarteapi/envelope.go), the same guard the pairing and realm
+// management specs get from TestPairingErrorDetailExamples and
+// TestRealmManagementErrorDetailExamples. The BadRequest and InternalServerError
+// examples carried the capital-R/capital-S spellings, which upstream Phoenix
+// never renders and no handler emits: every 400 on this surface goes through
+// astarteapi.WriteBadRequest and every 500 through WriteInternalServerError
+// (internal/appengine/http.go), and the SDK/astartectl error paths match on the
+// canonical strings. The responses whose example is an endpoint-specific detail
+// with no constant behind it (MethodNotAllowed, ValueTooLarge,
+// UnprocessableEntity, the three Conflicts) stay free-form and are not pinned.
+func TestAppEngineErrorDetailExamples(t *testing.T) {
+	b, err := docs.APIYAML.ReadFile("api/astarte_appengine_api.yaml")
+	if err != nil {
+		t.Fatalf("reading astarte_appengine_api.yaml: %v", err)
+	}
+	lines := strings.Split(string(b), "\n")
+
+	const detailPrefix = "              detail: "
+
+	for _, tc := range []struct {
+		response string
+		want     string
+	}{
+		{"    BadRequest:", astarteapi.DetailBadRequest},
+		{"    Unauthorized:", astarteapi.DetailUnauthorized},
+		{"    Forbidden:", astarteapi.DetailForbidden},
+		{"    NotFound:", astarteapi.DetailNotFound},
+		{"    DeviceNotFound:", astarteapi.DetailDeviceNotFound},
+		{"    InternalServerError:", astarteapi.DetailInternalServerError},
+	} {
+		block := componentBlock(t, lines, tc.response)
+
+		got := ""
+		for _, l := range block {
+			if strings.HasPrefix(l, detailPrefix) {
+				got = strings.TrimPrefix(l, detailPrefix)
+				break
+			}
+		}
+		if got == "" {
+			t.Errorf("response %q carries no %q example", tc.response, "detail")
+			continue
+		}
+		if got != tc.want {
+			t.Errorf("response %q example detail = %q, want the canonical %q",
+				strings.TrimSpace(tc.response), got, tc.want)
+		}
+	}
+}
+
 // TestRealmManagement422ValidationDetails pins the 422 examples the three
 // non-interface realm-management operations carry to the details the wire
 // actually emits, so a generated client that copies one does not learn a
