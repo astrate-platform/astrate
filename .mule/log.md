@@ -160,3 +160,4 @@ layer can actually do — read it before deciding whether a kind of task is wort
 | 2026-10-02 | docs-sync-rm-deviceid-param | done | 303s | 2d1a1c1 |
 | 2026-10-02 | docs-sync-rm-update-interface-body | blocked | 1201s | TIMEOUT after 1201s — task too big, split it |
 | 2026-10-03 | docs-sync-ae-error-example-capitalisation | done | 298s | f3bcc6d |
+| 2026-10-03 | docs-sync-hk-error-example-capitalisation | blocked | 1200s | TIMEOUT after 1200s — task too big, split it |
