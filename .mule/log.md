@@ -172,3 +172,4 @@ layer can actually do — read it before deciding whether a kind of task is wort
 | 2026-10-04 | docs-sync-hk-patch-422-field-error-examples | blocked | 1200s | TIMEOUT after 1200s — task too big, split it |
 | 2026-10-04 | docs-sync-hk-wrong-type-field-400 | blocked | 152s | wrote nothing |
 | 2026-10-04 | docs-sync-hk-realm-name-response-schemas | done | 178s | def0af6 |
+| 2026-10-04 | store-register-inhibit-preserve | blocked | 245s | gates failed |
