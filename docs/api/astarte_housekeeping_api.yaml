@@ -277,6 +277,7 @@ components:
           type: array
           items:
             type: string
+            pattern: '^[a-z][a-z0-9]*$'
           description: List of realm names.
 
     Realm:
@@ -285,6 +286,7 @@ components:
       properties:
         realm_name:
           type: string
+          pattern: '^[a-z][a-z0-9]*$'
           description: Unique realm identifier.
         jwt_public_key_pem:
           type: string

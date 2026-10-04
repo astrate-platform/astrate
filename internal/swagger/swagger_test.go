@@ -1051,6 +1051,29 @@ func TestHousekeepingRealmNamePatternDocumented(t *testing.T) {
 		t.Errorf("RealmCreate.realm_name pattern = %q, want the realm name CHECK %q", got, want)
 	}
 
+	realm := propertyBlock(t, componentBlock(t, lines, "    Realm:"), "realm_name")
+	if got := schemaPattern(t, realm, "          "); got != want {
+		t.Errorf("Realm.realm_name pattern = %q, want the realm name CHECK %q", got, want)
+	}
+
+	// Also check response array items pattern for realm names list
+	dataEnvelopeNames := componentBlock(t, lines, "    DataEnvelopeRealmNames:")
+	dataBlock := propertyBlock(t, dataEnvelopeNames, "data")
+	// Look for items pattern in dataBlock - items are indented under data
+	items := []string{}
+	for i, l := range dataBlock {
+		if strings.Contains(l, "items:") {
+			// collect from i onwards in dataBlock, until we hit something at same or lesser indent relative to data properties
+			for j := i; j < len(dataBlock); j++ {
+				items = append(items, dataBlock[j])
+			}
+			break
+		}
+	}
+	if got := schemaPattern(t, items, "            "); got != want {
+		t.Errorf("DataEnvelopeRealmNames.items pattern = %q, want the realm name CHECK %q", got, want)
+	}
+
 	if !containsLine(operationBlock(t, lines, "createRealm"),
 		`          $ref: "#/components/responses/ValidationError"`) {
 		t.Error("createRealm 422 does not $ref the ValidationError response")
