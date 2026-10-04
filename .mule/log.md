@@ -174,3 +174,4 @@ layer can actually do — read it before deciding whether a kind of task is wort
 | 2026-10-04 | docs-sync-hk-realm-name-response-schemas | done | 178s | def0af6 |
 | 2026-10-04 | store-register-inhibit-preserve | blocked | 245s | gates failed |
 | 2026-10-04 | store-aliasvalues-self-exclusion-test | done | 717s | a7267ec |
+| 2026-10-04 | store-latestindividual-empty-errnotfound | blocked | 1201s | TIMEOUT after 1201s — task too big, split it |
