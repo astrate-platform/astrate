@@ -682,9 +682,16 @@ func TestNativeErrorDetailExamples(t *testing.T) {
 //
 // There is no DeviceNotFound pin here, unlike the app engine and realm
 // management specs: this surface never answers a device 404, so
-// components.responses declares no such component to pin. The schema-level
-// ErrorDetail example is deliberately not pinned either — it is not a
-// components.responses entry and its shape question belongs to its own line.
+// components.responses declares no such component to pin.
+//
+// The schema-level ErrorDetail example is pinned too, to the same canonical
+// string as BadRequest. It sits on the generic schema all eight error
+// responses $ref, so it is the example a generator falls back to for any
+// response whose own it cannot resolve — leaving it on the reconstructed
+// "Bad Request" taught a 404 and a 500 a detail no handler emits. Its shape is
+// already the wire's: the example belongs to the `errors` sub-schema, so it is
+// the value of the `errors` property and not a bare envelope, and it must not
+// be re-wrapped in another `errors:`.
 func TestHousekeepingErrorDetailExamples(t *testing.T) {
 	b, err := docs.APIYAML.ReadFile("api/astarte_housekeeping_api.yaml")
 	if err != nil {
@@ -721,6 +728,21 @@ func TestHousekeepingErrorDetailExamples(t *testing.T) {
 			t.Errorf("response %q example detail = %q, want the canonical %q",
 				strings.TrimSpace(tc.response), got, tc.want)
 		}
+	}
+
+	schemaBlock := componentBlock(t, lines, "    ErrorDetail:")
+	const schemaDetailPrefix = "            detail: "
+
+	got := ""
+	for _, l := range schemaBlock {
+		if strings.HasPrefix(l, schemaDetailPrefix) {
+			got = strings.TrimPrefix(l, schemaDetailPrefix)
+			break
+		}
+	}
+	if got != astarteapi.DetailBadRequest {
+		t.Errorf("ErrorDetail schema example detail = %q, want the canonical %q",
+			got, astarteapi.DetailBadRequest)
 	}
 }
 

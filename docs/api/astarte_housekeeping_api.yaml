@@ -377,7 +377,7 @@ components:
               type: string
               description: Human-readable error detail string.
           example:
-            detail: Bad Request
+            detail: Bad request
 
     FieldErrorsDetail:
       type: object
