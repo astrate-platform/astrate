@@ -168,3 +168,4 @@ layer can actually do — read it before deciding whether a kind of task is wort
 | 2026-10-03 | appengine-payload-reason-status-map | blocked | 1200s | TIMEOUT after 1200s — task too big, split it |
 | 2026-10-03 | appengine-missing-required-422 | done | 584s | f84bbb5 |
 | 2026-10-04 | docs-sync-hk-realm-name-pattern | done | 525s | e728217 |
+| 2026-10-04 | docs-sync-hk-errordetail-schema-example | done | 184s | 5044143 |
