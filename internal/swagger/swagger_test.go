@@ -16,6 +16,7 @@ import (
 
 	docs "github.com/astrate-platform/astrate/docs"
 	"github.com/astrate-platform/astrate/internal/engine/triggers"
+	"github.com/astrate-platform/astrate/migrations"
 	"github.com/astrate-platform/astrate/pkg/astarteapi"
 	"github.com/astrate-platform/astrate/pkg/deviceid"
 )
@@ -954,6 +955,104 @@ func TestRealmManagementDeviceIDEncodingDocumented(t *testing.T) {
 			t.Errorf("DeviceID pattern %q accepts %q, which deviceid.Parse rejects", pattern, spelling)
 		}
 	}
+}
+
+// TestHousekeepingRealmNamePatternDocumented guards that the housekeeping spec
+// constrains `realm_name` the way the schema does. The realms table CHECKs its
+// name column against a lowercase ASCII word (migrations/000002_metadata.up.sql),
+// so `TEST`, `test_realm`, `test-realm`, `1test`, `tëst` and `test realm` are
+// not realm names: a non-blank name that misses the pattern is rejected by the
+// INSERT as a check violation, folded into store.ErrInvalidRealmName
+// (internal/store/realms.go), re-reported by Service.CreateRealm as the
+// ErrValidation `realm_name is invalid` (internal/housekeeping/service.go) and
+// answered 422 with the flat detail body once validationDetail strips the prefix
+// (internal/housekeeping/http.go). Both `RealmCreate.realm_name` and the
+// `RealmName` path parameter used to be a bare `type: string`, which reads as
+// any string and tells a generated client nothing about the six spellings a
+// realm cannot have.
+//
+// The pattern is read out of the migration and compared with the one the spec
+// ships, so the documentation cannot drift from the constraint, and the
+// migration's own regex is held against the spellings the store suite refuses
+// (internal/store/realms_test.go). Two asymmetries are pinned because a client
+// reading only the pattern would get both wrong: the two 422 details partition
+// the cases rather than being two spellings of one failure, and the name in the
+// path is a read, where an off-pattern name is a 404 and not a 422 — the
+// read-path hole the DeviceID parameter documents on the realm-management twin.
+func TestHousekeepingRealmNamePatternDocumented(t *testing.T) {
+	b, err := docs.APIYAML.ReadFile("api/astarte_housekeeping_api.yaml")
+	if err != nil {
+		t.Fatalf("reading astarte_housekeeping_api.yaml: %v", err)
+	}
+	lines := strings.Split(string(b), "\n")
+
+	sql, err := migrations.FS.ReadFile("000002_metadata.up.sql")
+	if err != nil {
+		t.Fatalf("reading 000002_metadata.up.sql: %v", err)
+	}
+	check := regexp.MustCompile(`CHECK \(name ~ '([^']+)'\)`).FindSubmatch(sql)
+	if check == nil {
+		t.Fatal("realms.name declares no CHECK (name ~ ...) constraint; this test's premise no longer holds")
+	}
+	want := string(check[1])
+
+	re, err := regexp.Compile(want)
+	if err != nil {
+		t.Fatalf("realm name CHECK %q does not compile: %v", want, err)
+	}
+	for _, name := range []string{"test", "realm2", "a1"} {
+		if !re.MatchString(name) {
+			t.Errorf("realm name CHECK %q rejects the valid name %q", want, name)
+		}
+	}
+	for _, name := range []string{
+		"", "TEST", "test_realm", "test-realm", "1test", "tëst", "test realm",
+		"re-alm", "re_alm",
+	} {
+		if re.MatchString(name) {
+			t.Errorf("realm name CHECK %q accepts %q; this test's premise no longer holds", want, name)
+		}
+	}
+
+	param := componentBlock(t, lines, "    RealmName:")
+	if got := schemaPattern(t, param, "        "); got != want {
+		t.Errorf("RealmName parameter pattern = %q, want the realm name CHECK %q", got, want)
+	}
+	for _, wording := range []string{astarteapi.DetailNotFound, "404"} {
+		if !strings.Contains(strings.Join(param, "\n"), wording) {
+			t.Errorf("RealmName parameter does not record that an off-pattern name reads as %q", wording)
+		}
+	}
+
+	create := propertyBlock(t, componentBlock(t, lines, "    RealmCreate:"), "realm_name")
+	if got := schemaPattern(t, create, "          "); got != want {
+		t.Errorf("RealmCreate.realm_name pattern = %q, want the realm name CHECK %q", got, want)
+	}
+
+	if !containsLine(operationBlock(t, lines, "createRealm"),
+		`          $ref: "#/components/responses/ValidationError"`) {
+		t.Error("createRealm 422 does not $ref the ValidationError response")
+	}
+	unprocessable := strings.Join(componentBlock(t, lines, "    ValidationError:"), "\n")
+	for _, wording := range []string{
+		"partition", "realm_name can't be blank", "realm_name is invalid",
+	} {
+		if !strings.Contains(unprocessable, wording) {
+			t.Errorf("ValidationError response does not say %q", wording)
+		}
+	}
+}
+
+// schemaPattern returns the `pattern` value carried at the given indentation,
+// or "" when the block declares none.
+func schemaPattern(t *testing.T, lines []string, indent string) string {
+	t.Helper()
+	for _, l := range lines {
+		if v, ok := strings.CutPrefix(l, indent+"pattern: "); ok {
+			return strings.Trim(v, `'"`)
+		}
+	}
+	return ""
 }
 
 // TestPairingUnregisterDeviceSemanticsDocumented guards that the pairing spec

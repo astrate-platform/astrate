@@ -232,9 +232,18 @@ components:
       name: realm
       in: path
       required: true
-      description: The realm name.
+      description: |
+        The realm name: a lowercase ASCII word starting with a letter, so
+        `TEST`, `test_realm`, `test-realm`, `1test`, `tëst` and `test realm`
+        are not realm names — no realm can be created under one. This parameter
+        is the read path though, and there an off-pattern name is not reported
+        as malformed: it is answered with the same `404` and
+        `{"errors":{"detail":"Not Found"}}` body as a realm that does not
+        exist, because the lookup matches the name verbatim with no format check
+        of its own.
       schema:
         type: string
+        pattern: '^[a-z][a-z0-9]*$'
 
     AsyncOperation:
       name: async_operation
@@ -297,7 +306,16 @@ components:
       properties:
         realm_name:
           type: string
-          description: Unique realm identifier.
+          pattern: '^[a-z][a-z0-9]*$'
+          description: |
+            Unique realm identifier: a lowercase ASCII word starting with a
+            letter, so `TEST`, `test_realm`, `test-realm`, `1test`, `tëst` and
+            `test realm` are refused. The pattern is the realm row's own CHECK
+            constraint, so the database is what refuses an off-pattern name,
+            not a check in the handler: the rejection arrives as a 422 only
+            after the realm CA has been minted and sealed and is then thrown
+            away. Empty is a different failure with a different message — see
+            the 422 response.
         jwt_public_key_pem:
           type: string
           description: PEM-encoded public key used to verify realm JWTs.
@@ -457,14 +475,27 @@ components:
               detail: Realm already exists
 
     ValidationError:
-      description: Unprocessable Entity — request body failed validation.
+      description: |
+        Unprocessable Entity — request body failed validation. The two
+        `realm_name` rejections partition the cases and neither overlaps: an
+        empty name is refused by the handler with `realm_name can't be blank`,
+        a non-empty name off the `^[a-z][a-z0-9]*$` pattern is refused by the
+        realm row's CHECK constraint with `realm_name is invalid`.
       content:
         application/json; charset=utf-8:
           schema:
             $ref: "#/components/schemas/ErrorDetail"
-          example:
-            errors:
-              detail: "realm_name can't be blank"
+          examples:
+            blank_name:
+              summary: Empty realm_name — refused by the handler
+              value:
+                errors:
+                  detail: "realm_name can't be blank"
+            off_pattern_name:
+              summary: Non-empty realm_name off the pattern — refused by the database
+              value:
+                errors:
+                  detail: realm_name is invalid
 
     InternalServerError:
       description: Internal Server Error — unexpected failure.
