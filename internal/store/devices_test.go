@@ -423,5 +423,24 @@ func testDevices(t *testing.T, s *Store) {
 		if taken {
 			t.Error("device's own alias value counted as taken by itself")
 		}
+
+		// Self-exclusion: querying for the device's own alias values as the
+		// candidate set must not report them as taken by others.
+		taken, err = s.AliasValuesTaken(ctx, realm.ID, self, []string{"sn-self", "also"})
+		if err != nil {
+			t.Fatalf("AliasValuesTaken (self query): %v", err)
+		}
+		if taken {
+			t.Error("self query for own alias values incorrectly reported as taken")
+		}
+
+		// Ensure other device is not affected by self's values.
+		taken, err = s.AliasValuesTaken(ctx, realm.ID, other, []string{"sn-self"})
+		if err != nil {
+			t.Fatalf("AliasValuesTaken (other vs self's values): %v", err)
+		}
+		if taken {
+			t.Error("other device's check incorrectly reports self's values as taken by another device")
+		}
 	})
 }
