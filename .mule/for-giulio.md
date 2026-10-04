@@ -521,3 +521,60 @@ Not queued for the same reason: `IdleTimeout` is missing on the HTTP server
 (cmd/astrate/main.go:531) — both real, both yours to call, neither has a test worth
 writing. See `.mule/reviews/cmd-astrate-2026-09-25.md`.
 - **The mule has been idle 16h.** Filed by the dead-man's switch; see journalctl on the Pi.
+
+## 2026-10-04 — three housekeeping drifts in `docs/site/` the recipe is not allowed to touch
+
+Ran the docs-sync recipe over the housekeeping surface (code routes vs
+`docs/api/astarte_housekeeping_api.yaml`). The spec half is queued as four lines in
+`.mule/todo.md`; the prose half needs you, because `docs/site/` is on the never-touch list.
+
+**1. `docs/site/housekeeping-api.md:30` still talks about Cassandra.**
+
+> Cassandra-specific fields (`replication_class`, `replication_factor`, etc.) from upstream are accepted but ignored.
+
+Astrate stores PostgreSQL — `internal/store` on pgx, schema in `migrations/*.sql`; there is no
+Cassandra anywhere in the tree. The wire shape is four fields (`internal/housekeeping/http.go:46-51`),
+and the comment right above it says the opposite of "accepted": *"Astrate omits the
+Cassandra-specific fields (replication factor/class) upstream carries"*
+(`internal/housekeeping/http.go:44-45`). From a client's side the two readings are the same
+(the request succeeds, the fields do nothing), so this is vocabulary rather than behaviour —
+but it is the kind of sentence that sends an operator hunting for a Cassandra setting that
+cannot exist.
+
+**2. `PATCH /housekeeping/v1/realms/{realm}` is missing from the page entirely.**
+`docs/site/housekeeping-api.md` goes Create → List → Get → Delete (lines 10-50), so the route
+`docs-sync-hk-patch-endpoint` added and documented in the spec
+(`docs/api/astarte_housekeeping_api.yaml:142-192`) has no prose at all. The same page also
+predates `datastream_maximum_storage_retention`, which the spec has carried on both `Realm` and
+`RealmCreate` since `docs-sync-hk-retention-field`, so its create example (lines 12-21) shows a
+three-field body that is not the whole body.
+
+**3. Two `[housekeeping]` config keys exist; `configuration-reference.md` does not list them.**
+The table at `docs/site/configuration-reference.md:79-84` has exactly two rows and the section
+heading calls the block "Instance-admin keys" — but `HousekeepingConfig`
+(`internal/config/config.go:109-125`) has four fields:
+
+- `default_datastream_maximum_storage_retention` (`*int64`, env
+  `ASTRATE_HOUSEKEEPING_DEFAULT_DATASTREAM_MAXIMUM_STORAGE_RETENTION`, validated as a
+  non-negative integer at `config.go:286-291`) — injected into a realm at creation when the
+  caller omits the field (`internal/housekeeping/service.go:149-150`). An operator who wants it
+  has no way to learn it exists.
+- `realm_deletion_disabled` (bool, env `ASTRATE_HOUSEKEEPING_REALM_DELETION_DISABLED`, a
+  fail-loud boolean accepting only `1|true|TRUE|True|0|false|""` and refusing to load on anything
+  else, `config.go:296-306`) — this is the switch behind the spec's documented
+  `405 "Realm deletion disabled"` on `DELETE /housekeeping/v1/realms/{realm}`, so it changes a
+  status code an API client sees.
+
+Both belong in that table next to the two key lists, and the heading wants widening.
+
+Checked and *not* escalated, for the record. The config-key sweep
+(`rg -o '\bASTRATE_[A-Z_]+' -N internal/ | sort -u`) found nothing else stale: the two
+`jwt_public_key*` keys the page quotes at lines 69-71 are real (`config.go:112-113`), and the
+`master_key_file` row's `ASTRATE_MASTER_KEY`/`ASTRATE_MASTER_KEY_FILE` fallbacks are real too
+(`internal/store/crypto.go:24-27`). And the one thing that looked like a live bug is not one:
+`view()` returns only `JWTPublicKeysPEM[0]` (`internal/housekeeping/service.go:277-281`) while
+the realm-management surface joins *all* keys (`internal/realm/service.go:627`) — but every
+writer stores a single-element array (create at `internal/store/realms.go:54-61`, PATCH at
+`internal/store/realms.go:165`, `putAuthConfig` at `internal/realm/service.go:636`), so a
+two-key realm is unreachable and there is nothing to document. Worth noting because it reads
+like a bug on first inspection.
