@@ -179,3 +179,4 @@ layer can actually do — read it before deciding whether a kind of task is wort
 | 2026-10-05 | docs-native-ae-realm-version-endpoint | done | 344s | 7331e6c |
 | 2026-10-05 | docs-native-hk-version-description | done | 360s | cce1376 |
 | 2026-10-05 | docs-native-metrics-content-negotiation | done | 346s | 3962921 |
+| 2026-10-05 | docs-native-phoenix-newevent-payload | done | 267s | a16b5fe |
