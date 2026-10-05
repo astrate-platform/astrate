@@ -21,6 +21,47 @@ servers:
 security: []
 
 paths:
+  # ── Version ─────────────────────────────────────────────────────────
+
+  /appengine/v1/{realm}/version:
+    get:
+      operationId: getVersion
+      summary: Get emulated API version
+      description: |
+        Returns the emulated upstream API compatibility level. The Astarte
+        Dashboard gates feature UI on this value.
+
+        The authorization path is exactly `version` — the realm segment is
+        stripped before the JWT grant is matched — so the token needs a grant
+        for GET on `version`. An unknown realm is answered 401, not 404: a
+        realm with no keys is indistinguishable from an unauthenticated
+        caller.
+      tags: [AppEngine - Misc]
+      security:
+        - a_aea: []
+      parameters:
+        - $ref: "#/components/parameters/RealmName"
+      responses:
+        "200":
+          description: API compatibility version.
+          content:
+            application/json; charset=utf-8:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: string
+                    description: Version string.
+              example:
+                data: "1.2.2"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
   # ── Devices ─────────────────────────────────────────────────────────
 
   /appengine/v1/{realm}/devices:
