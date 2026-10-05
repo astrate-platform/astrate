@@ -377,9 +377,18 @@ paths:
         - name: realm
           in: query
           required: true
-          description: The realm name.
+          description: |
+            The realm name: a lowercase ASCII word starting with a letter, so
+            `TEST`, `test_realm`, `test-realm`, `1test`, `tëst` and `test realm`
+            are not realm names — no realm can be created under one. This socket is
+            a read path though, and it authenticates before it looks anything up,
+            so an off-pattern name is not reported as malformed: it is answered
+            `401` `Unauthorized`, the same body as an unknown realm or a bad
+            token, because the realm lookup (`GetRealmByName` returning
+            `store.ErrNotFound`) is turned into a 401 with no existence oracle.
           schema:
             type: string
+            pattern: '^[a-z][a-z0-9]*$'
         - name: token
           in: query
           required: true
@@ -400,9 +409,18 @@ components:
       name: realm
       in: path
       required: true
-      description: The realm name.
+      description: |
+        The realm name: a lowercase ASCII word starting with a letter, so
+        `TEST`, `test_realm`, `test-realm`, `1test`, `tëst` and `test realm`
+        are not realm names — no realm can be created under one. This socket is a
+        read path though, and it authenticates before it looks anything up, so an
+        off-pattern name is not reported as malformed: it is answered `401`
+        `Unauthorized`, the same body as an unknown realm or a bad token, because
+        the realm lookup (`GetRealmByName` returning `store.ErrNotFound`) is
+        turned into a 401 with no existence oracle.
       schema:
         type: string
+        pattern: '^[a-z][a-z0-9]*$'
 
   schemas:
     HealthStatus:
