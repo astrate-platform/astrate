@@ -80,19 +80,34 @@ paths:
       summary: Prometheus metrics endpoint
       description: |
         Returns metrics in Prometheus exposition format. The response content
-        type is `text/plain; version=0.0.4`.
+        type is
+        `text/plain; version=0.0.4; charset=utf-8; escaping=underscores` —
+        that is what a Prometheus scraper gets, since it asks for text (or
+        sends no `Accept` at all).
+
+        The handler negotiates `Accept`. A scraper that explicitly asks for the
+        protobuf format gets the delimited binary `io.prometheus.client.MetricFamily`
+        body instead, documented as a second media type below; every other
+        `Accept` — including OpenMetrics and `application/zstd` — falls back to
+        the text format. `Accept-Encoding: gzip` is honoured and answered with
+        `Content-Encoding: gzip`, the only encoding offered: `zstd` and
+        `deflate` are ignored and the body comes back uncompressed.
       tags: [Observability]
       responses:
         "200":
           description: Prometheus metrics.
           content:
-            text/plain; version=0.0.4:
+            text/plain; version=0.0.4; charset=utf-8; escaping=underscores:
               schema:
                 type: string
               example: |
                 # HELP astrate_broker_sessions Live authenticated MQTT device sessions.
                 # TYPE astrate_broker_sessions gauge
                 astrate_broker_sessions 0
+            application/vnd.google.protobuf; proto=io.prometheus.client.MetricFamily; encoding=delimited; escaping=underscores:
+              schema:
+                type: string
+                format: binary
 
   # ── Compat health (Astarte Dashboard) ───────────────────────────────
 

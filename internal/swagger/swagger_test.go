@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"reflect"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -16,6 +17,7 @@ import (
 
 	docs "github.com/astrate-platform/astrate/docs"
 	"github.com/astrate-platform/astrate/internal/engine/triggers"
+	"github.com/astrate-platform/astrate/internal/observability"
 	"github.com/astrate-platform/astrate/migrations"
 	"github.com/astrate-platform/astrate/pkg/astarteapi"
 	"github.com/astrate-platform/astrate/pkg/deviceid"
@@ -705,6 +707,135 @@ func TestNativeVersionDescriptions(t *testing.T) {
 	if strings.Contains(desc, twin) {
 		t.Errorf("getHousekeepingVersion description still promises the %s endpoints, which housekeeping does not serve", twin)
 	}
+}
+
+// protobufAccept is the Accept header a scraper sends to ask for the
+// delimited binary MetricFamily format instead of the text exposition format.
+const protobufAccept = "application/vnd.google.protobuf;proto=io.prometheus.client.MetricFamily;encoding=delimited"
+
+// TestNativeMetricsContentNegotiationDocumented guards that the native spec's
+// /astrate/v1/metrics documents the media types the scrape handler actually
+// serves. The spec used to key its 200 on the truncated `text/plain;
+// version=0.0.4` and repeat that string in the description, but the handler is
+// promhttp.HandlerFor (internal/observability/metrics.go), which answers
+// expfmt.FmtText plus the charset and name-escaping parameters: so the only
+// format a Prometheus scraper gets was the one the spec spelled wrong, and a
+// generated client matched a media type the server never emits.
+//
+// The media-type keys are measured through the handler here rather than written
+// out, so the spec cannot drift from the wire again. The protobuf format is
+// documented because the handler does serve it to a scraper that asks for it —
+// it was the second undocumented path. zstd is not documented and must stay
+// that way: this build's promhttp does not offer it, so an application/zstd
+// Accept falls back to text, and a zstd media type appearing without the
+// handler serving one fails here. gzip is the one honoured Accept-Encoding
+// (deflate and zstd are ignored), so the description has to name it, and every
+// negotiation is a 200 — asserted so a future 406 cannot go undocumented.
+func TestNativeMetricsContentNegotiationDocumented(t *testing.T) {
+	b, err := docs.APIYAML.ReadFile("api/astrate_native_api.yaml")
+	if err != nil {
+		t.Fatalf("reading astrate_native_api.yaml: %v", err)
+	}
+	lines := strings.Split(string(b), "\n")
+
+	textStatus, textType, _ := metricsScrape(t, nil)
+	if textStatus != http.StatusOK {
+		t.Fatalf("scrape with no Accept: status = %d, want %d", textStatus, http.StatusOK)
+	}
+	if status, ct, _ := metricsScrape(t, map[string]string{"Accept": "text/plain;version=0.0.4"}); status != http.StatusOK || ct != textType {
+		t.Errorf("Accept: text/plain;version=0.0.4 -> status %d, Content-Type %q; want %d and %q",
+			status, ct, http.StatusOK, textType)
+	}
+
+	protoStatus, protoType, _ := metricsScrape(t, map[string]string{"Accept": protobufAccept})
+	if protoStatus != http.StatusOK {
+		t.Fatalf("Accept: %s: status = %d, want %d", protobufAccept, protoStatus, http.StatusOK)
+	}
+	if protoType == textType {
+		t.Fatalf("Accept: %s answered with the text format %q; this test's premise no longer holds",
+			protobufAccept, textType)
+	}
+	if status, ct, _ := metricsScrape(t, map[string]string{
+		"Accept": "application/zstd; proto=io.prometheus.client.MetricFamily; encoding=zstd",
+	}); status != http.StatusOK || ct != textType {
+		t.Errorf("Accept: application/zstd -> status %d, Content-Type %q; want %d and the text format %q. "+
+			"If this build starts offering zstd, document that media type instead", status, ct, http.StatusOK, textType)
+	}
+
+	if _, _, enc := metricsScrape(t, map[string]string{"Accept-Encoding": "gzip"}); enc != "gzip" {
+		t.Errorf("Accept-Encoding: gzip answered with Content-Encoding %q, want gzip", enc)
+	}
+	for _, offered := range []string{"zstd", "deflate"} {
+		if _, _, enc := metricsScrape(t, map[string]string{"Accept-Encoding": offered}); enc != "" {
+			t.Errorf("Accept-Encoding: %s answered with Content-Encoding %q, want none", offered, enc)
+		}
+	}
+
+	block := operationBlock(t, lines, "getMetrics")
+	keys := mediaTypeKeys(t, responseBlock(t, block, "200"))
+	for _, want := range []string{textType, protoType} {
+		if !slices.Contains(keys, want) {
+			t.Errorf("the 200 response declares no %q media type; it declares %v", want, keys)
+		}
+	}
+	for _, key := range keys {
+		if strings.Contains(key, "zstd") {
+			t.Errorf("the 200 response declares a %q media type, which this build's promhttp does not offer", key)
+		}
+	}
+
+	desc := operationDescription(t, block)
+	for _, want := range []string{textType, "Accept-Encoding: gzip", "Content-Encoding: gzip"} {
+		if !strings.Contains(desc, want) {
+			t.Errorf("getMetrics description does not say %q", want)
+		}
+	}
+}
+
+// metricsScrape scrapes /astrate/v1/metrics through the real handler
+// (observability.Metrics.Handler) with the given request headers and returns
+// the status and the Content-Type and Content-Encoding the wire sends back.
+func metricsScrape(t *testing.T, headers map[string]string) (int, string, string) {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodGet, "/astrate/v1/metrics", nil)
+	for k, v := range headers {
+		req.Header.Set(k, v)
+	}
+	rec := httptest.NewRecorder()
+	observability.NewMetrics().Handler().ServeHTTP(rec, req)
+
+	res := rec.Result()
+	defer res.Body.Close()
+	return res.StatusCode, res.Header.Get("Content-Type"), res.Header.Get("Content-Encoding")
+}
+
+// mediaTypeKeys returns the media types declared in a response's content map.
+func mediaTypeKeys(t *testing.T, block []string) []string {
+	t.Helper()
+	var keys []string
+	indent := -1
+	for _, l := range block {
+		if strings.TrimSpace(l) == "content:" {
+			indent = len(l) - len(strings.TrimLeft(l, " ")) + 2
+			continue
+		}
+		if indent < 0 {
+			continue
+		}
+		switch cur := len(l) - len(strings.TrimLeft(l, " ")); {
+		case cur < indent:
+			return keys
+		case cur > indent:
+		default:
+			if key, ok := strings.CutSuffix(strings.TrimSpace(l), ":"); ok {
+				keys = append(keys, key)
+			}
+		}
+	}
+	if len(keys) == 0 {
+		t.Fatal("response block declares no content media types")
+	}
+	return keys
 }
 
 // TestHousekeepingErrorDetailExamples pins the error-detail examples in the
