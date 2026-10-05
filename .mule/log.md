@@ -177,3 +177,4 @@ layer can actually do — read it before deciding whether a kind of task is wort
 | 2026-10-04 | store-latestindividual-empty-errnotfound | blocked | 1201s | TIMEOUT after 1201s — task too big, split it |
 | 2026-10-05 | store-validatepipelinegraph-error-branches | done | 316s | 73e7387 |
 | 2026-10-05 | docs-native-ae-realm-version-endpoint | done | 344s | 7331e6c |
+| 2026-10-05 | docs-native-hk-version-description | done | 360s | cce1376 |
