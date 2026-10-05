@@ -663,6 +663,50 @@ func TestNativeErrorDetailExamples(t *testing.T) {
 	}
 }
 
+// TestNativeVersionDescriptions guards the four compat-version operations of the
+// native spec, which used to carry one identical sentence: "The emulated
+// upstream API level is served by the realm-scoped /v1/{realm}/version
+// endpoints". That is true for three of them and false for the fourth.
+// mountRealmVersion registers only appengine and pairing (cmd/astrate/main.go),
+// realm management's realm-scoped route is served by its own API
+// (internal/realm/http.go), and housekeeping's Mount registers just the five
+// realm-lifecycle routes (internal/housekeeping/http.go), so
+// /housekeeping/v1/{realm}/version matches no pattern and falls through to
+// httpx.NotFound (cmd/astrate/main.go). A generated client that believed the
+// sentence would build a call that can only ever get a 404, and the difference
+// is invisible in the response schema — both are {"data": string}. So
+// housekeeping now says plainly that it is the one service with no realm-scoped
+// twin, and the other three keep the pointer.
+func TestNativeVersionDescriptions(t *testing.T) {
+	b, err := docs.APIYAML.ReadFile("api/astrate_native_api.yaml")
+	if err != nil {
+		t.Fatalf("reading astrate_native_api.yaml: %v", err)
+	}
+	lines := strings.Split(string(b), "\n")
+
+	const twin = "realm-scoped /v1/{realm}/version"
+
+	for _, op := range []string{"getAppEngineVersion", "getRealmManagementVersion", "getPairingVersion"} {
+		if desc := operationDescription(t, operationBlock(t, lines, op)); !strings.Contains(desc, twin) {
+			t.Errorf("%s description does not point at the %s endpoints", op, twin)
+		}
+	}
+
+	desc := operationDescription(t, operationBlock(t, lines, "getHousekeepingVersion"))
+	for _, want := range []string{
+		"no realm-scoped twin",
+		"/housekeeping/v1/{realm}/version",
+		"404",
+	} {
+		if !strings.Contains(desc, want) {
+			t.Errorf("getHousekeepingVersion description does not say %q", want)
+		}
+	}
+	if strings.Contains(desc, twin) {
+		t.Errorf("getHousekeepingVersion description still promises the %s endpoints, which housekeeping does not serve", twin)
+	}
+}
+
 // TestHousekeepingErrorDetailExamples pins the error-detail examples in the
 // housekeeping spec's components.responses to the frozen canonical strings the
 // wire emits (astarteapi/envelope.go), the same guard the pairing, realm

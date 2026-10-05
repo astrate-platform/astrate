@@ -249,8 +249,10 @@ paths:
       description: |
         Upstream-parity unauthenticated version endpoint. Returns the Astrate
         build version serving the Housekeeping service; the Astarte Dashboard
-        reads one per service at startup. The emulated upstream API level is
-        served by the realm-scoped /v1/{realm}/version endpoints.
+        reads one per service at startup. Housekeeping is the one service with
+        no realm-scoped twin: `/housekeeping/v1/{realm}/version` is not a route
+        and answers 404, so unlike AppEngine, Realm Management and Pairing no
+        emulated upstream API level is reported here.
       tags: [Compat Health]
       responses:
         "200":
