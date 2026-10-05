@@ -362,8 +362,16 @@ paths:
 
         Frame format:
         ```json
-        [null, null, "rooms:test:all", "new_event", {"event_data": "..."}]
+        [null, null, "rooms:test:all", "new_event", {"Kind":"incoming_data","Realm":"test","DeviceID":"f0VMRgIBAQAAAAAAAAAAAA","Interface":"org.example.Sensors","Path":"/sensors/temperature/value","InterfaceMajor":1,"IP":"","ErrorName":"","ErrorMetadata":null,"Value":23.5,"Timestamp":"2024-05-30T13:49:57.045Z"}]
         ```
+
+        The payload is the bus event marshalled straight into the frame, so
+        its keys are the capitalised Go field names — unlike
+        `/astrate/v1/{realm}/socket` above, whose example is snake_case
+        because that socket serialises through its own `wireEvent` struct.
+        A client generated from any other shape (snake_case, `event_data`)
+        reads nothing at all here: Go's unmarshal leaves unknown fields zero
+        rather than failing, so every field arrives empty with no error.
       tags: [WebSocket]
       parameters:
         - name: realm
