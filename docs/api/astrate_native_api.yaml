@@ -319,6 +319,8 @@ paths:
 
         Authentication: `a_ch` realm JWT via Authorization header.
       tags: [WebSocket]
+      security:
+        - a_ch: []
       parameters:
         - $ref: "#/components/parameters/RealmName"
         - name: device_id
@@ -431,6 +433,21 @@ paths:
           $ref: "#/components/responses/InternalServerError"
 
 components:
+  securitySchemes:
+    a_ch:
+      type: apiKey
+      in: header
+      name: Authorization
+      description: |
+        Realm-level JWT carrying the `a_ch` claim, sent as a bearer credential
+        in the Authorization header: a case-insensitive `Bearer` optionally
+        followed by a colon, then whitespace and the token (upstream parity,
+        `~r/bearer\:?\s+(.*)$/i`). A missing, empty or differently spelled
+        header, a bad token and an unknown realm are all answered 401
+        `{"errors":{"detail":"Unauthorized"}}` — an unknown realm is 401 and
+        not 404, because a realm with no keys is indistinguishable from an
+        unauthenticated caller.
+
   parameters:
     RealmName:
       name: realm

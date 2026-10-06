@@ -709,6 +709,74 @@ func TestNativeVersionDescriptions(t *testing.T) {
 	}
 }
 
+// TestNativeSocketSecurityDocumented guards that the native spec declares the
+// authentication of /astrate/v1/{realm}/socket as an OpenAPI security
+// requirement instead of prose in the description alone. The socket is wrapped
+// by mw.RequireRealm(auth.ClaimChannels) (internal/appengine/stream/ws.go) and
+// bearerToken reads the credential only from the Authorization header
+// (internal/auth/middleware.go): a request with no usable header is answered
+// 401 {"errors":{"detail":"Unauthorized"}} before any handler runs, so a
+// client generated from a spec with no security requirement on the operation
+// never sends the header and can only ever collect that 401. The scheme
+// mirrors upstream's a_aea (astarte_appengine_api.yaml): apiKey in the
+// Authorization header.
+//
+// The other half is asserted too: the document-level `security: []` and the
+// absence of an operation-level `security` on every other operation are what
+// document health, readiness, metrics, the compat version endpoints and the
+// Phoenix socket as unauthenticated — the Phoenix twin needs no header scheme
+// because it already declares `?token=` as a required query parameter, and a
+// document-level requirement would teach a generated client to send a
+// credential those handlers never read.
+func TestNativeSocketSecurityDocumented(t *testing.T) {
+	b, err := docs.APIYAML.ReadFile("api/astrate_native_api.yaml")
+	if err != nil {
+		t.Fatalf("reading astrate_native_api.yaml: %v", err)
+	}
+	lines := strings.Split(string(b), "\n")
+
+	if !containsLine(lines, "security: []") {
+		t.Error("root `security: []` is gone; it is what documents the observability endpoints as unauthenticated")
+	}
+
+	scheme := componentBlock(t, lines, "    a_ch:")
+	for _, want := range []string{
+		"      type: apiKey",
+		"      in: header",
+		"      name: Authorization",
+	} {
+		if !containsLine(scheme, want) {
+			t.Errorf("securityScheme a_ch is missing line %q", want)
+		}
+	}
+	desc := strings.Join(strings.Fields(strings.Join(scheme, "\n")), " ")
+	for _, want := range []string{
+		"a_ch",
+		"case-insensitive `Bearer` optionally followed by a colon",
+		"an unknown realm is 401 and not 404",
+	} {
+		if !strings.Contains(desc, want) {
+			t.Errorf("securityScheme a_ch description does not say %q", want)
+		}
+	}
+
+	sock := operationBlock(t, lines, "nativeWebSocket")
+	if !containsLine(sock, "      security:") || !containsLine(sock, "        - a_ch: []") {
+		t.Errorf("nativeWebSocket declares no `security: - a_ch: []`; a generated client sends no Authorization header")
+	}
+
+	for _, op := range []string{
+		"getHealth", "getReadiness", "getMetrics",
+		"getAppEngineHealth", "getRealmManagementHealth", "getPairingHealth",
+		"getAppEngineVersion", "getRealmManagementVersion", "getPairingVersion",
+		"getHousekeepingVersion", "phoenixWebSocket",
+	} {
+		if containsLine(operationBlock(t, lines, op), "      security:") {
+			t.Errorf("%s declares an operation-level security requirement, but it is documented as unauthenticated", op)
+		}
+	}
+}
+
 // protobufAccept is the Accept header a scraper sends to ask for the
 // delimited binary MetricFamily format instead of the text exposition format.
 const protobufAccept = "application/vnd.google.protobuf;proto=io.prometheus.client.MetricFamily;encoding=delimited"
