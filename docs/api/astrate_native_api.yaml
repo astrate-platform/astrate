@@ -287,8 +287,14 @@ paths:
       summary: Native live event stream (WebSocket / SSE)
       description: |
         Astrate-native real-time event stream. Upgrades to WebSocket by
-        default, or streams Server-Sent Events when the client sends
-        `Accept: text/event-stream` or `?transport=sse`.
+        default, or streams Server-Sent Events when the request carries an
+        `Accept` header whose value is exactly `text/event-stream`, or when
+        `?transport=sse`. The header is matched for exact string equality: a
+        list or a parameterised value such as `text/event-stream, text/plain`
+        or `text/event-stream;q=1.0` does not match, and neither does a
+        missing header. Any other `Accept` falls through to the WebSocket
+        upgrade attempt, which answers a client that is not upgrading with
+        `426 Upgrade Required`.
 
         Subscribes to the realm's committed data and device lifecycle events.
         Optional `device_id` and `interface` query parameters narrow the
@@ -331,12 +337,33 @@ paths:
             type: string
             enum: [websocket, sse]
             default: websocket
-          description: Force SSE transport instead of WebSocket.
+          description: |
+            Requested transport. Server-Sent Events are selected only by the
+            literal value `sse`; `websocket`, the empty value and every other
+            string mean WebSocket, i.e. they fall through to the upgrade
+            attempt (an exactly matching `Accept: text/event-stream` header
+            selects SSE on its own and overrides this parameter). The `enum`
+            is a client-side contract: the handler never rejects a value
+            outside it — a non-`sse` value simply does not match and is not
+            reported as an error.
       responses:
         "101":
           description: WebSocket upgrade successful.
         "200":
-          description: "SSE stream started (when `Accept: text/event-stream`)."
+          description: |
+            SSE stream started, when the `Accept` header is exactly
+            `text/event-stream` or `transport=sse`. The handler sets
+            `Content-Type: text/event-stream`, `Cache-Control: no-cache` and
+            `Connection: keep-alive`, then writes one `data: {...}` frame per
+            event followed by a blank line, flushing after each frame.
+          content:
+            text/event-stream:
+              schema:
+                type: string
+              example: |-
+                data: {"event":"incoming_data","realm":"test","device_id":"f0VMRgIBAQAAAAAAAAAAAA","interface":"org.example.Sensors","path":"/sensors/temperature/value","value":23.5,"timestamp":"2024-05-30T13:49:57.045Z"}
+
+                data: {"event":"device_connected","realm":"test","device_id":"f0VMRgIBAQAAAAAAAAAAAA","timestamp":"2024-05-30T13:49:58.010Z"}
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
