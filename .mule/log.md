@@ -185,3 +185,4 @@ layer can actually do — read it before deciding whether a kind of task is wort
 | 2026-10-06 | compat-note-v135 | done | 190s | 3a8ea6d |
 | 2026-10-06 | docs-native-socket-handshake-errors | blocked | 91s | wrote nothing |
 | 2026-10-06 | docs-native-socket-sse-exact-accept | done | 410s | 1322214 |
+| 2026-10-06 | docs-native-socket-security-scheme | done | 299s | 87c18cf |
