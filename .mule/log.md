@@ -187,3 +187,4 @@ layer can actually do — read it before deciding whether a kind of task is wort
 | 2026-10-06 | docs-native-socket-sse-exact-accept | done | 410s | 1322214 |
 | 2026-10-06 | docs-native-socket-security-scheme | done | 299s | 87c18cf |
 | 2026-10-06 | docs-native-socket-event-schema | blocked | 662s | opencode exited 1 |
+| 2026-10-07 | pairing-burn-bcrypt-cost | blocked | 359s | lint failed: internal/pairing/service.go:95:7: G101: Potential hardcoded credentials (gosec) |
