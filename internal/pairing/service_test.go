@@ -228,6 +228,25 @@ func TestRegisterEmitsEvent(t *testing.T) {
 	}
 }
 
+func TestRegisterTimestampUsesInjectedClock(t *testing.T) {
+	ctx := context.Background()
+	svc, _, _ := newServiceFixture(t, Config{})
+	hwID := randomDeviceID(t)
+
+	pinned := time.Date(2020, time.March, 4, 5, 6, 7, 0, time.UTC)
+	svc.now = func() time.Time { return pinned }
+
+	var got time.Time
+	svc.OnRegistered = func(_, _ string, at time.Time) { got = at }
+
+	if _, err := svc.Register(ctx, "test", hwID, ""); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+	if !got.Equal(pinned) {
+		t.Errorf("OnRegistered timestamp: got %v, want %v", got, pinned)
+	}
+}
+
 func TestRegister(t *testing.T) {
 	ctx := context.Background()
 	svc, fs, _ := newServiceFixture(t, Config{})

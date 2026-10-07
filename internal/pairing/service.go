@@ -219,7 +219,7 @@ func (s *Service) Register(ctx context.Context, realmName, hwID, initialFormat s
 		}
 	}
 	if s.OnRegistered != nil {
-		s.OnRegistered(realmName, hwID, time.Now())
+		s.OnRegistered(realmName, hwID, s.now())
 	}
 	return secret, nil
 }
