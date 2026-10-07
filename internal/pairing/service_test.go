@@ -361,8 +361,20 @@ func TestUnregister(t *testing.T) {
 	svc, fs, _ := newServiceFixture(t, Config{})
 	hwID := randomDeviceID(t)
 
-	if err := svc.Unregister(ctx, "test", hwID); !errors.Is(err, store.ErrNotFound) {
-		t.Errorf("unknown device: got %v, want store.ErrNotFound", err)
+	// Unregister turns every lookup failure into store.ErrNotFound: both
+	// deviceid.Parse rejections (wrong length, wrong alphabet) before the
+	// store is touched, and a well-formed ID the store does not know.
+	for _, tc := range []struct {
+		name string
+		id   string
+	}{
+		{"malformed id, wrong length", "not-a-device-id"},
+		{"malformed id, wrong alphabet", "h4+Dx/RYTU+RbpDOTabhRg"},
+		{"well-formed unknown id", randomDeviceID(t)},
+	} {
+		if err := svc.Unregister(ctx, "test", tc.id); !errors.Is(err, store.ErrNotFound) {
+			t.Errorf("Unregister(%s = %q): got %v, want store.ErrNotFound", tc.name, tc.id, err)
+		}
 	}
 
 	secret, err := svc.Register(ctx, "test", hwID, "")
