@@ -58,14 +58,9 @@ type ServerMessage struct {
 func ConnectAstarteDevice(t testing.TB, brokerURL, realm string, id deviceid.ID, tlsCfg *tls.Config, cleanSession bool) *AstarteDevice {
 	t.Helper()
 	d := &AstarteDevice{Realm: realm, ID: id, base: realm + "/" + id.String()}
-	collect := func(opts *paho.ClientOptions) {
-		opts.SetDefaultPublishHandler(func(_ paho.Client, m paho.Message) {
-			d.mu.Lock()
-			d.received = append(d.received, ServerMessage{Topic: m.Topic(), Payload: append([]byte(nil), m.Payload()...)})
-			d.mu.Unlock()
-		})
-	}
-	client, _ := MQTTConnect(t, brokerURL, d.base, cleanSession, tlsCfg, collect)
+	client, _ := MQTTConnect(t, brokerURL, d.base, cleanSession, tlsCfg, func(opts *paho.ClientOptions) {
+		opts.SetDefaultPublishHandler(d.capture)
+	})
 	d.Client = client
 	WaitToken(t, client.Subscribe(d.base+"/#", 2, nil), 5*time.Second)
 	return d
@@ -144,15 +139,48 @@ func (d *AstarteDevice) Messages() []ServerMessage {
 	return append([]ServerMessage(nil), d.received...)
 }
 
+// capture is the paho publish handler that records server-owned messages.
+// It is a method rather than a closure so tests can drive captures without a
+// live broker.
+func (d *AstarteDevice) capture(_ paho.Client, m paho.Message) {
+	d.mu.Lock()
+	d.received = append(d.received, ServerMessage{Topic: m.Topic(), Payload: append([]byte(nil), m.Payload()...)})
+	d.mu.Unlock()
+}
+
+// Mark returns the current capture cursor: the number of messages captured so
+// far. Pass it as the start index of a From wait so the wait only matches
+// messages that arrive after the mark — a repeated wait for the same topic
+// cannot re-match an older message.
+func (d *AstarteDevice) Mark() int {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return len(d.received)
+}
+
 // WaitForMessage polls until a captured message satisfies pred, returning it.
 // It fails the test on timeout.
 func (d *AstarteDevice) WaitForMessage(t testing.TB, timeout time.Duration, what string, pred func(ServerMessage) bool) ServerMessage {
 	t.Helper()
+	return d.WaitForMessageFrom(t, timeout, 0, what, pred)
+}
+
+// WaitForMessageFrom is WaitForMessage restricted to messages captured at or
+// after index start (typically a Mark() cursor), so a repeated wait does not
+// re-match an older message.
+func (d *AstarteDevice) WaitForMessageFrom(t testing.TB, timeout time.Duration, start int, what string, pred func(ServerMessage) bool) ServerMessage {
+	t.Helper()
+	if start < 0 {
+		start = 0
+	}
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
-		for _, m := range d.Messages() {
-			if pred(m) {
-				return m
+		msgs := d.Messages()
+		if start < len(msgs) {
+			for _, m := range msgs[start:] {
+				if pred(m) {
+					return m
+				}
 			}
 		}
 		time.Sleep(10 * time.Millisecond)
@@ -164,7 +192,15 @@ func (d *AstarteDevice) WaitForMessage(t testing.TB, timeout time.Duration, what
 // WaitForTopic waits for a (non-empty) message delivered on an exact topic.
 func (d *AstarteDevice) WaitForTopic(t testing.TB, timeout time.Duration, topic string) ServerMessage {
 	t.Helper()
-	return d.WaitForMessage(t, timeout, "message on "+topic, func(m ServerMessage) bool {
+	return d.WaitForTopicFrom(t, timeout, 0, topic)
+}
+
+// WaitForTopicFrom is WaitForTopic restricted to messages captured at or after
+// index start (typically a Mark() cursor), so a repeated wait for the same
+// topic returns the next message instead of re-matching an older one.
+func (d *AstarteDevice) WaitForTopicFrom(t testing.TB, timeout time.Duration, start int, topic string) ServerMessage {
+	t.Helper()
+	return d.WaitForMessageFrom(t, timeout, start, "message on "+topic, func(m ServerMessage) bool {
 		return m.Topic == topic && len(m.Payload) > 0
 	})
 }
