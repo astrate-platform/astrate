@@ -193,3 +193,4 @@ layer can actually do — read it before deciding whether a kind of task is wort
 | 2026-10-08 | testutil-wait-since-cursor | done | 319s | 3654fda |
 | 2026-10-08 | testutil-control-frame-test | blocked | 102s | wrote nothing |
 | 2026-10-08 | engine-introspection-producer-roundtrip | done | 234s | d070345 |
+| 2026-10-08 | docs-sync-pairing-register-404-unreachable | done | 148s | cfa6e76 |
