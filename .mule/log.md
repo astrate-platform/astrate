@@ -196,3 +196,4 @@ layer can actually do — read it before deciding whether a kind of task is wort
 | 2026-10-08 | docs-sync-pairing-register-404-unreachable | done | 148s | cfa6e76 |
 | 2026-10-08 | docs-sync-pairing-body-cap-400 | blocked | 1200s | TIMEOUT after 1200s — task too big, split it |
 | 2026-10-08 | docs-sync-pairing-realm-name-pattern | done | 410s | ed301fb |
+| 2026-10-08 | docs-sync-pairing-deviceid-path-param | done | 395s | 1cda0fb |
