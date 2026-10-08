@@ -194,3 +194,4 @@ layer can actually do — read it before deciding whether a kind of task is wort
 | 2026-10-08 | testutil-control-frame-test | blocked | 102s | wrote nothing |
 | 2026-10-08 | engine-introspection-producer-roundtrip | done | 234s | d070345 |
 | 2026-10-08 | docs-sync-pairing-register-404-unreachable | done | 148s | cfa6e76 |
+| 2026-10-08 | docs-sync-pairing-body-cap-400 | blocked | 1200s | TIMEOUT after 1200s — task too big, split it |
