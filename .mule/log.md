@@ -191,3 +191,4 @@ layer can actually do — read it before deciding whether a kind of task is wort
 | 2026-10-07 | pairing-onregistered-clock | done | 143s | 4e71533 |
 | 2026-10-07 | pairing-unregister-bad-id-test | done | 225s | 322242a |
 | 2026-10-08 | testutil-wait-since-cursor | done | 319s | 3654fda |
+| 2026-10-08 | testutil-control-frame-test | blocked | 102s | wrote nothing |
