@@ -392,8 +392,15 @@ components:
         base64url wire form — the alphabet is `A-Z`, `a-z`, `0-9`, `-` and `_`,
         with no `=` padding. The standard-alphabet characters `+` and `/`, and
         a padded 23-character spelling of the same value, are not accepted.
+        A malformed `deviceID` is **401** on all three device-authenticated operations
+        (`deviceid.Parse` failing inside `authenticateDevice` burns bcrypt and returns
+        `ErrUnauthorized`), the same as unknown device/wrong secret; it is **404** on
+        the agent `unregisterDevice`.
       schema:
         type: string
+        minLength: 22
+        maxLength: 22
+        pattern: '^[A-Za-z0-9_-]{22}$'
 
   schemas:
     # ── Request types ──

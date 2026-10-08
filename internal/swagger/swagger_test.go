@@ -1093,7 +1093,8 @@ func TestPairingDeviceIDEncodingDocumented(t *testing.T) {
 	wantLen := strconv.Itoa(deviceid.EncodedLen)
 	wantDesc := fmt.Sprintf("%s-character unpadded", wantLen)
 
-	param := strings.Join(componentBlock(t, lines, "    DeviceID:"), "\n")
+	paramBlock := componentBlock(t, lines, "    DeviceID:")
+	param := strings.Join(paramBlock, "\n")
 	for _, want := range []string{wantDesc, "base64url"} {
 		if !strings.Contains(param, want) {
 			t.Errorf("DeviceID parameter description does not say %q", want)
@@ -1101,6 +1102,43 @@ func TestPairingDeviceIDEncodingDocumented(t *testing.T) {
 	}
 	if strings.Contains(param, "(base64-encoded 128-bit)") {
 		t.Error("DeviceID parameter still describes the ID as plain base64")
+	}
+	for _, want := range []string{
+		"        minLength: " + wantLen,
+		"        maxLength: " + wantLen,
+	} {
+		if !containsLine(paramBlock, want) {
+			t.Errorf("DeviceID parameter is missing line %q", want)
+		}
+	}
+	patternParam := ""
+	for _, l := range paramBlock {
+		if v, ok := strings.CutPrefix(l, "        pattern: "); ok {
+			patternParam = strings.Trim(v, `'"`)
+			break
+		}
+	}
+	if patternParam == "" {
+		t.Fatal("DeviceID parameter carries no pattern")
+	}
+	reParam, err := regexp.Compile(patternParam)
+	if err != nil {
+		t.Fatalf("DeviceID pattern %q does not compile: %v", patternParam, err)
+	}
+	if !reParam.MatchString("dT6hS2W9TT6LEnP25ks_lg") {
+		t.Errorf("DeviceID pattern %q rejects the canonical ID dT6hS2W9TT6LEnP25ks_lg", patternParam)
+	}
+	for _, spelling := range []string{
+		"dT6hS2W9TT6LEnP25ks+lg",
+		"dT6hS2W9TT6LEnP25ks/lg",
+		"dT6hS2W9TT6LEnP25ks_lg=",
+	} {
+		if _, err := deviceid.Parse(spelling); err == nil {
+			t.Errorf("deviceid.Parse accepts %q; this test's premise no longer holds", spelling)
+		}
+		if reParam.MatchString(spelling) {
+			t.Errorf("DeviceID pattern %q accepts %q, which deviceid.Parse rejects", patternParam, spelling)
+		}
 	}
 
 	block := propertyBlock(t, lines, "hw_id")
