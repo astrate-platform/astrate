@@ -8,6 +8,7 @@ import (
 	promtest "github.com/prometheus/client_golang/prometheus/testutil"
 
 	"github.com/astrate-platform/astrate/internal/store"
+	"github.com/astrate-platform/astrate/internal/testutil"
 	"github.com/astrate-platform/astrate/pkg/payload"
 )
 
@@ -75,6 +76,48 @@ func TestParseIntrospection(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestIntrospectionProducerRoundtrip pins the producer half of the
+// docs/DESIGN.md §3.3 rule on the default gate: testutil.Introspection (the
+// harness renderer, normally exercised only behind e2e/integration build
+// tags) emits a deterministic sorted `name:major:minor;…` string with no
+// trailing `;`, and parseIntrospection accepts exactly that string back.
+func TestIntrospectionProducerRoundtrip(t *testing.T) {
+	entries := map[string][2]int{
+		"com.ex.Zeta":  {1, 0},
+		"com.ex.Alpha": {0, 3},
+		"com.ex.Mid":   {2, 7},
+	}
+	s := testutil.Introspection(entries)
+	const want = "com.ex.Alpha:0:3;com.ex.Mid:2:7;com.ex.Zeta:1:0"
+	if s != want {
+		t.Fatalf("Introspection() = %q, want %q", s, want)
+	}
+	got, err := parseIntrospection(s)
+	if err != nil {
+		t.Fatalf("parseIntrospection(%q): %v", s, err)
+	}
+	wantParsed := map[string]store.InterfaceVersion{
+		"com.ex.Alpha": {Major: 0, Minor: 3},
+		"com.ex.Mid":   {Major: 2, Minor: 7},
+		"com.ex.Zeta":  {Major: 1, Minor: 0},
+	}
+	if len(got) != len(wantParsed) {
+		t.Fatalf("parseIntrospection(%q) = %v, want %v", s, got, wantParsed)
+	}
+	for name, v := range wantParsed {
+		if got[name] != v {
+			t.Errorf("entry %q = %+v, want %+v", name, got[name], v)
+		}
+	}
+
+	if e := testutil.Introspection(map[string][2]int{}); e != "" {
+		t.Errorf("Introspection(empty) = %q, want empty string", e)
+	}
+	if e := testutil.Introspection(nil); e != "" {
+		t.Errorf("Introspection(nil) = %q, want empty string", e)
 	}
 }
 
