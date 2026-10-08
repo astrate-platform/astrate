@@ -75,7 +75,12 @@ paths:
         Returns the emulated upstream API compatibility version. Unauthenticated
         — mirrors upstream's public pairing version endpoint.
 
-        The Astarte Dashboard gates feature UI on this value.
+        The Astarte Dashboard gates feature UI on this value. This operation
+        does not look the realm up and does not authenticate against it: it is
+        mounted with no middleware, so it answers `200` for any realm string
+        whatsoever — including the off-pattern names the shared RealmName
+        parameter rejects. Do not read that parameter as a guarantee this
+        handler enforces it.
       tags: [Pairing]
       parameters:
         - $ref: "#/components/parameters/RealmName"
@@ -358,9 +363,25 @@ components:
       name: realm
       in: path
       required: true
-      description: The realm name.
+      description: |
+        The realm name: a lowercase ASCII word starting with a letter, so
+        `TEST`, `test_realm`, `test-realm`, `1test`, `tëst` and `test realm`
+        are not realm names — no realm exists under one. This one parameter is
+        shared by every operation on this surface, and an off-pattern name
+        gets three different answers, not one: the agent and device routes
+        answer `401` `Unauthorized`, the same body as a bad token, because
+        the realm is resolved by the middleware, which treats a miss as
+        unauthenticated and not as a missing resource; `getHealth` answers
+        `404` with the same `{"errors":{"detail":"Not Found"}}` body as a
+        well-formed realm that does not exist, because its store lookup
+        matches the name verbatim with no format check of its own; and
+        `getVersion` answers `200` with the API compatibility version for any
+        realm string whatsoever, because that route is mounted with no
+        middleware and no realm lookup — the pattern constrains clients, not
+        that handler.
       schema:
         type: string
+        pattern: '^[a-z][a-z0-9]*$'
 
     DeviceID:
       name: deviceID

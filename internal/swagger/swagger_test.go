@@ -1343,6 +1343,48 @@ func schemaPattern(t *testing.T, lines []string, indent string) string {
 	return ""
 }
 
+// TestPairingRealmNamePatternDocumented guards that the pairing spec constrains
+// its `realm` path parameter the way the schema does (the realms table CHECKs
+// the name column, migrations/000002_metadata.up.sql) and records the split
+// answer an off-pattern name gets across the operations sharing the parameter:
+// the agent and device routes 401 through the middleware, getHealth 404 through
+// the verbatim store lookup, and getVersion 200 for any string because it is
+// mounted with no middleware and no realm lookup.
+func TestPairingRealmNamePatternDocumented(t *testing.T) {
+	b, err := docs.APIYAML.ReadFile("api/astarte_pairing_api.yaml")
+	if err != nil {
+		t.Fatalf("reading astarte_pairing_api.yaml: %v", err)
+	}
+	lines := strings.Split(string(b), "\n")
+
+	sql, err := migrations.FS.ReadFile("000002_metadata.up.sql")
+	if err != nil {
+		t.Fatalf("reading 000002_metadata.up.sql: %v", err)
+	}
+	check := regexp.MustCompile(`CHECK \(name ~ '([^']+)'\)`).FindSubmatch(sql)
+	if check == nil {
+		t.Fatal("realms.name declares no CHECK (name ~ ...) constraint; this test's premise no longer holds")
+	}
+	want := string(check[1])
+
+	param := componentBlock(t, lines, "    RealmName:")
+	if got := schemaPattern(t, param, "        "); got != want {
+		t.Errorf("RealmName parameter pattern = %q, want the realm name CHECK %q", got, want)
+	}
+	for _, wording := range []string{"401", "404", "200", astarteapi.DetailNotFound} {
+		if !strings.Contains(strings.Join(param, "\n"), wording) {
+			t.Errorf("RealmName parameter does not record the %q answer an off-pattern name gets on some operation", wording)
+		}
+	}
+
+	version := operationDescription(t, operationBlock(t, lines, "getVersion"))
+	for _, wording := range []string{"200", "any realm string", "no middleware"} {
+		if !strings.Contains(version, wording) {
+			t.Errorf("getVersion description does not say %q; a reader would take the shared parameter as a guarantee this handler enforces", wording)
+		}
+	}
+}
+
 // TestPairingUnregisterDeviceSemanticsDocumented guards that the pairing spec
 // describes `unregisterDevice` for what it does. "Removes a device from the
 // realm" reads as a device-and-data deletion; store.UnregisterDevice clears the
