@@ -1651,7 +1651,7 @@ components:
 
     GroupCreate:
       type: object
-      required: [group_name]
+      required: [group_name, devices]
       properties:
         group_name:
           type: string
@@ -1899,10 +1899,25 @@ components:
         application/json; charset=utf-8:
           schema:
             $ref: "#/components/schemas/FieldErrorsDetail"
-          example:
-            errors:
-              group_name:
-                - can't be blank
+          examples:
+            group_name_blank:
+              summary: Blank group name
+              value:
+                errors:
+                  group_name:
+                    - can't be blank
+            devices_missing:
+              summary: Devices key omitted
+              value:
+                errors:
+                  devices:
+                    - can't be blank
+            devices_empty:
+              summary: Empty devices array
+              value:
+                errors:
+                  devices:
+                    - should have at least 1 item(s)
 
     ValueTooLarge:
       description: |
