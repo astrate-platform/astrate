@@ -1713,8 +1713,37 @@ components:
       required: [data]
       properties:
         data:
-          description: Interface data (shape depends on interface type and path).
+          description: |
+            Interface data. The shape depends on the interface type, the
+            endpoint and the requested `format`, and is not always an object.
+            The default `structured` format is an array: an individual
+            datastream is a list of `{value, timestamp}` samples and an object
+            interface is a list of documents. `table` is an array of rows
+            (see `metadata`). `disjoint_tables` is an object keyed by path:
+            `{"value": [[value, timestamp], ...]}` for an individual
+            datastream, or one such pair list per column name for an object
+            interface. An interface-root individual query returns a nested
+            `{segment: ...: {value, timestamp}}` tree regardless of `format`.
+          oneOf:
+            - type: array
+            - type: object
+        metadata:
+          description: |
+            Column metadata for the rows in `data`. Present only when
+            `format=table`; omitted for every other format.
           type: object
+          required: [columns, table_header]
+          properties:
+            columns:
+              description: Column name to its zero-based index in each row.
+              type: object
+              additionalProperties:
+                type: integer
+            table_header:
+              description: Column names in row order.
+              type: array
+              items:
+                type: string
 
     DataEnvelopeStringArray:
       type: object
