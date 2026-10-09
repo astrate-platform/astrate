@@ -515,7 +515,7 @@ paths:
         "200":
           description: Data set successfully.
         "400":
-          $ref: "#/components/responses/BadRequest"
+          $ref: "#/components/responses/BadObject"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
@@ -567,7 +567,7 @@ paths:
         "200":
           description: Data published successfully.
         "400":
-          $ref: "#/components/responses/BadRequest"
+          $ref: "#/components/responses/BadObject"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
@@ -772,7 +772,7 @@ paths:
         "200":
           description: Data set successfully.
         "400":
-          $ref: "#/components/responses/BadRequest"
+          $ref: "#/components/responses/BadObject"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
@@ -819,7 +819,7 @@ paths:
         "200":
           description: Data published successfully.
         "400":
-          $ref: "#/components/responses/BadRequest"
+          $ref: "#/components/responses/BadObject"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
@@ -1333,7 +1333,7 @@ paths:
         "200":
           description: Data set successfully.
         "400":
-          $ref: "#/components/responses/BadRequest"
+          $ref: "#/components/responses/BadObject"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
@@ -1381,7 +1381,7 @@ paths:
         "200":
           description: Data published successfully.
         "400":
-          $ref: "#/components/responses/BadRequest"
+          $ref: "#/components/responses/BadObject"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
@@ -1777,6 +1777,14 @@ components:
           properties:
             detail:
               type: string
+            unexpected_keys:
+              type: array
+              items:
+                type: string
+              description: |
+                Keys present in an object-aggregated write document that match
+                no declared object leaf. Present only on the 400 `Unexpected
+                object key` rejection, sorted.
 
     FieldErrorsDetail:
       type: object
@@ -1800,6 +1808,30 @@ components:
           example:
             errors:
               detail: Bad request
+
+    BadObject:
+      description: |
+        Bad Request — the object-aggregated write document is rejected. A body
+        that is not a JSON object, is empty, or repeats a key answers the
+        generic `Bad request`; a document carrying a key that matches no
+        declared object leaf answers `Unexpected object key` and lists the
+        offending keys, sorted.
+      content:
+        application/json; charset=utf-8:
+          schema:
+            $ref: "#/components/schemas/ErrorDetail"
+          examples:
+            malformed:
+              summary: Not an object, empty, or duplicate key
+              value:
+                errors:
+                  detail: Bad request
+            unexpected_key:
+              summary: A key matches no declared object leaf
+              value:
+                errors:
+                  detail: Unexpected object key
+                  unexpected_keys: [ghost]
 
     Unauthorized:
       description: Unauthorized — missing or invalid JWT.
@@ -1873,14 +1905,26 @@ components:
                 - can't be blank
 
     ValueTooLarge:
-      description: Unprocessable Entity — the value is larger than the per-value size limit (64 KiB).
+      description: |
+        Unprocessable Entity — the object-aggregated write document is
+        rejected. A value larger than the per-value size limit (64 KiB)
+        answers `Value size exceeds size limits`; a document that omits a key
+        the mapping declares required answers `Missing required mapping key`.
       content:
         application/json; charset=utf-8:
           schema:
             $ref: "#/components/schemas/ErrorDetail"
-          example:
-            errors:
-              detail: Value size exceeds size limits
+          examples:
+            value_too_large:
+              summary: Value exceeds the 64 KiB per-value size limit
+              value:
+                errors:
+                  detail: Value size exceeds size limits
+            missing_required_mapping:
+              summary: Document omits a key the mapping declares required
+              value:
+                errors:
+                  detail: Missing required mapping key
 
     UnprocessableEntity:
       description: Unprocessable Entity — attribute key not found on device.

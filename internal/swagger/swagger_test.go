@@ -460,6 +460,85 @@ func TestAppEngineDataDelete400Documented(t *testing.T) {
 	}
 }
 
+// TestAppEngineObjectWriteErrorsDocumented guards that the six object-aggregated
+// data write operations (putData/publishData, by-alias and in-group) document
+// the two payload rejections their handler emits beyond the generic bodies.
+//
+// internal/appengine.writeError (internal/appengine/http.go) answers a
+// ReasonBadObject rejection — an object-aggregated document carrying a key that
+// matches no declared object leaf — with 400
+// {"errors":{"detail":"Unexpected object key","unexpected_keys":[...]}}
+// (writeBadObjectError, const detailUnexpectedObjectKey), and a
+// ReasonMissingRequired rejection — a document omitting a key the mapping
+// declares required — with 422 {"errors":{"detail":"Missing required mapping
+// key"}} (const detailMissingRequiredMapping). Both were implemented by
+// appengine-unexpected-object-key / appengine-missing-required-422 with no spec
+// update then. The six operations previously $ref'd the shared BadRequest for
+// 400 and ValueTooLarge for 422, neither of which carried these bodies: the 400
+// example never named the offending keys and the 422 example only showed the
+// value-size rejection. So the 400 now $refs the dedicated BadObject response
+// (it keeps the generic body and adds the key list), the shared ErrorDetail
+// schema declares the optional unexpected_keys array, and ValueTooLarge carries
+// both 422 examples. The three data DELETE operations keep the plain BadRequest;
+// this is the PUT/POST half only. This is the documentation half of the
+// behaviour pinned by TestWriteErrorTaxonomy in internal/appengine.
+func TestAppEngineObjectWriteErrorsDocumented(t *testing.T) {
+	b, err := docs.APIYAML.ReadFile("api/astarte_appengine_api.yaml")
+	if err != nil {
+		t.Fatalf("reading astarte_appengine_api.yaml: %v", err)
+	}
+	lines := strings.Split(string(b), "\n")
+
+	for _, op := range []string{
+		"putData", "publishData",
+		"putDataByAlias", "publishDataByAlias",
+		"putDataInGroup", "publishDataInGroup",
+	} {
+		block := operationBlock(t, lines, op)
+		for _, tc := range []struct {
+			status string
+			ref    string
+		}{
+			{"400", `          $ref: "#/components/responses/BadObject"`},
+			{"422", `          $ref: "#/components/responses/ValueTooLarge"`},
+		} {
+			body := strings.Join(responseBlock(t, block, tc.status), "\n")
+			if !strings.Contains(body, tc.ref) {
+				t.Errorf("operation %s %s does not $ref %s", op, tc.status, tc.ref)
+			}
+		}
+	}
+
+	schema := strings.Join(componentBlock(t, lines, "    ErrorDetail:"), "\n")
+	if !strings.Contains(schema, "unexpected_keys:") {
+		t.Error("ErrorDetail schema declares no unexpected_keys array")
+	}
+	if strings.Contains(schema, "required: [detail, unexpected_keys]") {
+		t.Error("ErrorDetail requires unexpected_keys; it belongs only to the unexpected-object-key 400")
+	}
+
+	bad := strings.Join(componentBlock(t, lines, "    BadObject:"), "\n")
+	for _, want := range []string{
+		"detail: Unexpected object key",
+		"unexpected_keys: [ghost]",
+		"detail: Bad request",
+	} {
+		if !strings.Contains(bad, want) {
+			t.Errorf("BadObject response carries no %q", want)
+		}
+	}
+
+	tooLarge := strings.Join(componentBlock(t, lines, "    ValueTooLarge:"), "\n")
+	for _, want := range []string{
+		"detail: Value size exceeds size limits",
+		"detail: Missing required mapping key",
+	} {
+		if !strings.Contains(tooLarge, want) {
+			t.Errorf("ValueTooLarge response carries no %q example", want)
+		}
+	}
+}
+
 // TestPairingErrorDetailExamples pins the error-detail examples in the pairing
 // spec's components.responses to the frozen canonical strings the wire emits
 // (astarteapi/envelope.go), so a generated client that copies an example does
