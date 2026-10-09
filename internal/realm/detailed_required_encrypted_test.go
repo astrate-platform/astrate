@@ -27,3 +27,41 @@ func TestRenderDetailedInterfaceRequiredEncrypted(t *testing.T) {
 		t.Errorf("rendered =\n%s\nwant\n%s", got, want)
 	}
 }
+
+// TestRenderDetailedInterfacePropertiesAllowUnset pins the properties branch
+// of writeDetailedMapping (detailed.go:61-63) container-free: a properties
+// mapping carries exactly endpoint/type/allow_unset and none of the
+// datastream delivery defaults, for both allow_unset values.
+func TestRenderDetailedInterfacePropertiesAllowUnset(t *testing.T) {
+	tests := []struct {
+		name string
+		flag string
+		want string
+	}{
+		{
+			name: "allow_unset true",
+			flag: "true",
+		},
+		{
+			name: "allow_unset false",
+			flag: "false",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			def := []byte(`{"interface_name":"com.ex.Mule.Props","version_major":0,"version_minor":2,` +
+				`"type":"properties","ownership":"server",` +
+				`"mappings":[{"endpoint":"/state","type":"boolean","allow_unset":` + tt.flag + `}]}`)
+			got, err := renderDetailedInterface(def)
+			if err != nil {
+				t.Fatalf("renderDetailedInterface: %v", err)
+			}
+			want := `{"interface_name":"com.ex.Mule.Props","version_major":0,"version_minor":2,` +
+				`"type":"properties","ownership":"server","aggregation":"individual",` +
+				`"mappings":[{"endpoint":"/state","type":"boolean","allow_unset":` + tt.flag + `}]}`
+			if string(got) != want {
+				t.Errorf("rendered =\n%s\nwant\n%s", got, want)
+			}
+		})
+	}
+}
