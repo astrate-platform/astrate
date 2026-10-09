@@ -198,3 +198,4 @@ layer can actually do — read it before deciding whether a kind of task is wort
 | 2026-10-08 | docs-sync-pairing-realm-name-pattern | done | 410s | ed301fb |
 | 2026-10-08 | docs-sync-pairing-deviceid-path-param | done | 395s | 1cda0fb |
 | 2026-10-09 | docs-sync-ae-data-envelope-metadata | done | 245s | 2ca634d |
+| 2026-10-09 | docs-sync-ae-data-write-object-errors | done | 587s | e974103 |
